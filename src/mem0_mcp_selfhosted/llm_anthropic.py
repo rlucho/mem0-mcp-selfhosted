@@ -446,15 +446,12 @@ class AnthropicOATLLM(LLMBase):
 
         # Path 1: Structured output (response_format, no tools)
         if response_format:
-            if self._supports_structured_output():
-                schema = self._select_schema(messages)
-                params["output_config"] = {
-                    "format": {
-                        "type": "json_schema",
-                        "schema": schema,
-                    },
-                }
-            # else: no output_config — rely on extractJson fallback
+            # NOTE: Structured output schemas (FACT_RETRIEVAL_SCHEMA,
+            # MEMORY_UPDATE_SCHEMA) are intentionally NOT applied here.
+            # mem0ai v2's extraction prompt produces a {"memory": [...]}
+            # JSON structure that does not match these older schemas.
+            # The prompt already ensures valid JSON output, so we let the
+            # model respond naturally and use extractJson as a safety net.
 
             response = self._call_api(params)
             if not response.content:
