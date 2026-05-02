@@ -482,8 +482,22 @@ def run_server() -> None:
     # Load .env file
     load_dotenv()
 
-    # Create and run server (Memory init deferred to first tool call)
+    # Create server and start eager Memory init in background thread.
+    # This lets the MCP handshake (initialize/tools/list) complete instantly
+    # while Memory connects to Qdrant + Ollama in parallel.  By the time the
+    # first tool call arrives (~2-5s later), init is usually done.
     server = _create_server()
+
+    def _eager_init():
+        try:
+            _init_memory()
+            logger.info("Eager background Memory init succeeded")
+        except Exception as exc:
+            logger.warning("Eager background Memory init failed (will retry lazily): %s", exc)
+
+    init_thread = threading.Thread(target=_eager_init, daemon=True)
+    init_thread.start()
+
     transport = env("MEM0_TRANSPORT", "stdio").lower()
 
     if transport == "sse":
