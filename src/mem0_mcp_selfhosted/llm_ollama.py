@@ -69,8 +69,76 @@ def _strip_think_tags(text: str) -> str:
     return text.strip()
 
 
+_MEMORY_EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "memory": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "text": {"type": "string"},
+                },
+                "required": ["id", "text"],
+            },
+        },
+    },
+    "required": ["memory"],
+}
+
+_OLLAMA_EXTRACTION_SYSTEM = (
+    "You are a Memory Extractor. Extract ALL key facts, preferences, "
+    "and personal details from the conversation below. Each fact should be a complete, "
+    "self-contained statement. Extract from BOTH user and assistant messages. "
+    "Replace pronouns with names. Include dates, numbers, and specific details."
+)
+
+
+def _simplify_extraction_prompt(content: str) -> str:
+    """Simplify mem0's extraction user prompt for local LLMs.
+
+    Strips empty sections and the trailing '# Output:' that confuse
+    smaller models into returning empty arrays.
+    """
+    lines = content.split("\n")
+    result = []
+    skip_empty_section = False
+
+    for i, line in enumerate(lines):
+        if line.startswith("## ") and i + 1 < len(lines):
+            next_non_empty = ""
+            for j in range(i + 1, min(i + 3, len(lines))):
+                if lines[j].strip():
+                    next_non_empty = lines[j].strip()
+                    break
+            if next_non_empty in ("", "[]"):
+                skip_empty_section = True
+                continue
+            else:
+                skip_empty_section = False
+
+        if skip_empty_section:
+            if line.startswith("## ") or line.startswith("# "):
+                skip_empty_section = False
+            else:
+                continue
+
+        if line.strip() == "# Output:":
+            continue
+
+        result.append(line)
+
+    return "\n".join(result).strip()
+
+
 class OllamaToolLLM(OllamaLLM):
     """Ollama LLM with tool-calling support and defense-in-depth layers."""
+
+    @staticmethod
+    def _is_extraction_call(messages: list[dict]) -> bool:
+        """Detect mem0 extraction calls by presence of a system message."""
+        return any(m.get("role") == "system" for m in messages)
 
     def _parse_response(self, response, tools):
         """Parse response with think-tag stripping and tool_calls extraction.
@@ -155,13 +223,13 @@ class OllamaToolLLM(OllamaLLM):
             response_format and response_format.get("type") == "json_object"
         )
         has_tools = bool(tools)
+        is_extraction = is_json and not has_tools and self._is_extraction_call(messages)
 
-        # Layer 1: /no_think injection
+        # Layer 1: /no_think injection (skip for extraction — think API param handles it)
         think_enabled = env("MEM0_OLLAMA_THINK").lower() in (
             "true", "1", "yes",
         )
-        if not think_enabled:
-            # Find last user message and inject /no_think
+        if not think_enabled and not is_extraction:
             for msg in reversed(messages):
                 if msg.get("role") == "user":
                     content = msg.get("content", "")
@@ -176,11 +244,23 @@ class OllamaToolLLM(OllamaLLM):
 
         # Handle JSON response format
         if is_json:
-            params["format"] = "json"
-            if messages and messages[-1]["role"] == "user":
-                messages[-1]["content"] += "\n\nPlease respond with valid JSON only."
+            if is_extraction:
+                params["format"] = _MEMORY_EXTRACTION_SCHEMA
+                messages = [m for m in messages if m.get("role") != "system"]
+                if messages:
+                    user_content = _simplify_extraction_prompt(messages[-1]["content"])
+                    messages[-1]["content"] = (
+                        _OLLAMA_EXTRACTION_SYSTEM
+                        + "\n\n"
+                        + user_content
+                    )
             else:
-                messages.append({"role": "user", "content": "Please respond with valid JSON only."})
+                params["format"] = "json"
+            if messages and messages[-1]["role"] == "user":
+                messages[-1]["content"] += "\n\nRespond with extracted facts as JSON."
+            else:
+                messages.append({"role": "user", "content": "Respond with extracted facts as JSON."})
+            params["messages"] = messages
 
         # Layer 2: Deterministic options for structured requests
         options = {
@@ -197,6 +277,9 @@ class OllamaToolLLM(OllamaLLM):
         # Layer 3: keep_alive
         keep_alive = env("MEM0_OLLAMA_KEEP_ALIVE", "30m")
         params["keep_alive"] = keep_alive
+
+        # Explicit think API parameter (Ollama >= 0.9.0)
+        params["think"] = think_enabled
 
         # Pass tools to Ollama (restored from upstream PR #3241)
         if has_tools:
