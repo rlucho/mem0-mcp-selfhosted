@@ -16,7 +16,7 @@ import re
 import threading
 from typing import Any, Callable
 
-from mem0_mcp_selfhosted.env import env
+from mem0_mcp_selfhosted.env import bool_env, env
 
 logger = logging.getLogger(__name__)
 
@@ -197,8 +197,19 @@ def call_with_graph(
     if memory is None:
         raise RuntimeError("Memory not initialized. Infrastructure may be unavailable.")
     effective = enable_graph if enable_graph is not None else default_graph
+
+    # Fast path: when no graph store is configured the guarded flag is a constant
+    # False on every path, so it cannot race a concurrent True and the lock guards
+    # nothing meaningful. Run without the lock so add/search no longer head-of-line
+    # block each other for the full 2-20s call. getattr keeps this safe on mem0ai
+    # versions where Memory has no ``graph`` attribute. Set
+    # MEM0_SERIALIZE_MEMORY_CALLS=true to force the original always-locked behavior.
+    if getattr(memory, "graph", None) is None and not bool_env("MEM0_SERIALIZE_MEMORY_CALLS"):
+        memory.enable_graph = False
+        return func(*args, **kwargs)
+
     with _graph_lock:
-        memory.enable_graph = effective and memory.graph is not None
+        memory.enable_graph = effective and getattr(memory, "graph", None) is not None
         return func(*args, **kwargs)
 
 

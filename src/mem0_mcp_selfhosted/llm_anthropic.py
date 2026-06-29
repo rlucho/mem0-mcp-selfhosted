@@ -183,6 +183,14 @@ class AnthropicOATLLM(LLMBase):
         elif token:
             client_kwargs["api_key"] = token
 
+        # Bound each HTTP attempt (vs the Anthropic SDK's ~600s default) and disable
+        # the SDK's own retries so _call_with_transient_retry below is the single
+        # retry authority (otherwise SDK retries x our retries compound). This turns
+        # an unbounded backend hang -- which on the add/search path would pin the
+        # global graph lock -- into a bounded, retryable error.
+        client_kwargs["timeout"] = float(env("MEM0_ANTHROPIC_TIMEOUT", "60"))
+        client_kwargs["max_retries"] = 0
+
         self.client = anthropic.Anthropic(**client_kwargs)
 
     # Transient HTTP status codes that warrant automatic retry.
