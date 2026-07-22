@@ -13,11 +13,22 @@ VBA modules that fix the defects found during the review.
 
 | Path | What it is |
 |------|------------|
+| **`Closing_Manager_IP_V4-CIO.xlsm`** | **The ready-to-use workbook** — the original with the V4 fixes baked in. |
 | `report/Closing-Manager-Analysis.html` | The shareable report (open in a browser; also published as an artifact). |
 | `report/Closing-Manager-Analysis.md` | Same report in Markdown. |
 | `report/v4-changes.diff` | Unified diff of every V4 change vs the original modules. |
-| `vba-v4/` | The **drop-in V4-CIO modules** to import into the workbook. |
+| `vba-v4/` | The V4-CIO modules as source (for import, or review). |
 | `vba-original/` | The original modules, extracted verbatim, for reference/diffing. |
+| `build/` | The offline rebuild pipeline (Python) that produced the `.xlsm`. |
+
+## Two ways to get V4
+
+1. **Use the built workbook (recommended):** open `Closing_Manager_IP_V4-CIO.xlsm`.
+   It is the original file with only the VBA changed — see *How the workbook was
+   built* below.
+2. **Import the modules yourself:** import `vba-v4/mCloseEnv_V4.bas` and replace
+   `GlobalModule` / `Closing` / `Printing` (steps further down). Use this if you
+   prefer to apply the fix to your own current copy of the workbook.
 
 ---
 
@@ -68,6 +79,42 @@ Public Const CM_MERGER_SRC  As String = "\\pl-krabpo-fsc01\...\GiosPSMC.exe"   '
 > — that one line now governs *every* folder consistently.
 
 ---
+
+## How the workbook was built (and how it was validated)
+
+The `.xlsm` was produced **without Excel**, by surgically rewriting only the
+workbook's `xl/vbaProject.bin` (the VBA container) and copying every other part
+of the file byte-for-byte. Pipeline in `build/`:
+
+1. Decompress the original `GlobalModule` / `Closing` / `Printing` source
+   (MS-OVBA), apply the exact V4 edits, and re-compress. The `mCloseEnv_V4`
+   helpers are **folded into `GlobalModule`** (see
+   `vba-v4/GlobalModule_folded_for_xlsm.bas`) so no new module had to be added.
+2. Rebuild each module stream keeping its original compiled-code prefix and
+   appending the new compressed source.
+3. Force Excel to recompile from the new source on first open: bump the
+   `_VBA_PROJECT` version stamp and empty the stale `__SRP_*` compiled-cache
+   streams.
+4. Rebuild the compound file and drop it back into the xlsm zip.
+
+**Validation performed here (no Excel required):**
+
+- The compound-file writer was proven with a **byte-perfect identity
+  round-trip** (rebuild the original with no edits → 116/116 streams identical).
+- `olevba` re-extracts all 26 modules; exactly 3 carry the V4 code, the other 23
+  are identical to the original; every V4 marker is present.
+- `olefile` reads every stream; all UserForms and other modules are untouched.
+- `openpyxl` opens the workbook; **only `xl/vbaProject.bin` differs** from the
+  original — all sheets, forms, images, external links and the sensitivity
+  label are byte-identical.
+
+> **One caveat:** the actual *recompile-and-run in Excel* step can't be exercised
+> in this Linux build (no Excel/Windows here). The technique used — invalidating
+> the compiled cache so Excel rebuilds from the embedded source — is the standard
+> mechanism, and everything checkable offline passes. On first open, Excel may
+> take a moment to recompile, and if macro security prompts appear, choose
+> **Enable Content**. If your Excel ever rejects the baked file, the module
+> import route below is the guaranteed fallback and produces the identical result.
 
 ## How to install V4 (≈ 2 minutes, in Excel on Windows)
 
