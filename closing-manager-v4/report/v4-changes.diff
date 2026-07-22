@@ -1,0 +1,160 @@
+--- vba-original/GlobalModule.bas	2026-07-22 15:02:30.551530530 +0000
++++ vba-v4/GlobalModule.bas	2026-07-22 15:02:30.547772829 +0000
+@@ -1,22 +1,21 @@
+ Global FPath As String, FTemp As String, Fmerger As String, Fmerged As String, Fprinted As String, FFinal As String
++Global FShared As String, DiscN As String   'V4-CIO: promoted to module scope so every routine shares one working drive
+ Global LastDay As Date
+ Global Monthx, Yearx
+ Dim araj()
+ Dim datax
+ Dim Data
+ Sub CreatePaths()
++'V4-CIO: one consistent working drive (CM_BASE_DRIVE, in mCloseEnv_V4), a local-path
++'guard for OneDrive/SharePoint, and centralised folder creation. Callers keep using
++'the same FPath / FTemp / Fmerger / ... globals exactly as before.
+ 
+-Set fso = CreateObject("Scripting.FileSystemObject")
++If Not AssertLocalWorkbook() Then End      'stop hard if the file was opened from the web
+ 
+ FPath = ThisWorkbook.Path
+ If Right(FPath, 1) <> "\" Then FPath = FPath & "\"
+ 
+-If fso.DriveExists("D:") Then
+-    DiscN = "D:\"
+-Else
+-    DiscN = "C:\"
+-End If
+-
++DiscN = CM_BASE_DRIVE                       'V4-CIO FIX: was "D:\ if present else C:\"; now one value everywhere
+ FTemp = DiscN & "pdf\temp"
+ Fmerger = DiscN & "pdf\merger"
+ Fmerged = DiscN & "pdf\mergedFiles"
+@@ -24,6 +23,8 @@
+ FFinal = DiscN & "pdf\final"
+ FShared = "\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU\MONTH-END\CLOSING REPORTS\" & Year(LastDay) & "\" & Right("0" & Month(LastDay), 2)
+ 
++Call EnsureFolders                          'build \pdf\* + report tree, provision GiosPSMC.exe
++
+ End Sub
+ Sub CreateVariants()
+ 
+--- vba-original/Closing.bas	2026-07-22 15:02:30.551321550 +0000
++++ vba-v4/Closing.bas	2026-07-22 15:02:30.548081933 +0000
+@@ -194,17 +194,7 @@
+ '----------------------------------------------------------------
+ Set fso = CreateObject("Scripting.FileSystemObject")
+ 
+-DiscN = "C:\"
+-
+-If fso.FolderExists(DiscN & "pdf\") = False Then fso.CreateFolder (DiscN & "pdf\")
+-If fso.FolderExists(DiscN & "pdf\mergedFiles\") = False Then fso.CreateFolder (DiscN & "pdf\mergedFiles\")
+-If fso.FolderExists(DiscN & "pdf\merger\") = False Then fso.CreateFolder (DiscN & "pdf\merger\")
+-If fso.FolderExists(DiscN & "pdf\temp\") = False Then fso.CreateFolder (DiscN & "pdf\temp\")
+-If fso.FolderExists(DiscN & "pdf\printed\") = False Then fso.CreateFolder (DiscN & "pdf\printed\")
+-If fso.FolderExists(DiscN & "pdf\final\") = False Then fso.CreateFolder (DiscN & "pdf\final\")
+-If fso.FileExists(DiscN & "pdf\merger\GiosPSMC.exe") = False Then fso.CopyFile "\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\GiosPSMC.exe", DiscN & "pdf\merger\GiosPSMC.exe"
+-If fso.FolderExists("C:\_Files to Transfer\MONTH END CLOSE\" & Year(LastDay) & "\") = False Then fso.CreateFolder ("C:\_Files to Transfer\MONTH END CLOSE\" & Year(LastDay) & "\")
+-If fso.FolderExists("C:\_Files to Transfer\MONTH END CLOSE\" & Year(LastDay) & "\" & Right("0" & Month(LastDay), 2) & "\") = False Then fso.CreateFolder ("C:\_Files to Transfer\MONTH END CLOSE\" & Year(LastDay) & "\" & Right("0" & Month(LastDay), 2) & "\")
++Call EnsureFolders   'V4-CIO FIX: single-drive, parent-aware folder creation (mCloseEnv_V4). Was hardcoded C:\ here while CreatePaths used D:\ if present -> broke print/merge on D:-drive PCs.
+ 
+ '----------------------------------------------------------------
+ 'import settings
+--- vba-original/Printing.bas	2026-07-22 15:02:30.552030914 +0000
++++ vba-v4/Printing.bas	2026-07-22 15:02:30.548175135 +0000
+@@ -31,8 +31,13 @@
+ 
+ If fso.FileExists("C:\Program Files\PDFCreator\PDFCreator.exe") Then
+     varProc = Shell("C:\Program Files\PDFCreator\PDFCreator.exe", 1)
+-Else
++ElseIf fso.FileExists("C:\Program Files (x86)\PDFCreator\PDFCreator.exe") Then
+     varProc = Shell("C:\Program Files (x86)\PDFCreator\PDFCreator.exe", 1)
++Else
++    'V4-CIO FIX: was an unguarded Shell of the (x86) path -> run-time error if PDFCreator absent
++    MsgBox "PDFCreator is not installed in the expected location." & vbCrLf & _
++           "Install PDFCreator (the printer must be named 'PDFCreator') before running the close.", _
++           vbCritical, "Closing Manager"
+ End If
+ 
+ End Sub
+@@ -1372,6 +1377,12 @@
+ 
+ End Sub
+ Sub CombinePDF(printN)
++'V4-CIO: same merge behaviour, but the waits are now bounded (cannot hang Excel),
++'the merge tool is checked before use, and the destination-name loop no longer
++'spins forever. Functional logic and the GiosPSMC command line are unchanged.
++
++Dim waited As Long
++Const MAX_WAIT As Long = 300     'safety cap in seconds for each wait loop
+ 
+ Set shellX = CreateObject("WScript.Shell")
+ Set fso = CreateObject("scripting.filesystemobject")
+@@ -1387,36 +1398,67 @@
+ Next i
+           
+ paramsource = Left(paramsource, Len(paramsource) - 1)
++
++'V4-CIO FIX: fail fast with a clear message if the merge tool is missing
++If Not fso.FileExists(Fmerger & "\GiosPSMC.exe") Then
++    MsgBox "PDF merger not found:" & vbCrLf & Fmerger & "\GiosPSMC.exe" & vbCrLf & vbCrLf & _
++           "Run 'Preflight Check' or restore it from the network share, then try again.", _
++           vbCritical, "Closing Manager"
++    Exit Sub
++End If
++
+ shellX.Run "%COMSPEC% /c " & Fmerger & "\GiosPSMC.exe" & " " & paramsource & " output " & paramOutput
+ 
++'V4-CIO FIX: bounded wait for the merged file to appear (was an unbounded Do..Loop)
++waited = 0
+ Do
+     If fso.FileExists(paramOutput) Then
+         File = fso.GetFile(paramOutput)
+         Exit Do
+     Else
+         Application.Wait (Now + TimeValue("0:00:01"))
++        waited = waited + 1
++    End If
++    If waited >= MAX_WAIT Then
++        MsgBox "PDF merge timed out - the merged file was not created:" & vbCrLf & paramOutput, _
++               vbCritical, "Closing Manager"
++        Exit Sub
+     End If
+ Loop
++
++'V4-CIO FIX: bounded wait for the file to stop growing (was an unbounded Do..Loop)
+ Do
+     size1 = fso.GetFile(File).Size
+     Application.Wait (Now + TimeValue("0:00:01"))
+     size2 = fso.GetFile(File).Size
++    waited = waited + 1
+ 
+     If size1 = size2 And size1 <> 0 And size2 <> 0 Then
+         Exit Do
+     End If
++    If waited >= MAX_WAIT * 2 Then Exit Do
+ Loop
+ 
+ fso.DeleteFile (FFinal & "\*.*"), True
+ 
++Call EnsureFolders   'V4-CIO: make sure the year\month tree exists before the move
++
+ fN = 1
+-FPathReport = "C:\_Files to Transfer\MONTH END CLOSE\" & Yearx & "\" & Right("0" & Monthx, 2) & "\"
++FPathReport = CM_REPORT_ROOT & Yearx & "\" & Right("0" & Monthx, 2) & "\"
+ FName = CC & " Closure " & Right("0" & Monthx, 2) & " " & Yearx & ".pdf"
+ FName1 = CC & " Closure " & Right("0" & Monthx, 2) & " " & Yearx
+ Do Until fso.FileExists(FPathReport & FName) = False
+     FName = FName1 & "-" & fN & ".pdf"
++    fN = fN + 1                          'V4-CIO FIX: was missing -> infinite loop when a same-named report already existed
+ Loop
+ 
++'V4-CIO FIX: report, don't crash, if the final move fails
++On Error Resume Next
+ fso.MoveFile File, FPathReport & FName
++If Err.Number <> 0 Then
++    MsgBox "Could not move the final report to:" & vbCrLf & FPathReport & FName & vbCrLf & vbCrLf & _
++           Err.Description, vbCritical, "Closing Manager"
++End If
++On Error GoTo 0
+ 
+ End Sub
