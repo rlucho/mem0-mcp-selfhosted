@@ -1,3 +1,4 @@
+Attribute VB_Name = "Closing"
 Option Base 1
 Public printN As Integer
 Public EIS4 As Double
@@ -194,7 +195,7 @@ Sheets("Errors").Visible = xlVeryHidden
 '----------------------------------------------------------------
 Set fso = CreateObject("Scripting.FileSystemObject")
 
-Call EnsureFolders   'V4-CIO FIX: single-drive, parent-aware folder creation (mCloseEnv_V4). Was hardcoded C:\ here while CreatePaths used D:\ if present -> broke print/merge on D:-drive PCs.
+Call EnsureFolders   'V4-CIO FIX: single-drive, parent-aware folder creation (was hardcoded C:\ here while CreatePaths used D:\ if present -> broke print/merge on D:-drive PCs).
 
 '----------------------------------------------------------------
 'import settings

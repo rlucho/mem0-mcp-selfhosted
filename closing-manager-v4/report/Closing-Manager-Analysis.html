@@ -282,9 +282,30 @@
   </div>
 
   <div class="col">
+  <section id="deps">
+    <h2><span class="sec-no">05</span> External dependencies — Capgemini &amp; IP-Polska</h2>
+    <p>The macro reaches two Capgemini-hosted systems at run time; the rest are reference-only. Status is for this <code>_changed_v3</code> build.</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>System</th><th>Path / endpoint</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><span class="area">Capgemini SharePoint</span><span class="kind">SOAP · Lists.asmx</span></td><td class="mono">https://troom-x.capgemini.com/sites/InternationalPaper/<b>r2a</b>/_vti_bin/Lists.asmx</td><td><span class="sev high">ACTIVE</span><br><span style="font-size:11px;color:var(--muted)">11 calls · Admin + GlobalModule</span></td></tr>
+        <tr><td><span class="area">Capgemini SharePoint</span><span class="kind">SOAP · Lists.asmx</span></td><td class="mono">https://troom-x.capgemini.com/sites/InternationalPaper/<b>CC/CG</b>/_vti_bin/Lists.asmx</td><td><span class="sev low">COMMENTED</span><br><span style="font-size:11px;color:var(--muted)">Employees lookup, off in v3</span></td></tr>
+        <tr><td><span class="area">IP-Polska file server</span><span class="kind">UNC · pl-krabpo-fsc01</span></td><td class="mono">\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\GiosPSMC.exe</td><td><span class="sev high">ACTIVE</span><br><span style="font-size:11px;color:var(--muted)">load-bearing (merger)</span></td></tr>
+        <tr><td><span class="area">IP-Polska file server</span><span class="kind">UNC · pl-krabpo-fsc01</span></td><td class="mono">\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU\MONTH-END\CLOSING REPORTS\&lt;yr&gt;\&lt;mm&gt;</td><td><span class="sev low">DEAD</span><br><span style="font-size:11px;color:var(--muted)">FShared, never read</span></td></tr>
+        <tr><td><span class="area">Capgemini SharePoint Online</span><span class="kind">governance list</span></td><td class="mono">https://capgemini.sharepoint.com/sites/InternationalPaper/capgemini/Lists/Automations_list/Allitemsg.aspx</td><td><span class="sev low">REFERENCE</span><br><span style="font-size:11px;color:var(--muted)">header comment only</span></td></tr>
+        <tr><td><span class="area">Capgemini OneDrive</span><span class="kind">workbook link</span></td><td class="mono">https://capgemini-my.sharepoint.com/IP All/…/NEW AR AP Intercompany Matching Master.xlsm<br>(twin: U:\IP All\…\NEW AR AP Intercompany Matching Master.xlsm)</td><td><span class="sev low">REFERENCE</span><br><span style="font-size:11px;color:var(--muted)">external cell link</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="col" style="font-size:13px;color:var(--muted)"><b>Not</b> dependencies: <code>schemas.microsoft.com/sharepoint/soap/…</code>, <code>schemas.xmlsoap.org/soap/envelope/</code> and <code>www.w3.org/2001/XMLSchema…</code> are XML namespace identifiers inside the SOAP envelopes — never contacted. <br>Runtime reachability needed: <b>troom-x.capgemini.com</b> (SharePoint) and <b>\\pl-krabpo-fsc01\ipa$</b> (merger) — both on the corporate network / VPN. In V4 these are named constants (<code>CM_SP_BASE</code>, <code>CM_MERGER_SRC</code>, <code>CM_ARCHIVE_ROOT</code>).</p>
+
+  <div class="col">
   <section id="v4">
-    <h2><span class="sec-no">05</span> V4-CIO — what was fixed</h2>
-    <p>A hardened build addresses the defects and the highest-value robustness gaps without touching the fragile SAP-scripting core. Every path/environment decision now lives in one place (<code>mCloseEnv_V4</code>).</p>
+    <h2><span class="sec-no">06</span> V4-CIO — what was fixed</h2>
+    <p>A hardened build addresses the defects and the highest-value robustness gaps without touching the fragile SAP-scripting core. Every path, environment and endpoint decision now lives in one place — the constants block at the top of <code>GlobalModule</code>.</p>
   </div>
 
   <div class="tbl-wrap fix">
@@ -299,12 +320,13 @@
         <tr><td><span class="area">Merger-missing fast-fail</span><code>CombinePDF</code> checks for <code>GiosPSMC.exe</code> and reports before shelling out.</td><td><span class="sev done">FIXED</span></td><td>#6 merger tool</td></tr>
         <tr><td><span class="area">Name-clash loop fix</span><code>fN</code> now increments — the destination-name loop can no longer spin forever.</td><td><span class="sev done">FIXED</span></td><td>#9 infinite loop</td></tr>
         <tr><td><span class="area">Preflight Check</span>A one-click <code>PreflightCheck</code> turns every dependency above into a yes/no report before a run.</td><td><span class="sev done">NEW</span></td><td>#3–#6, operability</td></tr>
+        <tr><td><span class="area">Endpoint constants</span>The SharePoint URL, merger UNC and archive UNC become named constants; hard-coded call sites (incl. <code>Admin</code>) point at them.</td><td><span class="sev done">NEW</span></td><td>server re-pointing</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="col">
-    <p style="font-size:14px;color:var(--muted)">Delivered as importable <code>.bas</code> modules (VBA source can’t be re-injected into an <code>.xlsm</code> outside Excel). Import <code>mCloseEnv_V4.bas</code> and replace the three edited modules — see the accompanying <code>README</code> for the two-minute import steps and the config knobs.</p>
+    <p style="font-size:14px;color:var(--muted)">Delivered as a <strong>ready-built workbook</strong> — the original <code>.xlsm</code> with only its <code>vbaProject.bin</code> rewritten (four modules changed: <code>GlobalModule</code>, <code>Admin</code>, <code>Closing</code>, <code>Printing</code>; every other part byte-identical). A four-module <code>.bas</code> import set is included as a fallback. See the <code>README</code> for import steps and the config/endpoint constants.</p>
     <div class="note">
       <span class="ic">✓</span>
       <div><b>Recommended follow-ups</b> (out of scope for a source-only patch): wrap the SAP transaction blocks in structured error handling with screenshots on failure; bind SAP by connection <em>description</em> rather than <code>Children(0)</code>; and add <code>Option Explicit</code> across all modules to catch silent typos.</div>

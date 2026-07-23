@@ -11,6 +11,14 @@ def once(text, old, new, label):
         sys.exit("FAIL %s: count=%d" % (label, text.count(old)))
     return text.replace(old, new)
 
+def several(text, old, new, n, label):
+    if text.count(old) != n:
+        sys.exit("FAIL %s: count=%d (expected %d)" % (label, text.count(old), n))
+    return text.replace(old, new)
+
+SP_URL_LIT = '"https://troom-x.capgemini.com/sites/InternationalPaper/r2a/_vti_bin/Lists.asmx"'
+ARCHIVE_LIT = '"\\\\pl-krabpo-fsc01\\ipa$\\R2R\\R2R - IP EU\\MONTH-END\\CLOSING REPORTS\\"'
+
 # ---- load original bin ----
 orig = open("extracted/xl/vbaProject.bin","rb").read()
 tpl = Cfb(orig)
@@ -80,6 +88,10 @@ new_cp = ('Sub CreatePaths()\n'
  'End Sub')
 
 gtext = once(gtext, old_cp, new_cp, "GM CreatePaths")
+# endpoint centralisation (BEFORE folding in the const defs, so the const
+# definitions themselves keep the string literals):
+gtext = once(gtext, "FShared = " + ARCHIVE_LIT, "FShared = CM_ARCHIVE_ROOT", "GM FShared const")
+gtext = several(gtext, "Url = " + SP_URL_LIT, "Url = CM_SP_BASE", 4, "GM SharePoint URL const")
 # insert const declarations before the first procedure
 gtext = once(gtext, "\nSub CreatePaths()", "\n" + decl_block + "\nSub CreatePaths()", "GM insert decls")
 # append helper procedures at the end
@@ -234,6 +246,12 @@ new_combine = ('Sub CombinePDF(printN)\n'
  'End Sub')
 ptext = once(ptext, old_combine, new_combine, "CombinePDF")
 
+# ============================== Admin =======================================
+# Endpoint centralisation only: point the active SharePoint calls at CM_SP_BASE
+# (defined as a Public Const in GlobalModule). 3 literals: 2 active + 1 comment.
+araw, aoff, atext = module_text("Admin")
+atext = several(atext, "Url = " + SP_URL_LIT, "Url = CM_SP_BASE", 3, "Admin SharePoint URL const")
+
 # ---- assemble new module streams (keep p-code prefix, replace source) ----
 def new_stream(raw, off, text):
     src = text.replace("\n", "\r\n").encode("cp1252")
@@ -243,6 +261,7 @@ new_data = {
     idx["GlobalModule"]: new_stream(graw, goff, gtext),
     idx["Closing"]:      new_stream(craw, coff, ctext),
     idx["Printing"]:     new_stream(praw, poff, ptext),
+    idx["Admin"]:        new_stream(araw, aoff, atext),
 }
 
 # ---- force clean recompile: bump _VBA_PROJECT version, empty __SRP_* caches ----
@@ -258,8 +277,9 @@ for nm in srp:
 final = build_cfb(tpl, new_data)
 open("vbaProject_v4.bin","wb").write(final)
 
-# save the folded V4 GlobalModule source for review
-open("build_v4/GlobalModule_FOLDED.bas","w",encoding="utf-8").write(gtext.replace("\n","\r\n"))
+# save the V4 module sources (exactly what is baked into the workbook)
+for nm, txt in (("GlobalModule_FOLDED", gtext), ("Admin", atext), ("Closing", ctext), ("Printing", ptext)):
+    open("build_v4/%s.bas" % nm, "w", encoding="utf-8").write(txt.replace("\n", "\r\n"))
 
 print("built vbaProject_v4.bin  size=%d (orig=%d)" % (len(final), len(orig)))
 print("SRP streams emptied:", len(srp))

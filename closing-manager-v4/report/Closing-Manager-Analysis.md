@@ -109,7 +109,38 @@ absolute and unaffected — the only constraint on where the workbook lives is t
 > right up until printing produces nothing, with no error, on any PC that has a D:
 > drive. Fixed in the V4-CIO build.
 
-## 5. V4-CIO — what was fixed
+## 5. External dependencies (Capgemini / IP-Polska)
+
+Two Capgemini-hosted systems are reached at run time; the rest are reference-only.
+Status is for this `_changed_v3` build.
+
+**Capgemini SharePoint — SOAP (ACTIVELY called)**
+- `https://troom-x.capgemini.com/sites/InternationalPaper/r2a/_vti_bin/Lists.asmx`
+  — live dependency; 11 calls (Admin ×7, GlobalModule ×4) via the `sp*` helpers,
+  used by `UpdateData` and list logging during the close. Windows-auth; needs VPN.
+- `https://troom-x.capgemini.com/sites/InternationalPaper/CC/CG/_vti_bin/Lists.asmx`
+  — Employees/SAP-ID lookup; **commented out** in v3.
+
+**IP-Polska file server — UNC (`\\pl-krabpo-fsc01`, share `ipa$`)**
+- `\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\GiosPSMC.exe`
+  — **ACTIVE, load-bearing** (merger copied locally on first run).
+- `\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU\MONTH-END\CLOSING REPORTS\<year>\<mm>`
+  — `FShared`; **dead** (never read in v3).
+
+**Reference only (not called)**
+- `https://capgemini.sharepoint.com/sites/InternationalPaper/capgemini/Lists/Automations_list/Allitemsg.aspx`
+  — governance register in module header comments.
+- `https://capgemini-my.sharepoint.com/IP All/…/NEW AR AP Intercompany Matching Master.xlsm`
+  (+ twin `U:\IP All\…\NEW AR AP Intercompany Matching Master.xlsm`) — external
+  workbook formula link.
+
+*Not* dependencies: `schemas.microsoft.com/sharepoint/soap/…`,
+`schemas.xmlsoap.org/soap/envelope/`, `www.w3.org/2001/XMLSchema…` are XML
+namespaces, never contacted. Runtime reachability needed: **troom-x.capgemini.com**
+and **\\pl-krabpo-fsc01\ipa$** (corporate network / VPN). In V4 these are the named
+constants `CM_SP_BASE`, `CM_MERGER_SRC`, `CM_ARCHIVE_ROOT`.
+
+## 6. V4-CIO — what was fixed
 
 See `../README.md` for the full change table and import steps. Summary: one consistent
 working drive, a OneDrive/URL guard, parent-aware folder creation, a PDFCreator presence

@@ -29,6 +29,14 @@ Public Const CM_REPORT_ROOT As String = "C:\_Files to Transfer\MONTH END CLOSE\"
 ' Master copy of the PDF merge tool, pulled from the network share if missing.
 Public Const CM_MERGER_SRC As String = _
     "\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\GiosPSMC.exe"
+
+' Capgemini SharePoint SOAP endpoint (Lists.asmx) used by UpdateData and the
+' sp* helper subs. Change here if the site is moved/decommissioned.
+Public Const CM_SP_BASE As String = "https://troom-x.capgemini.com/sites/InternationalPaper/r2a/_vti_bin/Lists.asmx"
+
+' UNC archive root for the closing reports (year\month is appended). NB: this
+' is assigned to FShared, which the original v3 flow never reads downstream.
+Public Const CM_ARCHIVE_ROOT As String = "\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU\MONTH-END\CLOSING REPORTS\"
 '----------------------------------------------------------------------------
 
 

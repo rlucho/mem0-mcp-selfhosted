@@ -1,3 +1,4 @@
+Attribute VB_Name = "Printing"
 Option Base 1
 Dim shellX, fsoX
 Public FPathReport As String, FName As String
