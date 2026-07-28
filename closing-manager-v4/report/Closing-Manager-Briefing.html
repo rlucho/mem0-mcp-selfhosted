@@ -1,0 +1,339 @@
+<title>Closing Manager — Plain-Language Briefing</title>
+<style>
+  :root{
+    --page:#f5f7f8; --card:#ffffff; --card-2:#f0f3f5;
+    --ink:#161d22; --body:#3c4a52; --mute:#6d7d86; --faint:#93a2aa;
+    --line:#dfe5e8; --line-2:#c9d3d8;
+    --brand:#0f6d78; --brand-2:#0b545d; --brand-wash:#e6f1f2;
+    --stop:#a83a2c; --stop-wash:#f9ebe8;
+    --warn:#9a6410; --warn-wash:#faf0e0;
+    --go:#2b6b4f; --go-wash:#e7f2ec;
+    --lift:0 1px 2px rgba(18,32,38,.05), 0 8px 24px rgba(18,32,38,.07);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:"SF Mono","Cascadia Mono",Consolas,"Liberation Mono",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --page:#0e1417; --card:#161e22; --card-2:#1b252a;
+      --ink:#eaf0f2; --body:#b9c7ce; --mute:#8c9ca4; --faint:#6b7b83;
+      --line:#25333a; --line-2:#33454d;
+      --brand:#4fc3ce; --brand-2:#7ad6df; --brand-wash:#102a2e;
+      --stop:#f08d7c; --stop-wash:#2c1815;
+      --warn:#e0ab5c; --warn-wash:#2a2012;
+      --go:#6cc79b; --go-wash:#12261d;
+      --lift:0 1px 2px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"]{
+    --page:#f5f7f8; --card:#ffffff; --card-2:#f0f3f5;
+    --ink:#161d22; --body:#3c4a52; --mute:#6d7d86; --faint:#93a2aa;
+    --line:#dfe5e8; --line-2:#c9d3d8;
+    --brand:#0f6d78; --brand-2:#0b545d; --brand-wash:#e6f1f2;
+    --stop:#a83a2c; --stop-wash:#f9ebe8;
+    --warn:#9a6410; --warn-wash:#faf0e0;
+    --go:#2b6b4f; --go-wash:#e7f2ec;
+  }
+  :root[data-theme="dark"]{
+    --page:#0e1417; --card:#161e22; --card-2:#1b252a;
+    --ink:#eaf0f2; --body:#b9c7ce; --mute:#8c9ca4; --faint:#6b7b83;
+    --line:#25333a; --line-2:#33454d;
+    --brand:#4fc3ce; --brand-2:#7ad6df; --brand-wash:#102a2e;
+    --stop:#f08d7c; --stop-wash:#2c1815;
+    --warn:#e0ab5c; --warn-wash:#2a2012;
+    --go:#6cc79b; --go-wash:#12261d;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--page);color:var(--body);
+       font-family:var(--sans);font-size:17px;line-height:1.72;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:0 22px}
+  .narrow{max-width:700px}
+  b,strong{color:var(--ink);font-weight:650}
+
+  /* ---------- header ---------- */
+  .top{background:var(--card);border-bottom:1px solid var(--line)}
+  .kicker{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.16em;
+          text-transform:uppercase;color:var(--brand);
+          background:var(--brand-wash);padding:6px 12px;border-radius:6px}
+  h1{font-size:clamp(2rem,5vw,2.9rem);line-height:1.12;letter-spacing:-.025em;
+     font-weight:750;color:var(--ink);margin:20px 0 12px;text-wrap:balance}
+  .sub{font-size:clamp(1.05rem,2.2vw,1.24rem);color:var(--mute);margin:0;max-width:56ch;line-height:1.55}
+
+  /* ---------- the one-line answer ---------- */
+  .answer{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--brand);
+          border-radius:12px;padding:24px 26px;margin:28px 0;box-shadow:var(--lift)}
+  .answer .lbl{font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+               color:var(--brand);margin-bottom:10px}
+  .answer p{margin:0;font-size:1.16rem;line-height:1.6;color:var(--ink)}
+
+  /* ---------- scoreboard ---------- */
+  .score{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:22px 0 6px}
+  .cell{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--lift)}
+  .cell .big{font-size:2.3rem;font-weight:750;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .cell .cap{font-size:13.5px;color:var(--mute);margin-top:8px;line-height:1.45}
+  .cell.bad .big{color:var(--stop)} .cell.mid .big{color:var(--warn)} .cell.good .big{color:var(--go)}
+
+  /* ---------- sections ---------- */
+  section{padding:14px 0}
+  h2{font-size:1.55rem;font-weight:720;letter-spacing:-.02em;color:var(--ink);
+     margin:38px 0 6px;line-height:1.25;text-wrap:balance}
+  h2 .num{color:var(--brand);font-variant-numeric:tabular-nums;margin-right:10px;font-weight:750}
+  h3{font-size:1.08rem;font-weight:680;color:var(--ink);margin:26px 0 4px}
+  p{margin:.85rem 0}
+  .said{font-size:1.02rem;color:var(--mute)}
+  code{font-family:var(--mono);font-size:.83em;background:var(--card-2);color:var(--ink);
+       padding:.12em .4em;border-radius:5px;border:1px solid var(--line);word-break:break-word}
+
+  /* ---------- ownership chips ---------- */
+  .own{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+       letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:999px;white-space:nowrap}
+  .own::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+  .own.theirs{background:var(--stop-wash);color:var(--stop)}
+  .own.ours{background:var(--go-wash);color:var(--go)}
+  .own.buy{background:var(--warn-wash);color:var(--warn)}
+
+  /* ---------- dependency cards ---------- */
+  .deps{display:grid;gap:14px;margin:20px 0}
+  .dep{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;box-shadow:var(--lift)}
+  .dep.flag{border-left:5px solid var(--stop)}
+  .dep.ok{border-left:5px solid var(--go)}
+  .dep-h{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:6px}
+  .dep-h .name{font-size:1.12rem;font-weight:700;color:var(--ink)}
+  .dep .what{margin:.4rem 0 .7rem}
+  .dep .addr{font-family:var(--mono);font-size:12px;color:var(--mute);background:var(--card-2);
+             border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:nowrap}
+  .dep .addr b{color:var(--ink);font-weight:600}
+  .dep .verdict{margin:.8rem 0 0;font-size:14.5px;padding-top:.7rem;border-top:1px dashed var(--line)}
+  .dep .verdict b{color:var(--ink)}
+
+  /* ---------- table ---------- */
+  .scroll{overflow-x:auto;margin:18px 0;border:1px solid var(--line);border-radius:12px;box-shadow:var(--lift)}
+  table{border-collapse:collapse;width:100%;min-width:640px;background:var(--card);font-size:14.5px}
+  th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+     font-weight:700;padding:14px 16px;background:var(--card-2);border-bottom:1px solid var(--line-2)}
+  td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td .t{display:block;font-weight:650;color:var(--ink);margin-bottom:2px}
+  td .s{font-size:13px;color:var(--mute)}
+
+  /* ---------- asks ---------- */
+  ol.asks{list-style:none;counter-reset:ask;padding:0;margin:20px 0;display:grid;gap:12px}
+  ol.asks li{counter-increment:ask;position:relative;background:var(--card);border:1px solid var(--line);
+             border-radius:12px;padding:18px 20px 18px 62px;box-shadow:var(--lift)}
+  ol.asks li::before{content:counter(ask);position:absolute;left:18px;top:17px;width:30px;height:30px;
+       border-radius:8px;background:var(--brand);color:var(--card);display:flex;align-items:center;
+       justify-content:center;font-weight:750;font-size:15px;font-variant-numeric:tabular-nums}
+  ol.asks .q{font-weight:680;color:var(--ink);display:block;margin-bottom:3px;font-size:1.03rem}
+  ol.asks .why{font-size:14px;color:var(--mute)}
+
+  /* ---------- callouts ---------- */
+  .flagbox{background:var(--stop-wash);border:1px solid color-mix(in srgb,var(--stop) 24%,transparent);
+           border-radius:12px;padding:18px 20px;margin:22px 0}
+  .flagbox .h{font-weight:720;color:var(--stop);margin-bottom:6px;font-size:1.02rem}
+  .flagbox p{margin:.3rem 0;color:var(--ink);font-size:15px}
+  .tip{background:var(--brand-wash);border:1px solid color-mix(in srgb,var(--brand) 24%,transparent);
+       border-radius:12px;padding:16px 18px;margin:20px 0;font-size:15px;color:var(--ink)}
+  .tip b{color:var(--ink)}
+
+  ul.plain{margin:.6rem 0;padding-left:1.25rem}
+  ul.plain li{margin:.4rem 0}
+
+  /* ---------- glossary ---------- */
+  dl.gloss{display:grid;gap:2px;margin:18px 0;background:var(--line);border:1px solid var(--line);
+           border-radius:12px;overflow:hidden}
+  dl.gloss>div{background:var(--card);padding:14px 18px;display:grid;grid-template-columns:180px 1fr;gap:16px}
+  dl.gloss dt{font-weight:680;color:var(--ink);font-size:14.5px}
+  dl.gloss dd{margin:0;font-size:14.5px;color:var(--body)}
+  @media (max-width:620px){dl.gloss>div{grid-template-columns:1fr;gap:2px}}
+
+  footer{border-top:1px solid var(--line);margin-top:46px;padding:24px 0 64px;color:var(--faint);font-size:13px}
+
+  @media print{
+    body{background:#fff;font-size:11pt;color:#000}
+    .answer,.cell,.dep,.scroll,ol.asks li{box-shadow:none}
+    h2{break-after:avoid}.dep,.scroll,ol.asks li{break-inside:avoid}
+  }
+</style>
+
+<div class="top">
+  <div class="wrap" style="padding-top:40px;padding-bottom:34px">
+    <span class="kicker">Decision Brief</span>
+    <h1>Can we run the month-end Closing Manager on our own?</h1>
+    <p class="sub">A plain-language look at what this Excel macro does, what it depends on, and the two outside systems we should cut loose to make it fully ours.</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="answer">
+    <div class="lbl">The short answer</div>
+    <p><b>Almost — and the gap is smaller than it looks.</b> The macro's real work (driving SAP, printing and merging the reports) already happens on the user's own PC. But it still reaches out to <b>two Capgemini-hosted systems</b> for settings, logging and one small program. Neither holds anything we couldn't own ourselves, so both can be brought in-house.</p>
+  </div>
+
+  <div class="score">
+    <div class="cell bad"><div class="big">2</div><div class="cap">outside systems it still needs — both Capgemini-hosted</div></div>
+    <div class="cell mid"><div class="big">4</div><div class="cap">settings tables living on their SharePoint, not in our file</div></div>
+    <div class="cell good"><div class="big">0</div><div class="cap">of those dependencies are technically hard to replace</div></div>
+  </div>
+
+  <div class="narrow">
+    <h2><span class="num">1</span>What this file actually is</h2>
+    <p>It is an Excel workbook with a large automation ("macro") inside, built by Capgemini to run International Paper's <b>month-end close</b>. Think of it as a robot that sits at a user's desk and does the clicking:</p>
+    <ul class="plain">
+      <li>It <b>types into SAP for you</b> — it opens an SAP window that you have already logged into, and drives the screens exactly like a person would.</li>
+      <li>It <b>pulls the numbers out</b> as small text files, reads them back into the spreadsheet, and posts the closing entries.</li>
+      <li>It <b>prints each report to PDF</b>, glues them into one document, and files it in a folder on the PC.</li>
+    </ul>
+    <p>The important thing to understand: it is not connected to SAP through a proper interface. It is <b>remote-controlling the SAP screen</b>. That makes it powerful but fragile — which matters for the recommendations later.</p>
+
+    <h2><span class="num">2</span>What it depends on</h2>
+    <p class="said">Five things must be in place. The colour tells you who controls it.</p>
+  </div>
+
+  <div class="deps">
+
+    <div class="dep flag">
+      <div class="dep-h"><span class="name">Capgemini SharePoint</span><span class="own theirs">Not ours</span></div>
+      <p class="what">A Capgemini intranet site that stores the macro's <b>settings tables</b> and receives a <b>log of every close we run</b>. The macro reads its configuration from here at the start, and writes activity records back during the run.</p>
+      <div class="addr">https://troom-x.capgemini.com/sites/InternationalPaper/<b>r2a</b>/_vti_bin/Lists.asmx</div>
+      <p class="verdict"><b>Why it matters:</b> if Capgemini retires this site, or we come off their network, the macro quietly loads <em>no</em> settings — it does not show an error. It also means our closing activity is recorded on a vendor's system.</p>
+    </div>
+
+    <div class="dep flag">
+      <div class="dep-h"><span class="name">Capgemini Poland file server</span><span class="own theirs">Not ours</span></div>
+      <p class="what">A network drive at Capgemini's Kraków site. The macro copies one small program from it — <b><code>GiosPSMC.exe</code></b>, the tool that merges the individual PDFs into a single report.</p>
+      <div class="addr">\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\<b>GiosPSMC.exe</b></div>
+      <p class="verdict"><b>Why it matters:</b> this is only a file copy, and only the first time. Once the tool sits on the PC, the server is not needed again — so this dependency is easy to remove permanently.</p>
+    </div>
+
+    <div class="dep ok">
+      <div class="dep-h"><span class="name">SAP</span><span class="own ours">Ours / business-critical</span></div>
+      <p class="what">The macro needs SAP already open and logged in on the same PC, with SAP's scripting option switched on.</p>
+      <p class="verdict"><b>Not a problem to solve.</b> SAP is the source of the numbers — this dependency is legitimate and stays.</p>
+    </div>
+
+    <div class="dep ok">
+      <div class="dep-h"><span class="name">PDFCreator on the PC</span><span class="own buy">Ours to install</span></div>
+      <p class="what">Free third-party software that turns SAP's print output into PDF files. The printer must be named exactly <code>PDFCreator</code>.</p>
+      <p class="verdict"><b>Under our control</b> — a standard desktop install, no external server involved.</p>
+    </div>
+
+    <div class="dep ok">
+      <div class="dep-h"><span class="name">Local folders on the PC</span><span class="own ours">Ours</span></div>
+      <p class="what">Working folders under <code>C:\pdf\</code> and the finished report in <code>C:\_Files to Transfer\MONTH END CLOSE\</code>. The macro also writes temporary files next to the workbook itself.</p>
+      <p class="verdict"><b>Under our control</b> — but note the workbook must sit in a <b>normal local folder</b>. Running it from OneDrive or SharePoint breaks it (explained in section 4).</p>
+    </div>
+
+  </div>
+
+  <div class="narrow">
+    <h2><span class="num">3</span>What is actually stored on their SharePoint</h2>
+    <p>This is the crux of the independence question, so it is worth being specific. It is not accounting data — it is <b>configuration and an activity log</b>:</p>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Table on their SharePoint</th><th>What it holds</th><th>How the macro uses it</th></tr></thead>
+      <tbody>
+        <tr><td><span class="t">CCCrossList</span><span class="s">cost-centre settings</span></td><td>Per cost centre: posting block, location-closed flag, which postings are allowed</td><td>Read at startup into the <code>config</code> sheet; also edited from a form inside the workbook</td></tr>
+        <tr><td><span class="t">ClosingVariants</span><span class="s">SAP report settings</span></td><td>The SAP variant name and currency per cost centre</td><td>Read at startup</td></tr>
+        <tr><td><span class="t">ProfitCenters</span><span class="s">reference list</span></td><td>Profit-centre reference data</td><td>Read at startup; refreshed/rewritten by the macro</td></tr>
+        <tr><td><span class="t">ClosingTracker</span><span class="s">activity log</span></td><td>Who ran a close, for which cost centre and period, when, and whether it succeeded</td><td>Written during runs; also checked to confirm data was refreshed for the period</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="narrow">
+    <p>All four are <b>small lists of settings</b> — the kind of thing that fits comfortably in a worksheet or a list on our own SharePoint. Nothing here requires Capgemini's infrastructure.</p>
+
+    <div class="flagbox">
+      <div class="h">Two things worth raising with Capgemini</div>
+      <p><b>1. Our close activity is logged to their system.</b> Every run writes the user name, cost centre, period and timestamp to <code>ClosingTracker</code> on their SharePoint. We should confirm whether that is intended and agreed, and who can see it.</p>
+      <p><b>2. Failure is silent.</b> The macro never checks whether the SharePoint call succeeded. If the site is gone or we are off the network, it simply loads no settings and carries on — rather than stopping and telling the user. That is the risk to fix first, regardless of the ownership question.</p>
+    </div>
+
+    <div class="tip">
+      <b>Encouraging sign:</b> whoever produced this "v3" version was already heading this way. Several SharePoint calls have been switched off in the code — including the lookup that used to fetch the user's SAP ID, now replaced by simply asking the user. The decoupling has started; it just was not finished.
+    </div>
+  </div>
+
+  <div class="narrow">
+    <h2><span class="num">4</span>What breaks it today</h2>
+    <p>Separate from the ownership question, these are the things that stop a run. The first two are the ones people actually hit.</p>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Problem</th><th>What the user sees</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><span class="t">The "D: drive" bug</span><span class="s">a genuine coding error</span></td><td>On a PC that has a D: drive, the macro creates its working folders on C: but then looks for them on D:. The close appears to work until printing — which silently produces nothing.</td><td><span class="own ours">Fixed in V4</span></td></tr>
+        <tr><td><span class="t">Running it from OneDrive / SharePoint</span><span class="s">wrong location</span></td><td>The macro saves temporary files next to itself. From a cloud location its "folder" is a web address, which SAP and Excel cannot write to, so the run dies early.</td><td><span class="own ours">Guarded in V4</span></td></tr>
+        <tr><td><span class="t">SAP not open, or scripting off</span><span class="s">precondition</span></td><td>Clear message: "You are not logged in SAP."</td><td><span class="own ours">Handled</span></td></tr>
+        <tr><td><span class="t">SAP screens change</span><span class="s">design fragility</span></td><td>The macro clicks SAP by exact screen positions. An SAP upgrade or an unexpected pop-up stops it mid-run.</td><td><span class="own buy">Ongoing risk</span></td></tr>
+        <tr><td><span class="t">PDFCreator missing or renamed</span><span class="s">dependency</span></td><td>Previously crashed with a technical error; now reports clearly.</td><td><span class="own ours">Improved in V4</span></td></tr>
+        <tr><td><span class="t">Off the network / no VPN</span><span class="s">external dependency</span></td><td>Settings silently do not load; the PDF merge tool cannot be fetched if it is not already on the PC.</td><td><span class="own theirs">Needs decision</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="narrow">
+    <h2><span class="num">5</span>How we become fully self-sufficient</h2>
+    <p>In rough order — each step stands on its own, so they can be done one at a time.</p>
+  </div>
+
+  <ol class="asks">
+    <li>
+      <span class="q">Take a permanent copy of the PDF merge tool</span>
+      <span class="why">Copy <code>GiosPSMC.exe</code> off their share and keep it somewhere we own — or deploy it with the workbook. This removes the Kraków file-server dependency outright, and is the quickest win. Worth confirming with Capgemini what the tool is and how it is licensed before we redistribute it.</span>
+    </li>
+    <li>
+      <span class="q">Ask Capgemini to export the four settings tables</span>
+      <span class="why">Request a current export of <code>CCCrossList</code>, <code>ClosingVariants</code>, <code>ProfitCenters</code> and <code>ClosingTracker</code>, plus confirmation of who maintains them today and how often they change. This tells us exactly what we are taking over.</span>
+    </li>
+    <li>
+      <span class="q">Decide where those settings should live</span>
+      <span class="why">Two sensible options: hold them in hidden worksheets inside the workbook (simplest, no server at all), or move them to a list on <em>our</em> SharePoint. Choice depends on how many people need to edit them and whether we want an audit trail.</span>
+    </li>
+    <li>
+      <span class="q">Repoint or switch off the SharePoint calls</span>
+      <span class="why">The V4 version already puts the address in a <b>single named setting</b> (<code>CM_SP_BASE</code>), so re-pointing it to our own site is a one-line change rather than a hunt through the code. Turning the logging off entirely is also straightforward.</span>
+    </li>
+    <li>
+      <span class="q">Make failure loud instead of silent</span>
+      <span class="why">Add a check that the settings actually loaded, so a dead endpoint stops the run with a clear message rather than closing the books on stale or empty configuration. This is the most important safety fix on the list.</span>
+    </li>
+    <li>
+      <span class="q">Clarify ownership and support of the macro itself</span>
+      <span class="why">The code names an owner and a reviewer on a Capgemini governance register. If this automation is becoming ours, we need the source, the right to change it, and a named person who supports it.</span>
+    </li>
+  </ol>
+
+  <div class="narrow">
+    <div class="tip">
+      <b>Already delivered in the meantime:</b> a hardened <b>V4-CIO</b> version of the workbook fixes the D:-drive bug, blocks running from OneDrive, stops the macro hanging forever if a step stalls, and adds a one-click <b>Preflight Check</b> that tells the user whether SAP, PDFCreator, the folders and the network are all in place <em>before</em> they start a close. It also gathers the two external addresses into named settings, so the work above becomes a configuration change rather than a code rewrite.
+    </div>
+
+    <h3>Where this leaves us</h3>
+    <p>Nothing in this automation genuinely requires Capgemini's servers. What lives there is <b>configuration we should own anyway</b> and <b>a log of our own activity</b>. The realistic path is: take the merge tool, take the settings, point the macro at our own home for them, and make it complain loudly if anything is missing. After that, the only outside system left is SAP — which is exactly as it should be.</p>
+  </div>
+
+  <div class="narrow">
+    <h2><span class="num">6</span>Jargon, translated</h2>
+  <dl class="gloss">
+    <div><dt>Macro / VBA</dt><dd>Program code stored inside the Excel file itself. It runs when someone opens the workbook and clicks a button.</dd></div>
+    <div><dt>SAP GUI Scripting</dt><dd>An SAP feature that lets a program press buttons in the SAP window automatically. It must be switched on both on the PC and by SAP administrators.</dd></div>
+    <div><dt>SharePoint list</dt><dd>A simple table stored on an intranet site — like a shared spreadsheet that programs can read and write.</dd></div>
+    <div><dt>UNC path</dt><dd>An address for a shared network folder, written as <code>\\server\folder</code>. Only reachable on the company network or VPN.</dd></div>
+    <div><dt>Cost centre / close</dt><dd>The month-end routine of finalising the books for a part of the business; the macro produces the report pack that evidences it.</dd></div>
+    <div><dt>Preflight Check</dt><dd>The new button added in V4 that verifies everything the macro needs is ready, before a run starts.</dd></div>
+  </dl>
+  </div>
+
+  <footer>
+    <div>Based on a full read of the macro's source code. No macro was run, and no live system was contacted. Addresses shown are those written into the workbook's own code.</div>
+    <div style="margin-top:6px">Companion to the detailed technical report — this brief covers the same findings in plain language.</div>
+  </footer>
+
+</div>

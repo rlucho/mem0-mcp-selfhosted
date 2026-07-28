@@ -14,8 +14,10 @@ VBA modules that fix the defects found during the review.
 | Path | What it is |
 |------|------------|
 | **`Closing_Manager_IP_V4-CIO.xlsm`** | **The ready-to-use workbook** — the original with the V4 fixes baked in. |
-| `report/Closing-Manager-Analysis.html` | The shareable report (open in a browser; also published as an artifact). |
-| `report/Closing-Manager-Analysis.md` | Same report in Markdown. |
+| **`report/Closing-Manager-Briefing.html`** | **Plain-language decision brief** — what the macro does, the two Capgemini-hosted dependencies, and how to become self-sufficient. Start here for non-technical readers. |
+| `report/Closing-Manager-Briefing.md` | Same brief in Markdown. |
+| `report/Closing-Manager-Analysis.html` | The detailed technical report (open in a browser; also published as an artifact). |
+| `report/Closing-Manager-Analysis.md` | Same technical report in Markdown. |
 | `report/v4-changes.diff` | Unified diff of every V4 change vs the original modules. |
 | `vba-v4/` | The V4-CIO modules as source (for import, or review). |
 | `vba-original/` | The original modules, extracted verbatim, for reference/diffing. |
