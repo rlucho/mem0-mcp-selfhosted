@@ -128,6 +128,18 @@
   ol.asks .q{font-weight:680;color:var(--ink);display:block;margin-bottom:3px;font-size:1.03rem}
   ol.asks .why{font-size:14px;color:var(--mute)}
 
+  /* ---------- preflight ---------- */
+  .pf{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:20px 0;box-shadow:var(--lift)}
+  .pf .pfh{background:var(--go);color:#fff;padding:14px 22px;font-weight:700;font-size:1.05rem}
+  @media (prefers-color-scheme:dark){.pf .pfh{color:#0e1417}}
+  :root[data-theme="dark"] .pf .pfh{color:#0e1417}
+  :root[data-theme="light"] .pf .pfh{color:#fff}
+  .pf .pfb{padding:20px 22px;background:var(--card)}
+  .pf .pfb p{font-size:15.5px}
+  .screen{font-family:var(--mono);font-size:12.5px;line-height:1.65;background:#22282c;color:#e3e8ea;
+          border-radius:10px;padding:16px 18px;margin:14px 0 0;overflow-x:auto;white-space:pre}
+  .screen .ok{color:#7bc79b} .screen .no{color:#f08d7c} .screen .dim{color:#98a1a8}
+
   /* ---------- callouts ---------- */
   .flagbox{background:var(--stop-wash);border:1px solid color-mix(in srgb,var(--stop) 24%,transparent);
            border-radius:12px;padding:18px 20px;margin:22px 0}
@@ -179,14 +191,15 @@
   </div>
 
   <div class="narrow">
-    <h2><span class="num">1</span>What this file actually is</h2>
-    <p>It is an Excel workbook with a large automation ("macro") inside, built by Capgemini to run International Paper's <b>month-end close</b>. Think of it as a robot that sits at a user's desk and does the clicking:</p>
+    <h2><span class="num">1</span>What it does</h2>
+    <p>An Excel VBA macro that runs the month-end close end to end:</p>
     <ul class="plain">
-      <li>It <b>types into SAP for you</b> — it opens an SAP window that you have already logged into, and drives the screens exactly like a person would.</li>
-      <li>It <b>pulls the numbers out</b> as small text files, reads them back into the spreadsheet, and posts the closing entries.</li>
-      <li>It <b>prints each report to PDF</b>, glues them into one document, and files it in a folder on the PC.</li>
+      <li><b>Drives SAP</b> via SAP GUI Scripting — runs the closing transactions (SE16 table extracts, <code>ZGLRME</code>, <code>ZGE132</code>, <code>AA02</code>, <code>ZGLGWUL</code> and others), exports the data to flat files, reads it back into the workbook and posts the closing entries.</li>
+      <li><b>Creates the PDFs</b> — sets SAP's front-end printer to <code>PDFCreator</code> and prints each report out to <code>\pdf\final\</code>.</li>
+      <li><b>Merges the PDFs</b> — calls <code>GiosPSMC.exe</code> to concatenate the report set into one pack, then files it as <code>&lt;CC&gt; Closure &lt;MM&gt; &lt;YYYY&gt;.pdf</code> under <code>C:\_Files to Transfer\MONTH END CLOSE\</code>.</li>
+      <li><b>Reads and writes configuration</b> over SOAP to a Capgemini SharePoint site — the subject of this review.</li>
     </ul>
-    <p>The important thing to understand: it is not connected to SAP through a proper interface. It is <b>remote-controlling the SAP screen</b>. That makes it powerful but fragile — which matters for the recommendations later.</p>
+    <p>One design point drives most of the fragility: SAP is driven <b>by screen element ID</b>, not through a BAPI or other interface. The macro is a screen-scraper, so it is sensitive to SAP UI changes, unexpected pop-ups and authorisation differences.</p>
 
     <h2><span class="num">2</span>What it depends on</h2>
     <p class="said">Five things must be in place. The colour tells you who controls it.</p>
@@ -279,7 +292,30 @@
   </div>
 
   <div class="narrow">
-    <h2><span class="num">5</span>How we become fully self-sufficient</h2>
+    <h2><span class="num">5</span>Preflight Check — can users run it on its own?</h2>
+    <div class="pf">
+      <div class="pfh">Yes. It runs standalone, and it changes nothing.</div>
+      <div class="pfb">
+        <p><b><code>PreflightCheck</code> is a self-contained macro</b> added in V4 specifically so users can verify their environment <b>before</b> committing to a close. It does not start the close, does not touch SAP beyond detecting whether a session exists, creates no folders, and writes no files. It is safe to run at any time, as often as needed.</p>
+        <p><b>How to run it:</b> press <b>Alt&nbsp;+&nbsp;F8</b>, select <b>PreflightCheck</b>, click <b>Run</b>. It appears in the macro list automatically. For everyday use, add a button on the <code>START</code> sheet (<i>Developer → Insert → Button</i>) and assign it to the same macro.</p>
+        <p>It reports on all six preconditions in one dialog:</p>
+        <pre class="screen">CLOSING MANAGER  -  PREFLIGHT CHECK
+--------------------------------------
+<span class="ok">[OK]</span> Workbook location is local.
+<span class="ok">[OK]</span> Working drive C:\ is present.
+<span class="no">[X]</span>  SAP GUI not logged in, or GUI scripting is disabled.
+<span class="ok">[OK]</span> PDFCreator is installed.
+<span class="dim">[~]</span>  PDF merger will be copied from the network share on first run.
+<span class="ok">[OK]</span> Cost Centre = 1234.
+--------------------------------------
+<span class="no">NOT READY - resolve the [X] items above.</span></pre>
+      </div>
+    </div>
+    <p>This turns every dependency in section 2 into a plain pass/fail before anyone starts a period close — including whether the network-hosted merge utility is still needed on that machine.</p>
+  </div>
+
+  <div class="narrow">
+    <h2><span class="num">6</span>How we become fully self-sufficient</h2>
     <p>In rough order — each step stands on its own, so they can be done one at a time.</p>
   </div>
 
@@ -319,17 +355,6 @@
     <p>Nothing in this automation genuinely requires Capgemini's servers. What lives there is <b>configuration we should own anyway</b> and <b>a log of our own activity</b>. The realistic path is: take the merge tool, take the settings, point the macro at our own home for them, and make it complain loudly if anything is missing. After that, the only outside system left is SAP — which is exactly as it should be.</p>
   </div>
 
-  <div class="narrow">
-    <h2><span class="num">6</span>Jargon, translated</h2>
-  <dl class="gloss">
-    <div><dt>Macro / VBA</dt><dd>Program code stored inside the Excel file itself. It runs when someone opens the workbook and clicks a button.</dd></div>
-    <div><dt>SAP GUI Scripting</dt><dd>An SAP feature that lets a program press buttons in the SAP window automatically. It must be switched on both on the PC and by SAP administrators.</dd></div>
-    <div><dt>SharePoint list</dt><dd>A simple table stored on an intranet site — like a shared spreadsheet that programs can read and write.</dd></div>
-    <div><dt>UNC path</dt><dd>An address for a shared network folder, written as <code>\\server\folder</code>. Only reachable on the company network or VPN.</dd></div>
-    <div><dt>Cost centre / close</dt><dd>The month-end routine of finalising the books for a part of the business; the macro produces the report pack that evidences it.</dd></div>
-    <div><dt>Preflight Check</dt><dd>The new button added in V4 that verifies everything the macro needs is ready, before a run starts.</dd></div>
-  </dl>
-  </div>
 
   <footer>
     <div>Based on a full read of the macro's source code. No macro was run, and no live system was contacted. Addresses shown are those written into the workbook's own code.</div>

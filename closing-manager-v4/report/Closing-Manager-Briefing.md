@@ -21,22 +21,24 @@ brought in-house.
 
 ---
 
-## 1. What this file actually is
+## 1. What it does
 
-An Excel workbook with a large automation ("macro") inside, built by Capgemini to
-run International Paper's **month-end close**. Think of it as a robot that sits at a
-user's desk and does the clicking:
+An Excel VBA macro that runs the month-end close end to end:
 
-- It **types into SAP for you** — it opens an SAP window you have already logged
-  into, and drives the screens exactly like a person would.
-- It **pulls the numbers out** as small text files, reads them back into the
-  spreadsheet, and posts the closing entries.
-- It **prints each report to PDF**, glues them into one document, and files it in a
-  folder on the PC.
+- **Drives SAP** via SAP GUI Scripting — runs the closing transactions (SE16 table
+  extracts, `ZGLRME`, `ZGE132`, `AA02`, `ZGLGWUL` and others), exports the data to flat
+  files, reads it back into the workbook and posts the closing entries.
+- **Creates the PDFs** — sets SAP's front-end printer to `PDFCreator` and prints each
+  report out to `\pdf\final\`.
+- **Merges the PDFs** — calls `GiosPSMC.exe` to concatenate the report set into one
+  pack, then files it as `<CC> Closure <MM> <YYYY>.pdf` under
+  `C:\_Files to Transfer\MONTH END CLOSE\`.
+- **Reads and writes configuration** over SOAP to a Capgemini SharePoint site — the
+  subject of this review.
 
-The important thing to understand: it is not connected to SAP through a proper
-interface. It is **remote-controlling the SAP screen**. That makes it powerful but
-fragile.
+One design point drives most of the fragility: SAP is driven **by screen element ID**,
+not through a BAPI or other interface. The macro is a screen-scraper, so it is
+sensitive to SAP UI changes, unexpected pop-ups and authorisation differences.
 
 ## 2. What it depends on
 
@@ -107,7 +109,39 @@ infrastructure.
 | **PDFCreator missing/renamed** | Previously crashed with a technical error; now reports clearly. | Improved in V4 |
 | **Off the network / no VPN** | Settings silently don't load; merge tool can't be fetched if not already local. | **Needs decision** |
 
-## 5. How we become fully self-sufficient
+## 5. Preflight Check — can users run it on its own?
+
+**Yes. It runs standalone, and it changes nothing.**
+
+`PreflightCheck` is a self-contained macro added in V4 specifically so users can verify
+their environment **before** committing to a close. It does not start the close, does
+not touch SAP beyond detecting whether a session exists, creates no folders, and writes
+no files. It is safe to run at any time, as often as needed.
+
+**How to run it:** press **Alt + F8**, select **PreflightCheck**, click **Run**. It
+appears in the macro list automatically. For everyday use, add a button on the `START`
+sheet (*Developer → Insert → Button*) and assign it to the same macro.
+
+It reports on all six preconditions in one dialog:
+
+```
+CLOSING MANAGER  -  PREFLIGHT CHECK
+--------------------------------------
+[OK] Workbook location is local.
+[OK] Working drive C:\ is present.
+[X]  SAP GUI not logged in, or GUI scripting is disabled.
+[OK] PDFCreator is installed.
+[~]  PDF merger will be copied from the network share on first run.
+[OK] Cost Centre = 1234.
+--------------------------------------
+NOT READY - resolve the [X] items above.
+```
+
+This turns every dependency in section 2 into a plain pass/fail before anyone starts a
+period close — including whether the network-hosted merge utility is still needed on
+that machine.
+
+## 6. How we become fully self-sufficient
 
 Each step stands on its own, so they can be done one at a time.
 
@@ -144,10 +178,7 @@ realistic path: take the merge tool, take the settings, point the macro at our o
 home for them, and make it complain loudly if anything is missing. After that, the
 only outside system left is SAP — exactly as it should be.
 
-## 6. Jargon, translated
-
-| Term | Meaning |
-|---|---|
+---|---|
 | Macro / VBA | Program code stored inside the Excel file itself; runs when someone opens the workbook and clicks a button. |
 | SAP GUI Scripting | An SAP feature letting a program press buttons in the SAP window automatically. Must be enabled on the PC and by SAP admins. |
 | SharePoint list | A simple table on an intranet site — like a shared spreadsheet programs can read and write. |

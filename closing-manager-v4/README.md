@@ -14,8 +14,11 @@ VBA modules that fix the defects found during the review.
 | Path | What it is |
 |------|------------|
 | **`Closing_Manager_IP_V4-CIO.xlsm`** | **The ready-to-use workbook** — the original with the V4 fixes baked in. |
-| **`report/Closing-Manager-Briefing.html`** | **Plain-language decision brief** — what the macro does, the two Capgemini-hosted dependencies, and how to become self-sufficient. Start here for non-technical readers. |
+| **`report/Closing-Manager-Briefing-DSSmith.pdf`** | **DS Smith-branded PDF of the decision brief** — the version to circulate. |
+| `report/Closing-Manager-Briefing.html` | Same brief as a web page (published artifact). |
 | `report/Closing-Manager-Briefing.md` | Same brief in Markdown. |
+| `report/Closing-Manager-Briefing-DSSmith.html` | Print source for the PDF (A4, brand palette). |
+| `report/make_pdf.py` | Renders the print source to PDF via headless Chromium. |
 | `report/Closing-Manager-Analysis.html` | The detailed technical report (open in a browser; also published as an artifact). |
 | `report/Closing-Manager-Analysis.md` | Same technical report in Markdown. |
 | `report/v4-changes.diff` | Unified diff of every V4 change vs the original modules. |
@@ -189,6 +192,20 @@ re-injected into an `.xlsm` outside Excel, so V4 ships as importable modules:
 5. **(Recommended)** add a button on the `START` sheet assigned to the macro
    **`PreflightCheck`**, and run it once to confirm the environment.
 6. Save as macro-enabled (`.xlsm`).
+
+### `PreflightCheck` runs standalone
+
+Users do **not** have to start a close to check their environment. `PreflightCheck`
+is a self-contained, read-only macro: it does not start the close, create folders,
+write files, or drive SAP (it only detects whether a session exists). It is safe to
+run at any time, as often as needed.
+
+- **Alt + F8** → select **PreflightCheck** → **Run** (it appears in the macro list
+  automatically — no setup needed), or
+- assign it to a button on the `START` sheet (*Developer → Insert → Button*).
+
+It reports pass/fail on all six preconditions in one dialog: workbook location,
+working drive, SAP session, PDFCreator, the PDF merger, and the cost centre.
 
 ---
 
