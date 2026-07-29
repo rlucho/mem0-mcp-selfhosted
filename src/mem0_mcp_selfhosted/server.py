@@ -157,6 +157,7 @@ def _create_server() -> FastMCP:
         "mem0",
         host=host,
         port=port,
+        json_response=bool_env("MEM0_JSON_RESPONSE", "true"),
         instructions=(
             "Memory tools for persistent cross-session memory. "
             "Use search_memories to find relevant context before starting work. "
