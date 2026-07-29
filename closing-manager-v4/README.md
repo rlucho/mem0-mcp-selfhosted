@@ -14,11 +14,12 @@ VBA modules that fix the defects found during the review.
 | Path | What it is |
 |------|------------|
 | **`Closing_Manager_IP_V4-CIO.xlsm`** | **The ready-to-use workbook** — the original with the V4 fixes baked in. |
-| **`report/Closing-Manager-Briefing-DSSmith.pdf`** | **DS Smith-branded PDF of the decision brief** — the version to circulate. |
+| **`report/Closing-Manager-Executive-Brief-DSSmith.pdf`** | **2-page DS Smith-branded executive brief** — the short version to circulate. |
+| `report/Closing-Manager-Briefing-DSSmith.pdf` | Full 6-page DS Smith-branded briefing (same findings, more detail). |
 | `report/Closing-Manager-Briefing.html` | Same brief as a web page (published artifact). |
 | `report/Closing-Manager-Briefing.md` | Same brief in Markdown. |
-| `report/Closing-Manager-Briefing-DSSmith.html` | Print source for the PDF (A4, brand palette). |
-| `report/make_pdf.py` | Renders the print source to PDF via headless Chromium. |
+| `report/Closing-Manager-*-DSSmith.html` | Print sources for the two PDFs (A4, brand palette). |
+| `report/make_pdf.py`, `report/make_pdf_exec.py` | Render the print sources to PDF via headless Chromium. |
 | `report/Closing-Manager-Analysis.html` | The detailed technical report (open in a browser; also published as an artifact). |
 | `report/Closing-Manager-Analysis.md` | Same technical report in Markdown. |
 | `report/v4-changes.diff` | Unified diff of every V4 change vs the original modules. |
