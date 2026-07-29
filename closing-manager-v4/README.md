@@ -113,7 +113,7 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 7 | **Name-clash loop fix** — `fN` now increments. | `Printing` | Infinite loop when a same-named report already exists. |
 | 8 | **Preflight Check** *(new)* — one-click `PreflightCheck` reports every dependency as pass/fail before a run, on its own `Preflight` sheet with a button. | `GlobalModule` | Discovering a missing dependency halfway through a close. |
 | 9 | **Endpoint constants** — the SharePoint URL, the merger UNC and the archive UNC are now named constants; the hard-coded call sites (incl. `Admin`) point at them. | `GlobalModule`, `Admin` | Hunting through code to re-point servers when a site/share moves. |
-| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables, 4 GR55 report groups and 4 ALV display layouts the close drives. | `GlobalModule` | Hitting an authorisation wall — or a missing layout — mid-close, after entries are posted. |
+| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables, 4 GR55 report groups and 4 ALV display layouts, plus an optional read-only company-code data probe. | `GlobalModule` | Hitting an authorisation wall — or a missing layout — mid-close, after entries are posted. |
 
 Functional close logic and the SAP command sequences are **unchanged** — the diff
 is intentionally small (`report/v4-changes.diff`).
@@ -234,11 +234,27 @@ selection-screen variants. For each one the sweep opens the transaction, confirm
 the selection-screen field still exists — a useful check in itself, since the macro
 drives that exact field — enters the layout, and reports SAP's reply verbatim.
 
-> **What it still cannot establish:** company-code / cost-centre level
-> authorisation. That only bites when a report runs against real data. Also note a
-> selection screen may answer a bare Enter with "fill in required fields"; because
-> the message is passed through verbatim you can see that is what happened rather
-> than mistaking it for a missing layout.
+**Company-code data access is checked too — behind a second, separate consent.**
+Reaching a transaction is not the same as being allowed to read a given company
+code's data, and that only surfaces once a report actually selects. So the sweep
+offers a final probe: it runs **ZGLRME** for the configured company code and
+period with the transmit flag (`P_XMIT`) **cleared** — it selects and displays,
+and posts nothing.
+
+Two transactions are deliberately **never** executed, because they write:
+
+| Excluded | Why |
+|---|---|
+| `SM35` | processes batch-input sessions — that is how the close posts |
+| `ZGLGWUL` | carries a `P_POST` checkbox the macro ticks to post |
+
+> **Note on `config!B2`:** it is the **Company Code**, not a cost centre — it is
+> typed into `S_BUKRS-LOW`, `P_BUKRS`, `SBUKRS`, `P_CCODE` and `_COCODES-LOW`,
+> which are all company-code fields. The preflight labels it correctly.
+
+> A selection screen may answer a bare Enter with "fill in required fields";
+> because SAP's message is passed through verbatim you can see that is what
+> happened rather than mistaking it for a missing layout.
 
 ---
 

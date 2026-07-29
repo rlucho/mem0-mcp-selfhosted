@@ -480,7 +480,7 @@ End Sub
 Public Sub PreflightCheck()
     Dim fso As Object, msg As String, okAll As Boolean
     Dim g As Object, eng As Object, sapOK As Boolean
-    Dim sapSess As Object, sapBlocked As Boolean
+    Dim sapSess As Object, sapBlocked As Boolean, runData As Boolean
     Dim cc As String, dst As String
     Set fso = CreateObject("Scripting.FileSystemObject")
     okAll = True
@@ -552,10 +552,10 @@ Public Sub PreflightCheck()
     cc = Trim$(CStr(Sheets("config").Range("B2").Value))
     On Error GoTo 0
     If cc = "" Then
-        msg = msg & "[X] config!B2 (Cost Centre) is empty." & vbCrLf
+        msg = msg & "[X] config!B2 (Company Code) is empty." & vbCrLf
         okAll = False
     Else
-        msg = msg & "[OK] Cost Centre = " & cc & "." & vbCrLf
+        msg = msg & "[OK] Company Code = " & cc & "." & vbCrLf
     End If
 
     ' 7) SAP authorisations (optional - it navigates SAP, so it asks first) -----
@@ -566,10 +566,17 @@ Public Sub PreflightCheck()
                   "  - " & CM_CountList(CM_SAP_TABLES) & " tables read through SE16" & vbCrLf & _
                   "  - " & CM_CountList(CM_SAP_RGROUPS) & " GR55 report groups" & vbCrLf & _
                   "  - " & CM_CountLayouts() & " report layouts (/default, /closing, /arek2)" & vbCrLf & vbCrLf & _
-                  "It runs no report and posts nothing, but it does move your SAP" & vbCrLf & _
-                  "session between screens and can take up to a minute.", _
+                  "This part runs no report and posts nothing, but it does move your" & vbCrLf & _
+                  "SAP session between screens and can take up to a minute.", _
                   vbYesNo + vbQuestion, "Closing Manager - Preflight") = vbYes Then
-            msg = msg & CM_SapAuthReport(sapSess, sapBlocked)
+            'second, separate consent: this one actually executes a report
+            runData = (MsgBox("Also test access to company code " & cc & "'s data?" & vbCrLf & vbCrLf & _
+                       "This runs ZGLRME for " & Monthx & "/" & Yearx & " with the transmit flag" & vbCrLf & _
+                       "cleared - it only selects and displays, it posts nothing." & vbCrLf & _
+                       "It is the only way to prove company-code level access, but" & vbCrLf & _
+                       "it does read live data and may take a moment.", _
+                       vbYesNo + vbQuestion, "Closing Manager - Preflight") = vbYes)
+            msg = msg & CM_SapAuthReport(sapSess, sapBlocked, runData)
             If sapBlocked Then okAll = False
         Else
             msg = msg & "[~] SAP authorisations not tested (skipped)." & vbCrLf
@@ -745,6 +752,48 @@ Private Function CM_CheckLayout(ByVal sess As Object, ByVal tcode As String, _
 End Function
 
 
+'--- data-level (company-code) authorisation --------------------------------
+' The object checks above prove the user can REACH each transaction. They do not
+' prove the user may read a given company code's data - that is a separate
+' authorisation and it only surfaces once a report actually selects data.
+'
+' ZGLRME is used as the probe because it is a pure reporting transaction and the
+' macro's own read path clears P_XMIT, so nothing is transmitted and nothing is
+' posted. Deliberately NOT used: ZGLGWUL (carries a P_POST checkbox that writes)
+' and SM35 (processes batch-input sessions, i.e. it posts).
+Private Function CM_CheckDataAuth(ByVal sess As Object, ByVal cc As String, _
+                                  ByVal mth As String, ByVal yr As String) As String
+    On Error Resume Next
+    CM_ClearPopups sess
+    sess.findById("wnd[0]/tbar[0]/okcd").Text = "/nzglrme"
+    sess.findById("wnd[0]").sendVKey 0
+    If Err.Number <> 0 Then
+        Err.Clear: On Error GoTo 0
+        CM_CheckDataAuth = "?|could not open ZGLRME"
+        Exit Function
+    End If
+
+    sess.findById("wnd[0]/usr/chkP_XMIT").Selected = False    'read only - no transmit
+    sess.findById("wnd[0]/usr/ctxtS_BUKRS-LOW").Text = cc
+    sess.findById("wnd[0]/usr/txtP_MONAT").Text = mth
+    sess.findById("wnd[0]/usr/txtP_GJAHR").Text = yr
+    If Err.Number <> 0 Then
+        Err.Clear: On Error GoTo 0
+        CM_CheckDataAuth = "?|ZGLRME selection screen not as expected"
+        Exit Function
+    End If
+
+    sess.findById("wnd[0]").sendVKey 8                        'execute (select only)
+    If Err.Number <> 0 Then
+        Err.Clear: On Error GoTo 0
+        CM_CheckDataAuth = "?|could not execute ZGLRME"
+        Exit Function
+    End If
+    On Error GoTo 0
+    CM_CheckDataAuth = CM_Verdict(sess)
+End Function
+
+
 '--- format one result line and keep the tally ------------------------------
 Private Function CM_Line(ByVal nm As String, ByVal res As String, _
                          ByRef nBad As Long) As String
@@ -764,8 +813,10 @@ End Function
 
 
 Public Function CM_SapAuthReport(ByVal sess As Object, _
-                                 ByRef anyBlocked As Boolean) As String
+                                 ByRef anyBlocked As Boolean, _
+                                 ByVal runData As Boolean) As String
     Dim out As String, arr As Variant, prt As Variant, i As Long, nBad As Long
+    Dim cc As String
     anyBlocked = False
     nBad = 0
 
@@ -798,6 +849,19 @@ Public Function CM_SapAuthReport(ByVal sess As Object, _
                             CM_CheckLayout(sess, CStr(prt(0)), CStr(prt(1)), CStr(prt(2))), nBad)
     Next i
 
+    If runData Then
+        On Error Resume Next
+        cc = Trim$(CStr(Sheets("config").Range("B2").Value))
+        On Error GoTo 0
+        out = out & "   Company-code data access (ZGLRME, read-only):" & vbCrLf
+        If cc = "" Then
+            out = out & "     [~]  skipped - config!B2 (Company Code) is empty" & vbCrLf
+        Else
+            out = out & CM_Line("company code " & cc & ", period " & Monthx & "/" & Yearx, _
+                                CM_CheckDataAuth(sess, cc, CStr(Monthx), CStr(Yearx)), nBad)
+        End If
+    End If
+
     'leave SAP on a neutral screen
     On Error Resume Next
     CM_ClearPopups sess
@@ -813,8 +877,9 @@ Public Function CM_SapAuthReport(ByVal sess As Object, _
     Else
         out = out & "   => all SAP objects reachable." & vbCrLf
     End If
-    out = out & "   Note: company-code / cost-centre level authorisation is not" & vbCrLf & _
-                "   covered - it only bites when a report runs against real data." & vbCrLf
+    If Not runData Then
+        out = out & "   Note: company-code data access was not tested (skipped)." & vbCrLf
+    End If
 
     CM_SapAuthReport = out
 End Function
