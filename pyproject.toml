@@ -12,7 +12,7 @@ authors = [
     { name = "elvismdev" },
 ]
 dependencies = [
-    "mcp[cli]>=1.23.0",
+    "mcp[cli]>=1.23.0,<2",
     "mem0ai[graph,llms]>=1.0.3",
     "anthropic>=0.77.0",
     "neo4j>=5.23.1",

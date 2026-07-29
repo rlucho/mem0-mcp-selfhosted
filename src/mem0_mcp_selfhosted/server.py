@@ -157,6 +157,7 @@ def _create_server() -> FastMCP:
         "mem0",
         host=host,
         port=port,
+        json_response=bool_env("MEM0_JSON_RESPONSE", "true"),
         instructions=(
             "Memory tools for persistent cross-session memory. "
             "Use search_memories to find relevant context before starting work. "
@@ -243,9 +244,12 @@ def _register_tools(mcp: FastMCP) -> None:
         if filters:
             search_filters.update(filters)
 
+        # mem0ai's search()/get_all() take ``top_k``, not ``limit``. Both are
+        # keyword-only with a **kwargs tail, so passing ``limit`` is silently
+        # swallowed and the caller always gets the top_k=20 default.
         kwargs: dict[str, Any] = {"query": query, "filters": search_filters}
         if limit is not None:
-            kwargs["limit"] = limit
+            kwargs["top_k"] = limit
         if threshold is not None:
             kwargs["threshold"] = threshold
         if rerank is not None:
@@ -276,7 +280,7 @@ def _register_tools(mcp: FastMCP) -> None:
 
         kwargs: dict[str, Any] = {"filters": get_filters}
         if limit is not None:
-            kwargs["limit"] = limit
+            kwargs["top_k"] = limit  # see search_memories: mem0ai takes top_k
 
         mem = _ensure_memory()
         if mem is None:
