@@ -9,8 +9,8 @@ footer = """
 <div style="width:100%;font-size:6.6pt;font-family:'Liberation Sans',Arial,sans-serif;
             color:#93999E;padding:0 13mm;display:flex;justify-content:space-between;
             border-top:0.5pt solid #DEE1E3;padding-top:2mm;margin:0 0 3mm 0;">
-  <span style="color:#4D4D4D;">DS Smith &nbsp;·&nbsp; Record to Report &nbsp;·&nbsp; Closing Manager — executive brief</span>
-  <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+  <span style="color:#4D4D4D;">DS Smith &nbsp;·&nbsp; Record to Report &nbsp;·&nbsp; Continuous Improvement Team</span>
+  <span>Closing Manager — executive brief &nbsp;·&nbsp; Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
 </div>"""
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")

@@ -1,7 +1,9 @@
 <title>Closing Manager — Executive Brief</title>
 <style>
-  /* DS Smith palette: red #C7352D · yellow #E7AE40 · grey #4D4D4D
-     (public brand-colour references — swap for official guideline values) */
+  /* ============ DS Smith palette ============
+     Taken from the official DS Smith logo asset
+     (dssmith.com/Static/dist/gfx/ds-logo-color-oneline.svg):
+     red #C7352D/#C9382F · amber #E7AE40/#E7B041 · grey #4D4D4D      */
   :root{
     --brand:#C7352D; --brand-dk:#9E2A23; --brand-wash:#FBEEEC;
     --amber:#E7AE40; --amber-wash:#FDF5E7; --amber-ink:#8A6416;
@@ -23,19 +25,20 @@
   code{font-family:var(--mono);font-size:7.9pt;background:var(--fill);color:var(--ink);
        padding:.04em .28em;border:1px solid var(--line);border-radius:2pt;word-break:break-word}
 
-  /* ---- masthead ---- */
-  .band{background:var(--grey);color:#fff;padding:6mm 7mm 5.5mm;margin:0 0 4mm;
-        border-bottom:3pt solid var(--brand);border-radius:2pt}
-  .bl{display:flex;align-items:center;gap:7pt;margin-bottom:5mm}
-  .mk{width:5.5pt;height:15pt;background:var(--brand);border-radius:1pt;flex:0 0 auto}
-  .mk.y{background:var(--amber);height:10.5pt}
-  .wm{font-size:12pt;font-weight:700;color:#fff;letter-spacing:.02em}
-  .unit{margin-left:auto;font-size:6.6pt;letter-spacing:.17em;text-transform:uppercase;
-        color:rgba(255,255,255,.7);text-align:right;line-height:1.45}
-  .band h1{font-size:17.5pt;line-height:1.13;letter-spacing:-.02em;font-weight:700;
-           color:#fff;margin:0 0 2.5mm;max-width:26em}
-  .band .dek{font-family:var(--serif);font-size:9.8pt;line-height:1.4;
-             color:rgba(255,255,255,.9);margin:0;max-width:46em}
+
+  /* ---- masthead (official DS Smith logo, light ground) ---- */
+  .mast{border-top:3.5pt solid var(--brand);background:var(--paper);
+        padding:0 0 4mm;margin:0 0 4mm;border-bottom:1px solid var(--line)}
+  .lock{display:flex;align-items:flex-end;gap:6mm;padding-bottom:2.6mm;
+        margin-bottom:3.4mm;border-bottom:1px solid var(--line);padding-top:4mm}
+  .lock .logo{width:38mm;flex:0 0 auto}
+  .lock .logo svg{width:100%;height:auto;display:block}
+  .unit{margin-left:auto;font-size:6.7pt;letter-spacing:.17em;text-transform:uppercase;
+        color:var(--mute);text-align:right;line-height:1.5}
+  .mast h1{font-size:17.5pt;line-height:1.12;letter-spacing:-.022em;font-weight:700;
+           color:var(--ink);margin:0 0 2.4mm;max-width:27em}
+  .mast .dek{font-family:var(--serif);font-size:9.8pt;line-height:1.42;color:var(--mute);
+             margin:0;max-width:46em}
 
   /* ---- answer + score ---- */
   .row{display:flex;gap:4mm;margin-bottom:4.5mm;align-items:stretch}
@@ -122,11 +125,45 @@
          color:var(--faint);font-size:6.9pt;line-height:1.42}
 </style>
 
-<div class="band">
-  <div class="bl">
-    <span class="mk"></span><span class="mk y"></span>
-    <span class="wm">DS Smith</span>
-    <span class="unit">Record&nbsp;to&nbsp;Report<br>Finance Systems</span>
+<div class="mast">
+  <div class="lock">
+    <div class="logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 24">
+    <defs>
+        <radialGradient id="xrgaqtp016a" cx=".51%" cy="-2.56%" r="193.755%" fx=".51%" fy="-2.56%" gradientTransform="matrix(.56055 0 0 1 .002 0)">
+            <stop offset="23.84%" stop-color="#E7B041"/>
+            <stop offset="88.17%" stop-color="#C7352D"/>
+        </radialGradient>
+        <radialGradient id="xa5ni1jwclc" cx="92.883%" cy="1.077%" r="124.216%" fx="92.883%" fy="1.077%" gradientTransform="matrix(.76206 0 0 1 .221 0)">
+            <stop offset="23.84%" stop-color="#E7AE40"/>
+            <stop offset="85.17%" stop-color="#C9382F"/>
+        </radialGradient>
+        <linearGradient id="x96jh3ffdyb" x1="96.633%" x2="-4.001%" y1="13.694%" y2="79.024%">
+            <stop offset="10%" stop-color="#C9382F"/>
+            <stop offset="19.68%" stop-color="#D15734"/>
+            <stop offset="47.53%" stop-color="#E7AE40"/>
+            <stop offset="90%" stop-color="#C9382F"/>
+        </linearGradient>
+    </defs>
+    <g fill="none" fill-rule="evenodd">
+        <g>
+            <g>
+                <g>
+                    <g fill="#5B5C5C">
+                        <g>
+                            <path d="M5.202 3.96c3.937 0 5.543 1.512 5.543 5.213v2.866c0 3.706-1.659 5.286-5.543 5.286H2.826V3.96h2.376zm8.134 8.08V9.172c0-4.931-2.745-7.539-7.941-7.539H.256v17.993h5.139c5.268 0 7.941-2.556 7.941-7.588zM18.701 10.745l3.017 1.35c1.938.88 2.294 1.662 2.294 2.885 0 1.868-1.057 2.7-3.425 2.7-2.176 0-3.908-.176-5.021-.309l-.214-.024v2.069l.143.036c.701.183 3 .506 5.092.506 3.897 0 6.043-1.768 6.043-4.978 0-2.427-1.095-3.9-3.781-5.084l-3.042-1.325c-1.914-.845-2.262-1.594-2.262-2.763 0-1.569.966-2.181 3.445-2.181 1.832 0 3.954.214 4.782.307l.213.026V1.866l-.145-.037c-.65-.168-2.76-.477-4.92-.477-4.02 0-5.975 1.456-5.975 4.456 0 2.322 1.09 3.756 3.756 4.937M39.454 9.898l-3.041-1.324c-1.916-.844-2.264-1.595-2.264-2.764 0-1.57.966-2.18 3.447-2.18 1.892 0 4.136.234 4.78.306l.215.023V1.87l-.145-.037c-.616-.164-2.764-.483-4.924-.483-4.016 0-5.97 1.459-5.97 4.459 0 2.33 1.088 3.76 3.753 4.937l3.019 1.35c1.936.882 2.288 1.662 2.288 2.884 0 1.894-1.022 2.702-3.423 2.702-2.169 0-3.901-.177-5.016-.31l-.216-.024v2.072l.148.035c.7.183 3.002.501 5.084.501 3.953 0 6.044-1.72 6.044-4.976 0-2.427-1.093-3.9-3.779-5.083M58.329 5.877c-1.27 0-2.573.433-3.985 1.324-.6-.891-1.563-1.324-2.934-1.324-1.558 0-2.838.597-3.71 1.176v-.845h-2.5v13.42h2.5V9.141c.884-.494 2.125-1.056 3.208-1.056 1.597 0 1.597.847 1.597 2.702v8.84h2.52v-8.84c0-.525 0-1.115-.079-1.701 1.1-.62 2.28-1.001 3.097-1.001 1.76 0 1.76.847 1.76 2.702v8.84h2.521v-8.84c0-1.957 0-4.911-3.995-4.911M65.06 19.626L67.584 19.626 67.584 6.209 65.06 6.209zM74.49 2.82h-2.525v3.388h-2.641v1.96l2.64.188v8.092c0 2.56.929 3.51 3.428 3.51 1.04 0 2.109-.245 2.465-.365l.13-.044v-1.822l-.214.027c-.418.048-1.435.114-2.148.114-1.062 0-1.134-.1-1.134-1.512V8.371h3.496V6.208H74.49V2.82zM86.344 5.877c-1.373 0-2.738.32-4.066.948V.9h-2.503v18.728h2.503V8.964c.908-.422 2.31-.855 3.638-.855 1.544 0 2.281.461 2.281 3.079v8.44h2.526v-8.51c0-3.528-1.435-5.241-4.379-5.241" transform="translate(-16 -72) translate(-1 57) translate(17 15) translate(28.333) translate(0 1.333)"/>
+                        </g>
+                    </g>
+                    <g fill-rule="nonzero">
+                        <path fill="url(#xrgaqtp016a)" d="M12.135 0H0c0 2.313.59 4.483 1.634 6.353 2.103 3.802 6.022 6.353 10.516 6.353s8.413-2.55 10.517-6.353C20.548 2.55 16.629 0 12.135 0z" transform="translate(-16 -72) translate(-1 57) translate(17 15)"/>
+                        <path fill="url(#x96jh3ffdyb)" d="M12.71 12.847c5.448 0 8.534-2.819 9.957-7.2-2.104 3.677-6.023 6.143-10.517 6.143s-8.413 2.467-10.516 6.143C.605 19.726.015 21.794 0 24c.318-1.808 1.316-3.508 2.179-5.01 2.118-3.676 6.037-6.143 10.531-6.143z" transform="translate(-16 -72) translate(-1 57) translate(17 15)"/>
+                        <path fill="url(#xa5ni1jwclc)" d="M22.658 5.998c-.06-.122-.135-.244-.195-.35-1.41 4.362-4.472 7.17-9.874 7.17-4.456 0-8.343 2.456-10.428 6.117C1.305 20.43.315 22.124 0 23.924V24h12.034c4.457 0 8.343-2.456 10.429-6.118 1.02-1.8 1.62-3.89 1.62-6.117 0-2.09-.51-4.058-1.425-5.767z" transform="translate(-16 -72) translate(-1 57) translate(17 15)"/>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg></div>
+    <span class="unit">Record&nbsp;to&nbsp;Report<br>Continuous&nbsp;Improvement&nbsp;Team</span>
   </div>
   <h1>Closing Manager: what it depends on, and what we need to take over</h1>
   <p class="dek">The month-end close macro works, but still reaches two Capgemini-hosted systems. Executive summary of the dependencies, the risks, and the route to running it ourselves.</p>
@@ -212,5 +249,5 @@
 </div>
 
 <footer>
-  Prepared from a full static review of the workbook's VBA source. No macro was executed and no live system was contacted. Addresses and list names are those written into the workbook's own code. Contains no credentials or accounting data.
+  Prepared by the Continuous Improvement Team from a full static review of the workbook's VBA source. No macro was executed and no live system was contacted. Addresses and list names are those written into the workbook's own code. Contains no credentials or accounting data.
 </footer>
