@@ -113,7 +113,7 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 7 | **Name-clash loop fix** — `fN` now increments. | `Printing` | Infinite loop when a same-named report already exists. |
 | 8 | **Preflight Check** *(new)* — one-click `PreflightCheck` reports every dependency as pass/fail before a run, on its own `Preflight` sheet with a button. | `GlobalModule` | Discovering a missing dependency halfway through a close. |
 | 9 | **Endpoint constants** — the SharePoint URL, the merger UNC and the archive UNC are now named constants; the hard-coded call sites (incl. `Admin`) point at them. | `GlobalModule`, `Admin` | Hunting through code to re-point servers when a site/share moves. |
-| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables and 4 GR55 report groups the close drives. | `GlobalModule` | Hitting an authorisation wall mid-close, after entries are posted. |
+| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables, 4 GR55 report groups and 4 ALV display layouts the close drives. | `GlobalModule` | Hitting an authorisation wall — or a missing layout — mid-close, after entries are posted. |
 
 Functional close logic and the SAP command sequences are **unchanged** — the diff
 is intentionally small (`report/v4-changes.diff`).
@@ -216,6 +216,7 @@ detected, the check offers to test everything the close drives in SAP:
 | Transactions | `SE16` `GR55` `SM35` `ZGE132` `ZGLRME` `ZGR215` `ZGLGWUL` `ZGE1174` |
 | Tables (via SE16) | `T001` `T001B` `T001Z` `SKB1` `ZCCOD` `ZGXMIT` |
 | GR55 report groups | `AA02` `EIS4` `GIS4` `GTB1` |
+| Report layouts (the `/…` variants) | `ZGLRME` → `/default` (`P_VARID`), `/closing` + `/default` (`P_VARIE`); `ZGR215` → `/arek2` (`P_ALV`) |
 
 It navigates to each object and reads the status bar, reporting any error message
 **verbatim** rather than matching keywords — so it works whatever the SAP logon
@@ -227,10 +228,17 @@ Keep the three lists in `GlobalModule` (`CM_SAP_TCODES`, `CM_SAP_TABLES`,
 `CM_SAP_RGROUPS`) in step with the code if a transaction, table or report group is
 ever added.
 
-> **What it cannot establish:** report variants (`/default`, `/closing`) and
-> company-code / cost-centre level authorisation. Those only bite when a report
-> actually runs against real data, so they can't be verified without executing the
-> report. The check says so in its own output rather than implying full coverage.
+**Layouts are checked too.** The `/default`, `/closing` and `/arek2` values are
+**ALV display layouts** (typed into `P_VARID` / `P_VARIE` / `P_ALV`), not
+selection-screen variants. For each one the sweep opens the transaction, confirms
+the selection-screen field still exists — a useful check in itself, since the macro
+drives that exact field — enters the layout, and reports SAP's reply verbatim.
+
+> **What it still cannot establish:** company-code / cost-centre level
+> authorisation. That only bites when a report runs against real data. Also note a
+> selection screen may answer a bare Enter with "fill in required fields"; because
+> the message is passed through verbatim you can see that is what happened rather
+> than mistaking it for a missing layout.
 
 ---
 

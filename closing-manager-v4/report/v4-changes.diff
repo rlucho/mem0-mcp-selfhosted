@@ -33,8 +33,8 @@
  '
  'Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
 --- vba-original/GlobalModule.bas	2026-07-22 15:02:30.551530530 +0000
-+++ vba-v4/GlobalModule.bas	2026-07-29 08:11:27.203349590 +0000
-@@ -1,28 +1,77 @@
++++ vba-v4/GlobalModule.bas	2026-07-29 08:23:24.825885225 +0000
+@@ -1,28 +1,85 @@
 +Attribute VB_Name = "GlobalModule"
  Global FPath As String, FTemp As String, Fmerger As String, Fmerged As String, Fprinted As String, FFinal As String
 +Global FShared As String, DiscN As String   'V4-CIO: promoted to module scope so every routine shares one working drive
@@ -88,6 +88,14 @@
 +Public Const CM_SAP_TCODES  As String = "SE16,GR55,SM35,ZGE132,ZGLRME,ZGR215,ZGLGWUL,ZGE1174"
 +Public Const CM_SAP_TABLES  As String = "T001,T001B,T001Z,SKB1,ZCCOD,ZGXMIT"
 +Public Const CM_SAP_RGROUPS As String = "AA02,EIS4,GIS4,GTB1"
++
++' The "/..." display layouts the close types into selection-screen fields.
++' Format:  tcode | selection-screen field | layout name   (entries separated by ;)
++' These are ALV display layouts (P_VARID / P_VARIE / P_ALV), not selection
++' variants - the macro types them in and expects them to already exist.
++Public Const CM_SAP_LAYOUTS As String = _
++    "ZGLRME|P_VARID|/default;ZGLRME|P_VARIE|/closing;" & _
++    "ZGLRME|P_VARIE|/default;ZGR215|P_ALV|/arek2"
 +'----------------------------------------------------------------------------
 +
  Sub CreatePaths()
@@ -120,7 +128,7 @@
  
  End Sub
  Sub CreateVariants()
-@@ -172,7 +221,7 @@
+@@ -172,7 +229,7 @@
  Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
  xmlDoc.async = False
  
@@ -129,7 +137,7 @@
  List = "CCCrossList"
  
  request = "<?xml version='1.0' encoding='utf-8'?>" & _
-@@ -220,7 +269,7 @@
+@@ -220,7 +277,7 @@
  Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
  xmlDoc.async = False
  
@@ -138,7 +146,7 @@
  List = "ProfitCenters"
  
  w = 2
-@@ -260,7 +309,7 @@
+@@ -260,7 +317,7 @@
  Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
  xmlDoc.async = False
  
@@ -147,7 +155,7 @@
  
  request = "<?xml version='1.0' encoding='utf-8'?>" & _
                  "<soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'" & _
-@@ -287,7 +336,7 @@
+@@ -287,7 +344,7 @@
  Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
  xmlDoc.async = False
  
@@ -156,7 +164,7 @@
  
  request = "<?xml version='1.0' encoding='utf-8'?>" & _
                  "<soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'" & _
-@@ -337,3 +386,370 @@
+@@ -337,3 +394,427 @@
  Loop
  
  End Sub
@@ -330,7 +338,8 @@
 +                  "Also test the SAP authorisations this close needs?" & vbCrLf & _
 +                  "  - " & CM_CountList(CM_SAP_TCODES) & " transactions" & vbCrLf & _
 +                  "  - " & CM_CountList(CM_SAP_TABLES) & " tables read through SE16" & vbCrLf & _
-+                  "  - " & CM_CountList(CM_SAP_RGROUPS) & " GR55 report groups" & vbCrLf & vbCrLf & _
++                  "  - " & CM_CountList(CM_SAP_RGROUPS) & " GR55 report groups" & vbCrLf & _
++                  "  - " & CM_CountLayouts() & " report layouts (/default, /closing, /arek2)" & vbCrLf & vbCrLf & _
 +                  "It runs no report and posts nothing, but it does move your SAP" & vbCrLf & _
 +                  "session between screens and can take up to a minute.", _
 +                  vbYesNo + vbQuestion, "Closing Manager - Preflight") = vbYes Then
@@ -366,10 +375,13 @@
 +' move the SAP session, which is why PreflightCheck asks before running it.
 +' The session is returned to a blank screen (/n) afterwards.
 +'
-+' NOT covered (cannot be established without actually running a report):
-+'   * report variants such as /default and /closing
-+'   * company-code / cost-centre level authorisation, which only bites when a
-+'     report runs against real data
++' Display layouts (the "/default", "/closing", "/arek2" values the macro types
++' into P_VARID / P_VARIE / P_ALV) ARE checked: the sweep opens the transaction,
++' confirms the selection-screen field still exists, enters the layout and reads
++' SAP's reply. Note these are ALV display layouts rather than selection variants.
++'
++' NOT covered: company-code / cost-centre level authorisation, which only bites
++' when a report actually runs against real data.
 +'============================================================================
 +' (the object lists themselves live in the CONFIGURATION block at the top of
 +'  this module, because VBA requires module Consts before the first procedure)
@@ -377,6 +389,11 @@
 +
 +Private Function CM_CountList(ByVal csv As String) As Long
 +    CM_CountList = UBound(Split(csv, ",")) - LBound(Split(csv, ",")) + 1
++End Function
++
++
++Private Function CM_CountLayouts() As Long
++    CM_CountLayouts = UBound(Split(CM_SAP_LAYOUTS, ";")) - LBound(Split(CM_SAP_LAYOUTS, ";")) + 1
 +End Function
 +
 +
@@ -462,6 +479,46 @@
 +End Function
 +
 +
++'--- is a "/..." display layout present, and is the field still on the screen? -
++' Two things are established here:
++'   1. the selection-screen field the macro drives still exists (definitive -
++'      if it has moved or been renamed the close would fail on that line)
++'   2. SAP accepts the layout name when it is entered
++' Any SAP message is passed through verbatim, so a "fill in required fields"
++' reply is visible as such rather than being mistaken for a missing layout.
++Private Function CM_CheckLayout(ByVal sess As Object, ByVal tcode As String, _
++                                ByVal fld As String, ByVal lay As String) As String
++    Dim o As Object
++    On Error Resume Next
++    CM_ClearPopups sess
++    sess.findById("wnd[0]/tbar[0]/okcd").Text = "/n" & tcode
++    sess.findById("wnd[0]").sendVKey 0
++    If Err.Number <> 0 Then
++        Err.Clear: On Error GoTo 0
++        CM_CheckLayout = "?|could not open " & tcode
++        Exit Function
++    End If
++
++    Set o = Nothing
++    Set o = sess.findById("wnd[0]/usr/ctxt" & fld)
++    If o Is Nothing Or Err.Number <> 0 Then
++        Err.Clear: On Error GoTo 0
++        CM_CheckLayout = "X|field " & fld & " is not on the " & tcode & " screen"
++        Exit Function
++    End If
++
++    o.Text = lay
++    sess.findById("wnd[0]").sendVKey 0
++    If Err.Number <> 0 Then
++        Err.Clear: On Error GoTo 0
++        CM_CheckLayout = "?|could not enter the layout on " & tcode
++        Exit Function
++    End If
++    On Error GoTo 0
++    CM_CheckLayout = CM_Verdict(sess)
++End Function
++
++
 +'--- format one result line and keep the tally ------------------------------
 +Private Function CM_Line(ByVal nm As String, ByVal res As String, _
 +                         ByRef nBad As Long) As String
@@ -482,7 +539,7 @@
 +
 +Public Function CM_SapAuthReport(ByVal sess As Object, _
 +                                 ByRef anyBlocked As Boolean) As String
-+    Dim out As String, arr As Variant, i As Long, nBad As Long
++    Dim out As String, arr As Variant, prt As Variant, i As Long, nBad As Long
 +    anyBlocked = False
 +    nBad = 0
 +
@@ -507,6 +564,14 @@
 +        out = out & CM_Line(arr(i), CM_CheckReportGroup(sess, arr(i)), nBad)
 +    Next i
 +
++    out = out & "   Report layouts (the ""/..."" variants):" & vbCrLf
++    arr = Split(CM_SAP_LAYOUTS, ";")
++    For i = LBound(arr) To UBound(arr)
++        prt = Split(arr(i), "|")
++        out = out & CM_Line(prt(0) & " " & prt(2) & " (" & prt(1) & ")", _
++                            CM_CheckLayout(sess, CStr(prt(0)), CStr(prt(1)), CStr(prt(2))), nBad)
++    Next i
++
 +    'leave SAP on a neutral screen
 +    On Error Resume Next
 +    CM_ClearPopups sess
@@ -522,8 +587,8 @@
 +    Else
 +        out = out & "   => all SAP objects reachable." & vbCrLf
 +    End If
-+    out = out & "   Note: report variants and company-code level authorisation" & vbCrLf & _
-+                "   only show up when a report actually runs." & vbCrLf
++    out = out & "   Note: company-code / cost-centre level authorisation is not" & vbCrLf & _
++                "   covered - it only bites when a report runs against real data." & vbCrLf
 +
 +    CM_SapAuthReport = out
 +End Function
