@@ -111,7 +111,8 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 5 | **Bounded merge waits** — the two PDF wait loops get a safety cap. | `Printing` | Excel hanging forever if SAP/PDFCreator stalls. |
 | 6 | **Merger fast-fail** — `CombinePDF` verifies `GiosPSMC.exe` before shelling out. | `Printing` | Silent no-output when the tool is missing. |
 | 7 | **Name-clash loop fix** — `fN` now increments. | `Printing` | Infinite loop when a same-named report already exists. |
-| 8 | **Preflight Check** *(new)* — one-click `PreflightCheck` reports every dependency as pass/fail before a run. | `GlobalModule` | Discovering a missing dependency halfway through a close. |
+| 8 | **Preflight Check** *(new)* — one-click `PreflightCheck` reports every dependency as pass/fail before a run, on its own `Preflight` sheet with a button. | `GlobalModule` | Discovering a missing dependency halfway through a close. |
+| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables and 4 GR55 report groups the close drives. | `GlobalModule` | Hitting an authorisation wall mid-close, after entries are posted. |
 | 9 | **Endpoint constants** — the SharePoint URL, the merger UNC and the archive UNC are now named constants; the hard-coded call sites (incl. `Admin`) point at them. | `GlobalModule`, `Admin` | Hunting through code to re-point servers when a site/share moves. |
 
 Functional close logic and the SAP command sequences are **unchanged** — the diff
@@ -194,19 +195,42 @@ re-injected into an `.xlsm` outside Excel, so V4 ships as importable modules:
    **`PreflightCheck`**, and run it once to confirm the environment.
 6. Save as macro-enabled (`.xlsm`).
 
-### `PreflightCheck` runs standalone
+### `PreflightCheck` — dedicated sheet, button, and standalone run
 
-Users do **not** have to start a close to check their environment. `PreflightCheck`
-is a self-contained, read-only macro: it does not start the close, create folders,
-write files, or drive SAP (it only detects whether a session exists). It is safe to
-run at any time, as often as needed.
+The built workbook has a **`Preflight` sheet** (second tab) with a **Run Preflight
+Check** button wired to the macro. The macro name is unchanged — the button simply
+calls `[0]!PreflightCheck`, the same convention the workbook already uses for
+`[0]!UpdateData` on the START sheet.
 
-- **Alt + F8** → select **PreflightCheck** → **Run** (it appears in the macro list
-  automatically — no setup needed), or
-- assign it to a button on the `START` sheet (*Developer → Insert → Button*).
+Users can also run it without the sheet: **Alt + F8** → **PreflightCheck** → **Run**.
 
-It reports pass/fail on all six preconditions in one dialog: workbook location,
-working drive, SAP session, PDFCreator, the PDF merger, and the cost centre.
+**Part 1 — environment (instant, read-only).** Does not start the close, create
+folders or write files. Reports pass/fail on: workbook location, working drive,
+SAP session, PDFCreator, the PDF merger, and the cost centre.
+
+**Part 2 — SAP authorisations (optional, asks first).** If a SAP session is
+detected, the check offers to test everything the close drives in SAP:
+
+| Checked | Objects |
+|---|---|
+| Transactions | `SE16` `GR55` `SM35` `ZGE132` `ZGLRME` `ZGR215` `ZGLGWUL` `ZGE1174` |
+| Tables (via SE16) | `T001` `T001B` `T001Z` `SKB1` `ZCCOD` `ZGXMIT` |
+| GR55 report groups | `AA02` `EIS4` `GIS4` `GTB1` |
+
+It navigates to each object and reads the status bar, reporting any error message
+**verbatim** rather than matching keywords — so it works whatever the SAP logon
+language is. It runs no report and posts nothing, but it *does* move the SAP session
+between screens (and returns it to `/n` afterwards), which is why it asks first
+rather than running automatically with the environment checks.
+
+Keep the three lists in `GlobalModule` (`CM_SAP_TCODES`, `CM_SAP_TABLES`,
+`CM_SAP_RGROUPS`) in step with the code if a transaction, table or report group is
+ever added.
+
+> **What it cannot establish:** report variants (`/default`, `/closing`) and
+> company-code / cost-centre level authorisation. Those only bite when a report
+> actually runs against real data, so they can't be verified without executing the
+> report. The check says so in its own output rather than implying full coverage.
 
 ---
 
