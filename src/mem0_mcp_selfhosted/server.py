@@ -15,6 +15,7 @@ import time
 from typing import Annotated, Any
 
 from dotenv import load_dotenv
+from mcp.server import CacheHint
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
@@ -151,12 +152,27 @@ def _create_server() -> MCPServer:
     """Create and configure the MCPServer with all tools and prompts."""
     global mcp
 
+    # The tool and prompt sets are fixed at import time -- they never vary by
+    # caller or change while the process runs -- so clients can safely reuse a
+    # listing instead of re-fetching it every session. The schemas are verbose
+    # (every parameter carries an Annotated Field description), so re-listing
+    # costs real tokens on each connect. `scope="public"` is correct only while
+    # the listing is identical for every caller; revisit it if tools ever become
+    # per-user. Tool order is already deterministic (registration order), which
+    # is what makes a cached listing stable enough to be worth hinting.
+    list_ttl_ms = int(env("MEM0_LIST_CACHE_TTL_MS", "300000"))
+    cache_hints = {
+        "tools/list": CacheHint(ttl_ms=list_ttl_ms, scope="public"),
+        "prompts/list": CacheHint(ttl_ms=list_ttl_ms, scope="public"),
+    }
+
     mcp = MCPServer(
         "mem0",
         # v2 defaults `version` to "" and reports that in serverInfo, whereas
         # v1 reported the SDK's own version. Send this package's version, which
         # is what a client actually wants to see.
         version=__version__,
+        cache_hints=cache_hints,
         # Keyword, not positional: the second positional parameter is `title`
         # in the v2 SDK, so passing this by position silently lands there.
         instructions=(
