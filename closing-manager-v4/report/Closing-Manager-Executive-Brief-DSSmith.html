@@ -18,7 +18,7 @@
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{background:var(--paper);color:var(--body);font-family:var(--sans);
-       font-size:9.1pt;line-height:1.42;
+       font-size:8.7pt;line-height:1.42;
        -webkit-print-color-adjust:exact;print-color-adjust:exact}
   b,strong{color:var(--ink);font-weight:700}
   p{margin:.35em 0 .5em}
@@ -41,7 +41,7 @@
              margin:0;max-width:46em}
 
   /* ---- answer + score ---- */
-  .row{display:flex;gap:4mm;margin-bottom:4.5mm;align-items:stretch}
+  .row{display:flex;gap:4mm;margin-bottom:3.8mm;align-items:stretch}
   .answer{flex:1.62;border:1px solid var(--line);border-left:3.5pt solid var(--brand);
           background:var(--brand-wash);border-radius:2pt;padding:3.6mm 4.2mm}
   .answer .lbl{font-size:6.6pt;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
@@ -59,7 +59,7 @@
 
   /* ---- headings ---- */
   h2{font-size:11.4pt;font-weight:700;letter-spacing:-.015em;color:var(--ink);
-     margin:4.3mm 0 1.1mm;padding-bottom:1.2mm;border-bottom:1.4pt solid var(--brand);
+     margin:3.7mm 0 1mm;padding-bottom:1.1mm;border-bottom:1.4pt solid var(--brand);
      line-height:1.2;break-after:avoid}
   h2 .n{color:var(--brand);margin-right:2mm;font-variant-numeric:tabular-nums}
   .said{color:var(--mute);font-size:8.4pt;margin:.8mm 0 1.5mm}
@@ -76,20 +76,20 @@
 
   /* ---- dependency blocks ---- */
   .dep{border:1px solid var(--line);border-left:3pt solid var(--brand);background:#FEFAF9;
-       border-radius:2pt;padding:3.2mm 4mm;margin-bottom:2.4mm;break-inside:avoid}
+       border-radius:2pt;padding:3mm 4mm;margin-bottom:2mm;break-inside:avoid}
   .dep .hd{display:flex;align-items:center;gap:3mm;margin-bottom:1mm}
   .dep .hd .nm{font-size:9.8pt;font-weight:700;color:var(--ink)}
   .dep p{margin:.2em 0 .35em;font-size:8.7pt}
   .dep .addr{font-family:var(--mono);font-size:7.3pt;color:var(--grey);background:var(--fill);
-             border:1px solid var(--line);border-radius:2pt;padding:1.6mm 2.2mm;
+             border:1px solid var(--line);border-radius:2pt;padding:1.4mm 2.2mm;
              word-break:break-all;line-height:1.35}
   .dep .addr b{color:var(--ink)}
-  .keep{border:1px solid var(--line);border-radius:2pt;padding:2.6mm 4mm;background:var(--fill);
+  .keep{border:1px solid var(--line);border-radius:2pt;padding:2.4mm 4mm;background:var(--fill);
         font-size:8.5pt;break-inside:avoid}
   .keep b.h{color:var(--ink)}
 
   /* ---- tables ---- */
-  table{border-collapse:collapse;width:100%;font-size:8.3pt;margin:1.8mm 0 2.5mm;
+  table{border-collapse:collapse;width:100%;font-size:8.3pt;margin:1.5mm 0 2mm;
         border:1px solid var(--line)}
   thead{display:table-header-group}
   th{text-align:left;font-size:6.5pt;letter-spacing:.1em;text-transform:uppercase;color:#fff;
@@ -101,19 +101,19 @@
 
   /* ---- callouts ---- */
   .raise{border:1px solid rgba(199,53,45,.35);border-left:3pt solid var(--brand);
-         background:var(--brand-wash);border-radius:2pt;padding:3.2mm 4mm;margin:2.5mm 0;break-inside:avoid}
+         background:var(--brand-wash);border-radius:2pt;padding:3mm 4mm;margin:2mm 0;break-inside:avoid}
   .raise .h{font-weight:700;color:var(--brand-dk);margin-bottom:1mm;font-size:9.2pt}
   .raise p{margin:.25em 0;font-size:8.6pt;color:var(--ink)}
   .win{border:1px solid rgba(47,107,79,.3);border-left:3pt solid var(--go);background:var(--go-wash);
-       border-radius:2pt;padding:2.6mm 4mm;margin:2mm 0;font-size:8.6pt;color:var(--ink);break-inside:avoid}
+       border-radius:2pt;padding:2.4mm 4mm;margin:1.8mm 0;font-size:8.6pt;color:var(--ink);break-inside:avoid}
   .pf{border:1px solid rgba(47,107,79,.3);border-radius:2pt;overflow:hidden;margin:2mm 0;break-inside:avoid}
-  .pf .h{background:var(--go);color:#fff;padding:1.9mm 4mm;font-weight:700;font-size:9pt}
-  .pf .bd{padding:3mm 4mm;font-size:8.6pt}
+  .pf .h{background:var(--go);color:#fff;padding:1.7mm 4mm;font-weight:700;font-size:9pt}
+  .pf .bd{padding:2.6mm 4mm;font-size:8.6pt}
   .pf .bd p{margin:.22em 0}
 
   /* ---- steps ---- */
   ol.steps{list-style:none;counter-reset:s;padding:0;margin:2mm 0 0}
-  ol.steps li{counter-increment:s;display:flex;gap:3mm;padding:0 0 1.8mm;break-inside:avoid}
+  ol.steps li{counter-increment:s;display:flex;gap:3mm;padding:0 0 1.5mm;break-inside:avoid}
   ol.steps li::before{content:counter(s);flex:0 0 auto;width:5.4mm;height:5.4mm;border-radius:2pt;
     background:var(--brand);color:#fff;font-weight:700;font-size:8.2pt;display:flex;
     align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
@@ -121,7 +121,13 @@
   ol.steps .q{display:block;font-weight:700;color:var(--ink);font-size:9pt}
   ol.steps .w{font-size:8.4pt;color:var(--body)}
 
-  footer{margin-top:2.4mm;padding-top:1.8mm;border-top:1px solid var(--line);
+  /* a heading + its lead-in must not be orphaned from the block they introduce */
+  .hold{}
+  .said{break-after:avoid}   /* never strand a heading + lead-in */
+  tbody tr{break-inside:avoid}      /* never split a row mid-height */
+  thead{break-after:avoid}
+
+  footer{margin-top:2mm;padding-top:1.5mm;border-top:1px solid var(--line);
          color:var(--faint);font-size:6.9pt;line-height:1.42}
 </style>
 
@@ -205,6 +211,7 @@
   <b class="h">The rest is already ours:</b> &nbsp;<span class="own ours">Keep</span>&nbsp; <b>SAP</b> — legitimate, it is the source of the numbers. &nbsp;<span class="own buy">Deploy</span>&nbsp; <b>PDFCreator</b> — desktop install; printer must be named exactly <code>PDFCreator</code>. &nbsp;<span class="own ours">Ours</span>&nbsp; <b>Local folders</b> — <code>C:\pdf\</code> and <code>C:\_Files to Transfer\MONTH END CLOSE\</code>; the workbook must sit in a genuine local folder (running it from OneDrive/SharePoint breaks it).
 </div>
 
+<div class="hold">
 <h2><span class="n">3</span>What is actually held on their SharePoint</h2>
 <p class="said">Not accounting data — configuration plus an activity log. All four would fit in a worksheet or on our own SharePoint.</p>
 
@@ -217,6 +224,7 @@
     <tr><td><span class="t">ClosingTracker</span></td><td>User name, cost centre, period, year, timestamp, success flag</td><td>Written during runs; read to confirm the period was refreshed</td></tr>
   </tbody>
 </table>
+</div>
 
 <div class="raise">
   <div class="h">Two points to raise with Capgemini</div>
@@ -249,5 +257,5 @@
 </div>
 
 <footer>
-  Prepared by the Continuous Improvement Team from a full static review of the workbook's VBA source. No macro was executed and no live system was contacted. Addresses and list names are those written into the workbook's own code. Contains no credentials or accounting data.
+  Prepared by the Continuous Improvement Team from a static review of the workbook's VBA source. No macro was executed and no live system contacted; addresses and list names are those written into the workbook's own code.
 </footer>
