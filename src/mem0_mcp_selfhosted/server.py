@@ -1,4 +1,4 @@
-"""FastMCP server for mem0-mcp-selfhosted.
+"""MCPServer for mem0-mcp-selfhosted.
 
 Orchestrates: tool registration → transport → lazy Memory init on first call.
 Memory initialization is deferred to the first tool invocation via _ensure_memory(),
@@ -15,9 +15,10 @@ import time
 from typing import Annotated, Any
 
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
+from mem0_mcp_selfhosted import __version__
 from mem0_mcp_selfhosted.config import ProviderInfo, build_config
 from mem0_mcp_selfhosted.env import bool_env, env
 from mem0_mcp_selfhosted.graph_tools import get_entity, search_graph
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # --- Globals set during startup ---
 memory = None
-mcp: FastMCP | None = None
+mcp: MCPServer | None = None
 _enable_graph_default = False
 
 # --- Lazy init state ---
@@ -146,18 +147,18 @@ def _ensure_memory() -> Any:
     return memory
 
 
-def _create_server() -> FastMCP:
-    """Create and configure the FastMCP server with all tools and prompts."""
+def _create_server() -> MCPServer:
+    """Create and configure the MCPServer with all tools and prompts."""
     global mcp
 
-    host = env("MEM0_HOST", "0.0.0.0")
-    port = int(env("MEM0_PORT", "8081"))
-
-    mcp = FastMCP(
+    mcp = MCPServer(
         "mem0",
-        host=host,
-        port=port,
-        json_response=bool_env("MEM0_JSON_RESPONSE", "true"),
+        # v2 defaults `version` to "" and reports that in serverInfo, whereas
+        # v1 reported the SDK's own version. Send this package's version, which
+        # is what a client actually wants to see.
+        version=__version__,
+        # Keyword, not positional: the second positional parameter is `title`
+        # in the v2 SDK, so passing this by position silently lands there.
         instructions=(
             "Memory tools for persistent cross-session memory. "
             "Use search_memories to find relevant context before starting work. "
@@ -181,7 +182,7 @@ def _create_server() -> FastMCP:
 # ============================================================
 
 
-def _register_tools(mcp: FastMCP) -> None:
+def _register_tools(mcp: MCPServer) -> None:
     """Register all 11 MCP tools on the server."""
 
     @mcp.tool()
@@ -441,7 +442,7 @@ def _register_tools(mcp: FastMCP) -> None:
 # ============================================================
 
 
-def _register_prompts(mcp: FastMCP) -> None:
+def _register_prompts(mcp: MCPServer) -> None:
     """Register MCP prompts."""
 
     @mcp.prompt()
@@ -502,11 +503,26 @@ def run_server() -> None:
     init_thread = threading.Thread(target=_eager_init, daemon=True)
     init_thread.start()
 
+    # Transport options moved out of the constructor in the v2 SDK: host, port
+    # and json_response are now keyword arguments to run(). json_response
+    # defaults to False upstream, so it has to be passed explicitly or clients
+    # expecting plain JSON bodies get SSE-framed responses instead.
+    host = env("MEM0_HOST", "0.0.0.0")
+    port = int(env("MEM0_PORT", "8081"))
+    json_response = bool_env("MEM0_JSON_RESPONSE", "true")
+
     transport = env("MEM0_TRANSPORT", "stdio").lower()
 
     if transport == "sse":
-        server.run(transport="sse")
+        # Deprecated upstream as of the 2026-07-28 spec; prefer streamable-http.
+        logger.warning("MEM0_TRANSPORT=sse is deprecated upstream; use streamable-http")
+        server.run(transport="sse", host=host, port=port)
     elif transport == "streamable-http":
-        server.run(transport="streamable-http")
+        server.run(
+            transport="streamable-http",
+            host=host,
+            port=port,
+            json_response=json_response,
+        )
     else:
         server.run(transport="stdio")

@@ -21,10 +21,10 @@ python3 -m pytest tests/unit/test_auth.py::TestIsOatToken::test_oat_token_detect
 
 ## Architecture
 
-Self-hosted MCP server using `mem0ai` as a library. 11 tools (9 memory + 2 graph), FastMCP orchestrator.
+Self-hosted MCP server using `mem0ai` as a library. 11 tools (9 memory + 2 graph), `MCPServer` orchestrator (`mcp` SDK v2).
 
 **Module roles:**
-- `server.py` — FastMCP orchestrator, registers all tools + `memory_assistant` prompt
+- `server.py` — `MCPServer` orchestrator, registers all tools + `memory_assistant` prompt; transport options (host/port/`json_response`) are passed to `run()`, not the constructor
 - `config.py` — Env vars → mem0ai `MemoryConfig` dict, handles all 5 graph LLM provider configs
 - `auth.py` — 3-tier token fallback: `MEM0_ANTHROPIC_TOKEN` → `~/.claude/.credentials.json` → `ANTHROPIC_API_KEY`
 - `llm_anthropic.py` — Custom Anthropic provider registered with mem0ai's `LlmFactory`; handles OAT headers, structured outputs (JSON schema via `output_config`), and tool-call parsing
