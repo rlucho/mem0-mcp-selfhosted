@@ -12,11 +12,14 @@ authors = [
     { name = "elvismdev" },
 ]
 dependencies = [
+    # Upper bounds are deliberate: `uvx --from git+...` re-resolves on every
+    # install, so an unbounded major bump upstream breaks new installs with no
+    # change here. mcp 2.0.0 did exactly that. Raise a bound only after testing.
     "mcp[cli]>=1.23.0,<2",
-    "mem0ai[graph,llms]>=1.0.3",
-    "anthropic>=0.77.0",
-    "neo4j>=5.23.1",
-    "python-dotenv>=1.2.1",
+    "mem0ai[graph,llms]>=1.0.3,<3",
+    "anthropic>=0.77.0,<1",
+    "neo4j>=5.23.1,<7",
+    "python-dotenv>=1.2.1,<2",
 ]
 
 [project.scripts]
