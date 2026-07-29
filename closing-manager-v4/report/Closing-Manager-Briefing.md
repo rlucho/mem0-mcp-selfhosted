@@ -74,24 +74,23 @@ This is the crux of the independence question. It is not accounting data — it 
 
 | Table | What it holds | How it's used |
 |---|---|---|
-| `CCCrossList` | Per cost centre: posting block, location-closed flag, which postings are allowed | Read at startup; also edited from a form inside the workbook |
-| `ClosingVariants` | SAP variant name and currency per cost centre | Read at startup |
+| `CCCrossList` | Per company code: posting block, location-closed flag, which postings are allowed | Read at startup; also edited from a form inside the workbook |
+| `ClosingVariants` | SAP variant name and currency per company code | Read at startup |
 | `ProfitCenters` | Profit-centre reference data | Read at startup; refreshed by the macro |
-| `ClosingTracker` | Who ran a close, for which cost centre and period, when, success/failure | Written during runs; checked to confirm data was refreshed |
+| `ClosingTracker` | User name, company code, period, timestamp, success flag | Written on three close failures; read to confirm the period was refreshed |
 
 All four are **small lists of settings** — the kind of thing that fits comfortably in
 a worksheet or a list on our own SharePoint. Nothing here requires Capgemini's
 infrastructure.
 
-### ⚠️ Two things worth raising with Capgemini
+### ⚠️ One point to raise with Capgemini
 
-1. **Our close activity is logged to their system.** Every run writes user name, cost
-   centre, period and timestamp to `ClosingTracker` on their SharePoint. We should
-   confirm this is intended and agreed, and who can see it.
-2. **Failure is silent.** The macro never checks whether the SharePoint call
-   succeeded. If the site is gone or we're off the network, it loads no settings and
-   carries on — rather than stopping and telling the user. Fix this first, regardless
-   of the ownership question.
+**Our close failures are logged to their system.** When one of three checks fails
+(ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company
+code, period, timestamp and an error note into `ClosingTracker` on their
+SharePoint, and `UpdateData` logs every run. Routine *successful* closes are not
+logged — those calls are commented out. We should confirm this is agreed, who can
+access it, and what the retention is.
 
 > **Encouraging sign:** whoever produced this "v3" version was already heading this
 > way. Several SharePoint calls are switched off in the code — including the lookup
@@ -132,7 +131,7 @@ CLOSING MANAGER  -  PREFLIGHT CHECK
 [X]  SAP GUI not logged in, or GUI scripting is disabled.
 [OK] PDFCreator is installed.
 [~]  PDF merger will be copied from the network share on first run.
-[OK] Cost Centre = 1234.
+[OK] Company Code = 1234.
 --------------------------------------
 NOT READY - resolve the [X] items above.
 ```

@@ -218,18 +218,17 @@
 <table>
   <thead><tr><th style="width:20%">List</th><th style="width:45%">Contents</th><th>Use</th></tr></thead>
   <tbody>
-    <tr><td><span class="t">CCCrossList</span></td><td>Per cost centre: posting block, location-closed flag, CPC allowed/not-allowed under GAAP</td><td>Read at startup; maintained from a form in the workbook</td></tr>
-    <tr><td><span class="t">ClosingVariants</span></td><td>SAP variant name, currency, FC/USD flag per cost centre</td><td>Read at startup</td></tr>
+    <tr><td><span class="t">CCCrossList</span></td><td>Per company code: posting block, location-closed flag, CPC allowed/not-allowed under GAAP</td><td>Read at startup; maintained from a form in the workbook</td></tr>
+    <tr><td><span class="t">ClosingVariants</span></td><td>SAP variant name, currency, FC/USD flag per company code</td><td>Read at startup</td></tr>
     <tr><td><span class="t">ProfitCenters</span></td><td>Profit-centre reference list</td><td>Read at startup; cleared and rewritten</td></tr>
-    <tr><td><span class="t">ClosingTracker</span></td><td>User name, cost centre, period, year, timestamp, success flag</td><td>Written during runs; read to confirm the period was refreshed</td></tr>
+    <tr><td><span class="t">ClosingTracker</span></td><td>User name, company code, period, year, timestamp, success flag</td><td>Written on three close failures; read to confirm the period was refreshed</td></tr>
   </tbody>
 </table>
 </div>
 
 <div class="raise">
-  <div class="h">Two points to raise with Capgemini</div>
-  <p><b>1. Our close activity is logged to their system.</b> Every run writes the Windows user name, cost centre, period and timestamp into <code>ClosingTracker</code>. Confirm this is agreed, who can access it, and the retention.</p>
-  <p><b>2. Failure is silent.</b> The SOAP calls have no status or error checking — an unreachable endpoint means the macro loads nothing and continues, closing on empty or stale configuration. Fix regardless of where the data ends up living.</p>
+  <div class="h">One point to raise with Capgemini</div>
+  <p><b>Our close failures are logged to their system.</b> When one of three checks fails (ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company code, period, timestamp and an error note into <code>ClosingTracker</code> on their SharePoint. <code>UpdateData</code> also logs every time it runs. Confirm this is agreed, who can access it, and what the retention is.</p>
 </div>
 
 <h2><span class="n">4</span>Preflight Check — can users run it on its own?</h2>
@@ -238,7 +237,7 @@
   <div class="bd">
     <p><code>PreflightCheck</code> is a self-contained, read-only macro added in V4. It does not start the close, create folders, write files, or drive SAP — it only detects whether a session exists. Safe to run at any time.</p>
     <p><b>How:</b> <b>Alt&nbsp;+&nbsp;F8</b> → <b>PreflightCheck</b> → <b>Run</b> (it appears in the macro list automatically), or from a button on the <code>START</code> sheet.</p>
-    <p><b>Reports pass/fail on:</b> workbook location · working drive · SAP session · PDFCreator · PDF merger · cost centre — turning every dependency above into a check before anyone starts a period close.</p>
+    <p><b>Reports pass/fail on:</b> workbook location · working drive · SAP session · PDFCreator · PDF merger · company code — turning every dependency above into a check before anyone starts a period close.</p>
   </div>
 </div>
 

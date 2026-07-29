@@ -281,19 +281,18 @@
 <table>
   <thead><tr><th style="width:23%">List</th><th style="width:42%">Contents</th><th>Use</th></tr></thead>
   <tbody>
-    <tr><td><span class="t">CCCrossList</span><span class="s">cost-centre settings</span></td><td>Per cost centre: posting block, location-closed flag, CPC allowed/not-allowed under GAAP, comments</td><td>Read at startup into the <code>config</code> sheet; also maintained from a form inside the workbook</td></tr>
-    <tr><td><span class="t">ClosingVariants</span><span class="s">SAP report settings</span></td><td>SAP variant name, currency and FC/USD flag per cost centre</td><td>Read at startup</td></tr>
+    <tr><td><span class="t">CCCrossList</span><span class="s">cost-centre settings</span></td><td>Per company code: posting block, location-closed flag, CPC allowed/not-allowed under GAAP, comments</td><td>Read at startup into the <code>config</code> sheet; also maintained from a form inside the workbook</td></tr>
+    <tr><td><span class="t">ClosingVariants</span><span class="s">SAP report settings</span></td><td>SAP variant name, currency and FC/USD flag per company code</td><td>Read at startup</td></tr>
     <tr><td><span class="t">ProfitCenters</span><span class="s">reference data</span></td><td>Profit-centre reference list</td><td>Read at startup; cleared and rewritten by the macro</td></tr>
-    <tr><td><span class="t">ClosingTracker</span><span class="s">activity log</span></td><td>User name, cost centre, period, year, timestamp, success flag</td><td>Written during runs; also read to confirm data was refreshed for the period</td></tr>
+    <tr><td><span class="t">ClosingTracker</span><span class="s">activity log</span></td><td>User name, company code, period, year, timestamp, success flag</td><td>Written during runs; also read to confirm data was refreshed for the period</td></tr>
   </tbody>
 </table>
 
 <p>All four are <b>small settings tables</b> that would sit comfortably in a worksheet or on our own SharePoint. There is no technical reason for them to live on Capgemini infrastructure.</p>
 
 <div class="raise">
-  <div class="h">Two points to raise with Capgemini</div>
-  <p><b>1. Our close activity is logged to their system.</b> Every run writes the Windows user name, cost centre, period and timestamp into <code>ClosingTracker</code> on their SharePoint. We should confirm this is agreed, who can access it, and what the retention is.</p>
-  <p><b>2. Failure is silent.</b> The SOAP calls have no status or error checking. If the endpoint is unreachable the macro simply loads nothing and continues — closing on empty or stale configuration rather than stopping. This should be fixed regardless of where the data ends up living.</p>
+  <div class="h">One point to raise with Capgemini</div>
+  <p><b>Our close failures are logged to their system.</b> When one of three checks fails (ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company code, period, timestamp and a short error note into <code>ClosingTracker</code> on their SharePoint; <code>UpdateData</code> logs every run. Routine successful closes are not logged - those calls are commented out - but failures are. Confirm this is agreed, who can access it, and the retention.</p>
 </div>
 
 <div class="note">

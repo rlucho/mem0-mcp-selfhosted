@@ -250,8 +250,8 @@
     <table>
       <thead><tr><th>Table on their SharePoint</th><th>What it holds</th><th>How the macro uses it</th></tr></thead>
       <tbody>
-        <tr><td><span class="t">CCCrossList</span><span class="s">cost-centre settings</span></td><td>Per cost centre: posting block, location-closed flag, which postings are allowed</td><td>Read at startup into the <code>config</code> sheet; also edited from a form inside the workbook</td></tr>
-        <tr><td><span class="t">ClosingVariants</span><span class="s">SAP report settings</span></td><td>The SAP variant name and currency per cost centre</td><td>Read at startup</td></tr>
+        <tr><td><span class="t">CCCrossList</span><span class="s">cost-centre settings</span></td><td>Per company code: posting block, location-closed flag, which postings are allowed</td><td>Read at startup into the <code>config</code> sheet; also edited from a form inside the workbook</td></tr>
+        <tr><td><span class="t">ClosingVariants</span><span class="s">SAP report settings</span></td><td>The SAP variant name and currency per company code</td><td>Read at startup</td></tr>
         <tr><td><span class="t">ProfitCenters</span><span class="s">reference list</span></td><td>Profit-centre reference data</td><td>Read at startup; refreshed/rewritten by the macro</td></tr>
         <tr><td><span class="t">ClosingTracker</span><span class="s">activity log</span></td><td>Who ran a close, for which cost centre and period, when, and whether it succeeded</td><td>Written during runs; also checked to confirm data was refreshed for the period</td></tr>
       </tbody>
@@ -262,9 +262,8 @@
     <p>All four are <b>small lists of settings</b> — the kind of thing that fits comfortably in a worksheet or a list on our own SharePoint. Nothing here requires Capgemini's infrastructure.</p>
 
     <div class="flagbox">
-      <div class="h">Two things worth raising with Capgemini</div>
-      <p><b>1. Our close activity is logged to their system.</b> Every run writes the user name, cost centre, period and timestamp to <code>ClosingTracker</code> on their SharePoint. We should confirm whether that is intended and agreed, and who can see it.</p>
-      <p><b>2. Failure is silent.</b> The macro never checks whether the SharePoint call succeeded. If the site is gone or we are off the network, it simply loads no settings and carries on — rather than stopping and telling the user. That is the risk to fix first, regardless of the ownership question.</p>
+      <div class="h">One point to raise with Capgemini</div>
+      <p><b>Our close failures are logged to their system.</b> When one of three checks fails (ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company code, period, timestamp and an error note into <code>ClosingTracker</code> on their SharePoint, and <code>UpdateData</code> logs every run. Routine successful closes are <em>not</em> logged — those calls are commented out. Confirm this is agreed, who can access it, and the retention.</p>
     </div>
 
     <div class="tip">
