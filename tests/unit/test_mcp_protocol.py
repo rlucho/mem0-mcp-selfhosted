@@ -95,7 +95,7 @@ class TestToolDiscovery:
     async def test_tool_schemas_have_required_params(self, mcp_server):
         tools = await mcp_server.list_tools()
         for tool in tools:
-            schema = tool.inputSchema
+            schema = tool.input_schema
             assert schema["type"] == "object"
             actual_required = set(schema.get("required", []))
             expected_required = REQUIRED_PARAMS[tool.name]
@@ -113,22 +113,22 @@ class TestToolDiscovery:
 class TestCallToolRoundTrip:
     @pytest.mark.asyncio
     async def test_add_memory(self, mcp_server, mock_memory):
-        content_blocks, _ = await mcp_server.call_tool(
+        result = await mcp_server.call_tool(
             "add_memory", {"text": "I prefer Python"}
         )
-        assert len(content_blocks) > 0
-        text = content_blocks[0].text
+        assert len(result.content) > 0
+        text = result.content[0].text
         parsed = json.loads(text)
         assert "results" in parsed
         mock_memory.add.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_search_memories(self, mcp_server, mock_memory):
-        content_blocks, _ = await mcp_server.call_tool(
+        result = await mcp_server.call_tool(
             "search_memories", {"query": "Python preferences"}
         )
-        assert len(content_blocks) > 0
-        text = content_blocks[0].text
+        assert len(result.content) > 0
+        text = result.content[0].text
         parsed = json.loads(text)
         assert "results" in parsed
         mock_memory.search.assert_called_once()
@@ -164,11 +164,11 @@ class TestErrorPropagation:
     @pytest.mark.asyncio
     async def test_tool_exception_returns_json_error(self, mcp_server, mock_memory):
         mock_memory.get.side_effect = RuntimeError("connection lost")
-        content_blocks, _ = await mcp_server.call_tool(
+        result = await mcp_server.call_tool(
             "get_memory", {"memory_id": "uuid-123"}
         )
-        assert len(content_blocks) > 0
-        text = content_blocks[0].text
+        assert len(result.content) > 0
+        text = result.content[0].text
         parsed = json.loads(text)
         assert "error" in parsed
         assert "connection lost" in parsed.get("detail", "")

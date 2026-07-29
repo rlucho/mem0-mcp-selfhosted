@@ -288,7 +288,7 @@ Claude Code
   │     ├── graph_tools.py       ← Direct Neo4j Cypher queries (lazy driver)
   │     ├── llm_router.py        ← Split-model graph LLM router (gemini_split)
   │     ├── __init__.py          ← Telemetry suppression (before any mem0 import)
-  │     └── server.py            ← FastMCP orchestrator (11 tools + prompt)
+  │     └── server.py            ← MCPServer orchestrator (11 tools + prompt)
   │           |
   │           ├── mem0ai Memory class
   │           │     ├── Vector: LLM fact extraction → Ollama embed → Qdrant
