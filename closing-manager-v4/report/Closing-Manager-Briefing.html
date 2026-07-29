@@ -262,8 +262,10 @@
     <p>All four are <b>small lists of settings</b> — the kind of thing that fits comfortably in a worksheet or a list on our own SharePoint. Nothing here requires Capgemini's infrastructure.</p>
 
     <div class="flagbox">
-      <div class="h">One point to raise with Capgemini</div>
-      <p><b>Our close failures are logged to their system.</b> When one of three checks fails (ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company code, period, timestamp and an error note into <code>ClosingTracker</code> on their SharePoint, and <code>UpdateData</code> logs every run. Routine successful closes are <em>not</em> logged — those calls are commented out. Confirm this is agreed, who can access it, and the retention.</p>
+      <div class="h">What we actually need from Capgemini</div>
+      <p><b>The settings data, and some answers — not the software.</b> Ask for a current export of the four lists, who maintains them today and how often they change; plus who can see <code>ClosingTracker</code> and what the retention is.</p>
+      <p><b>The merge utility does not need them.</b> <code>GiosPSMC.exe</code> is <i>Gios PDF Splitter and Merger</i> (console build) — free open-source software under LGPL-3.0. We can obtain a clean official build ourselves.</p>
+      <p><b>The logging is ours to fix, not theirs to permit.</b> The four <code>ClosingTracker</code> writes are a handful of lines in our own code — removing them needs no one's agreement.</p>
     </div>
 
     <div class="tip">

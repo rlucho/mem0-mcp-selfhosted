@@ -54,8 +54,8 @@ activity is recorded on a vendor's system.
 A network drive at Capgemini's Kraków site. The macro copies one small program from
 it — `GiosPSMC.exe`, the tool that merges the PDFs into a single report.
 `\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\GiosPSMC.exe`
-*Why it matters:* this is only a file copy, and only the first time. Once the tool is
-on the PC, the server is never needed again — so this one is easy to remove for good.
+*Why it matters:* the tool is public open-source software (LGPL-3.0), so we can obtain a
+clean build directly and never touch this share again.
 
 **🟢 SAP — ours / business-critical.** Must be open, logged in, with scripting on.
 Legitimate dependency; it stays.
@@ -83,14 +83,19 @@ All four are **small lists of settings** — the kind of thing that fits comfort
 a worksheet or a list on our own SharePoint. Nothing here requires Capgemini's
 infrastructure.
 
-### ⚠️ One point to raise with Capgemini
+### ⚠️ What we actually need from Capgemini
 
-**Our close failures are logged to their system.** When one of three checks fails
-(ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company
-code, period, timestamp and an error note into `ClosingTracker` on their
-SharePoint, and `UpdateData` logs every run. Routine *successful* closes are not
-logged — those calls are commented out. We should confirm this is agreed, who can
-access it, and what the retention is.
+**The settings data, and some answers — not the software.** Ask for a current
+export of the four lists, who maintains them today and how often they change;
+plus who can see `ClosingTracker` and what the retention is.
+
+**The merge utility does not need them.** `GiosPSMC.exe` is *Gios PDF Splitter and
+Merger* (console build) — free open-source software under LGPL-3.0. We can obtain
+a clean official build ourselves.
+
+**The logging is ours to fix, not theirs to permit.** The four `ClosingTracker`
+writes are a handful of lines in our own code — removing them needs no one's
+agreement.
 
 > **Encouraging sign:** whoever produced this "v3" version was already heading this
 > way. Several SharePoint calls are switched off in the code — including the lookup
@@ -144,9 +149,10 @@ that machine.
 
 Each step stands on its own, so they can be done one at a time.
 
-1. **Take a permanent copy of the PDF merge tool.** Copy `GiosPSMC.exe` off their
-   share and keep it somewhere we own, or deploy it with the workbook. Quickest win.
-   Confirm with Capgemini what the tool is and how it's licensed before redistributing.
+1. **Deploy the merge utility ourselves.** `GiosPSMC.exe` is *Gios PDF Splitter and
+   Merger* (console build), free software under LGPL-3.0 — obtain a clean official
+   build and ship it with the workbook rather than copying an unverified binary off
+   their share. No Capgemini involvement needed.
 2. **Ask Capgemini to export the four settings tables** (`CCCrossList`,
    `ClosingVariants`, `ProfitCenters`, `ClosingTracker`), plus who maintains them
    today and how often they change.

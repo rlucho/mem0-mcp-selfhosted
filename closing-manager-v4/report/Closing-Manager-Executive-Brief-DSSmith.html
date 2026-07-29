@@ -18,7 +18,7 @@
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{background:var(--paper);color:var(--body);font-family:var(--sans);
-       font-size:8.7pt;line-height:1.42;
+       font-size:8.5pt;line-height:1.42;
        -webkit-print-color-adjust:exact;print-color-adjust:exact}
   b,strong{color:var(--ink);font-weight:700}
   p{margin:.35em 0 .5em}
@@ -204,7 +204,7 @@
   <div class="hd"><span class="nm">Capgemini Poland file server</span><span class="own theirs">Not ours</span></div>
   <p>A Kraków share holding the PDF merge utility <code>GiosPSMC.exe</code>, copied locally on first run.</p>
   <div class="addr">\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\<b>GiosPSMC.exe</b></div>
-  <p style="margin-top:1.4mm"><b>Risk:</b> low — a one-time file copy. Once the utility is on the PC the share is never touched again.</p>
+  <p style="margin-top:1.4mm"><b>Risk: low, and removable without them.</b> <code>GiosPSMC.exe</code> is <i>Gios PDF Splitter and Merger</i> (console build) — free open-source software under LGPL-3.0. We can deploy a clean official build ourselves and never touch this share again.</p>
 </div>
 
 <div class="keep">
@@ -227,8 +227,8 @@
 </div>
 
 <div class="raise">
-  <div class="h">One point to raise with Capgemini</div>
-  <p><b>Our close failures are logged to their system.</b> When one of three checks fails (ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company code, period, timestamp and an error note into <code>ClosingTracker</code> on their SharePoint. <code>UpdateData</code> also logs every time it runs. Confirm this is agreed, who can access it, and what the retention is.</p>
+  <div class="h">What we actually need from Capgemini</div>
+  <p><b>The settings data, and some answers — not the software.</b> Ask for a current export of the four lists, who maintains them today and how often they change; plus who can see <code>ClosingTracker</code> and what the retention is. The merge utility does <b>not</b> need them: it is public open-source software (section 2).</p>
 </div>
 
 <h2><span class="n">4</span>Preflight Check — can users run it on its own?</h2>
@@ -243,10 +243,10 @@
 
 <h2><span class="n">5</span>What we should do</h2>
 <ol class="steps">
-  <li><div><span class="q">Take a permanent copy of the merge utility</span><span class="w">Copy <code>GiosPSMC.exe</code> to a location we own, or deploy it with the workbook — removes that dependency outright. Confirm with Capgemini what it is and how it is licensed first.</span></div></li>
+  <li><div><span class="q">Deploy the merge utility ourselves</span><span class="w">It is free open-source software (section 2) — obtain a clean official build and ship it with the workbook rather than copying an unverified binary off their share. No Capgemini involvement needed.</span></div></li>
   <li><div><span class="q">Request an export of the four settings tables</span><span class="w">Plus who maintains them today and how often they change — this defines exactly what we are taking over.</span></div></li>
   <li><div><span class="q">Decide where the settings live</span><span class="w">Hidden worksheets in the workbook (removes the server entirely) or a list on our own SharePoint, depending on how many people maintain them and whether we need an audit trail.</span></div></li>
-  <li><div><span class="q">Repoint or disable the SharePoint calls</span><span class="w">V4 isolates the address in one named constant (<code>CM_SP_BASE</code>), so redirecting is a one-line change rather than a hunt through seven call sites.</span></div></li>
+  <li><div><span class="q">Repoint or disable the SharePoint calls</span><span class="w">V4 isolates the address in one named constant (<code>CM_SP_BASE</code>), so redirecting is a one-line change. <b>The same change stops the four <code>ClosingTracker</code> writes</b> that report our user names and close failures to their system — that is our own code, no permission required.</span></div></li>
   <li><div><span class="q">Make failure loud instead of silent</span><span class="w">Check the configuration actually loaded, so an unreachable endpoint stops the run. <b>The most important safety item</b> — worth doing independently of any migration.</span></div></li>
   <li><div><span class="q">Settle ownership and support of the macro</span><span class="w">The code names an owner and reviewer on a Capgemini automation register. If it is becoming ours, we need the source, the right to modify it, and a named internal owner.</span></div></li>
 </ol>

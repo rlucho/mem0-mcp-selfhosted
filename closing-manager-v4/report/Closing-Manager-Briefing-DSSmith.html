@@ -254,7 +254,7 @@
   <div class="hd"><span class="nm">Capgemini Poland file server</span><span class="own theirs">Not ours</span></div>
   <p>A share at Capgemini's Kraków site, holding the PDF merge utility <code>GiosPSMC.exe</code>. The macro copies it locally on first run.</p>
   <div class="addr">\\pl-krabpo-fsc01\ipa$\R2R\R2R - IP EU GL West\USEFUL\pdf\merger\<b>GiosPSMC.exe</b></div>
-  <p class="why"><b>Risk:</b> low and easily removed — it is a one-time file copy. Once the utility is on the PC the share is never touched again.</p>
+  <p class="why"><b>Risk: low, and removable without them.</b> <code>GiosPSMC.exe</code> is <i>Gios PDF Splitter and Merger</i> (console build) — free open-source software under LGPL-3.0. We can deploy a clean official build ourselves and never touch this share again.</p>
 </div>
 
 <div class="dep ok">
@@ -291,8 +291,8 @@
 <p>All four are <b>small settings tables</b> that would sit comfortably in a worksheet or on our own SharePoint. There is no technical reason for them to live on Capgemini infrastructure.</p>
 
 <div class="raise">
-  <div class="h">One point to raise with Capgemini</div>
-  <p><b>Our close failures are logged to their system.</b> When one of three checks fails (ZGE132 posting, GTB1, ZGE1174) the macro writes the Windows user name, company code, period, timestamp and a short error note into <code>ClosingTracker</code> on their SharePoint; <code>UpdateData</code> logs every run. Routine successful closes are not logged - those calls are commented out - but failures are. Confirm this is agreed, who can access it, and the retention.</p>
+  <div class="h">What we actually need from Capgemini</div>
+  <p><b>The settings data, and some answers — not the software.</b> Ask for a current export of the four lists, who maintains them today and how often they change; plus who can see <code>ClosingTracker</code> and what the retention is. The merge utility does <b>not</b> need them: it is public open-source software (section 2).</p>
 </div>
 
 <div class="note">
@@ -339,10 +339,10 @@
 <p class="said">Each step stands alone and can be done independently, in roughly this order.</p>
 
 <ol class="steps">
-  <li><div><span class="q">Take a permanent copy of the merge utility</span><span class="w">Copy <code>GiosPSMC.exe</code> from the Kraków share to a location we own, or deploy it alongside the workbook. This removes that dependency outright and is the quickest win. Confirm with Capgemini what the utility is and how it is licensed before we redistribute it.</span></div></li>
+  <li><div><span class="q">Deploy the merge utility ourselves</span><span class="w"><code>GiosPSMC.exe</code> is <i>Gios PDF Splitter and Merger</i> (console build), free software under LGPL-3.0. Obtain a clean official build and ship it with the workbook rather than copying an unverified binary off their share. No Capgemini involvement needed.</span></div></li>
   <li><div><span class="q">Request an export of the four settings tables</span><span class="w">Ask for current contents of <code>CCCrossList</code>, <code>ClosingVariants</code>, <code>ProfitCenters</code> and <code>ClosingTracker</code>, plus who maintains them today and how often they change. This defines exactly what we are taking over.</span></div></li>
   <li><div><span class="q">Decide where the settings should live</span><span class="w">Either hold them in hidden worksheets in the workbook — simplest, and removes the server entirely — or move them to a list on our own SharePoint. The choice turns on how many people maintain them and whether we need an audit trail.</span></div></li>
-  <li><div><span class="q">Repoint or disable the SharePoint calls</span><span class="w">V4 already isolates the address in a single named constant (<code>CM_SP_BASE</code>), so redirecting to our own site is a one-line change rather than a hunt through seven call sites. Disabling the logging entirely is equally straightforward.</span></div></li>
+  <li><div><span class="q">Repoint or disable the SharePoint calls</span><span class="w">V4 isolates the address in one named constant (<code>CM_SP_BASE</code>), so redirecting is a one-line change. <b>The same change stops the four <code>ClosingTracker</code> writes</b> that report our user names and close failures to their system — that is our own code, no permission required.</span></div></li>
   <li><div><span class="q">Make failure loud instead of silent</span><span class="w">Add a check that the configuration actually loaded, so an unreachable endpoint stops the run with a clear message instead of closing on empty settings. <b>This is the most important safety item on the list</b> and is worth doing before, or independently of, any migration.</span></div></li>
   <li><div><span class="q">Settle ownership and support of the macro</span><span class="w">The code header names an owner and reviewer on a Capgemini automation register. If this automation is becoming ours, we need the source, the right to modify it, and a named internal owner.</span></div></li>
 </ol>
