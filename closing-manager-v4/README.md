@@ -112,8 +112,8 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 6 | **Merger fast-fail** — `CombinePDF` verifies `GiosPSMC.exe` before shelling out. | `Printing` | Silent no-output when the tool is missing. |
 | 7 | **Name-clash loop fix** — `fN` now increments. | `Printing` | Infinite loop when a same-named report already exists. |
 | 8 | **Preflight Check** *(new)* — one-click `PreflightCheck` reports every dependency as pass/fail before a run, on its own `Preflight` sheet with a button. | `GlobalModule` | Discovering a missing dependency halfway through a close. |
-| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables and 4 GR55 report groups the close drives. | `GlobalModule` | Hitting an authorisation wall mid-close, after entries are posted. |
 | 9 | **Endpoint constants** — the SharePoint URL, the merger UNC and the archive UNC are now named constants; the hard-coded call sites (incl. `Admin`) point at them. | `GlobalModule`, `Admin` | Hunting through code to re-point servers when a site/share moves. |
+| 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables and 4 GR55 report groups the close drives. | `GlobalModule` | Hitting an authorisation wall mid-close, after entries are posted. |
 
 Functional close logic and the SAP command sequences are **unchanged** — the diff
 is intentionally small (`report/v4-changes.diff`).
