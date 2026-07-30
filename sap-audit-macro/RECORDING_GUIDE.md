@@ -91,6 +91,44 @@ When you re-record, keep it slow and single-purpose, and **close any attachment 
 Cancel rather than Enter** — Enter hands the document to the external viewer and blocks the
 script behind it.
 
+## Which sample to re-record Audit2 against
+
+**Not Sep 25.** The first recording was made on Sep 25, and Sep 25 contains no Santander SCF
+line at all — so the confirming route never comes up and you would capture the regular
+supplier path by mistake. Dec 25 has none either.
+
+Record against **sample #8: Oct 25, 01/10/2025, 4,483,676.08, `SANTANDER SCF`**. It is the
+earliest sample the auditor's request names as SCF, so the confirming route is guaranteed to
+appear. The other seven are #16 Nov, #24 Jan, #30 Feb, #34 Mar, #39 Apr, #46 May, #53 Jun.
+
+Note that in no month is the SCF line the *largest* line of the month — so if the "biggest
+payment" you were describing is the biggest item **within** a payment's cleared items rather
+than the biggest statement line, say so, because the macro currently reads it the second way
+(largest cleared item behind whichever sample line it is processing).
+
+### Confirm the recorder is actually capturing
+
+This is what went wrong last time — `Audit2.vbs` came back holding only the boilerplate and a
+`resizeWorkingPane` call, which is what SAP writes the instant recording starts. So before the
+real walk:
+
+1. Press **Record**.
+2. Make one throwaway click — open any menu, click a grid cell.
+3. **Stop**, open the `.vbs`, and check there is at least one `findById(...)` line *after* the
+   `resizeWorkingPane` line.
+4. If there is, record again for real. If there is not, the recorder is not capturing and
+   nothing you do next will be saved.
+
+### Grab the other two gaps in the same session
+
+Since you are recording anyway, these close out the remaining `VERIFY` rows:
+
+- **In the save dialog, type a file name** rather than accepting SAP's default. That confirms
+  `Save.FileName`, the last guess left in the export path.
+- **Then do the same walk for a non-Santander supplier** — any `DS SMITH` line will do — to
+  capture the regular-supplier PDF route: *Services for Object* → *Attachment list* → save.
+  That fills `Invoice.GosToolbox`, `Invoice.AttachListGrid` and `Invoice.SaveButton`.
+
 ## Turning a recording into the Screen Map
 
 Open the `.vbs` in Notepad — SAP writes it as UTF-16, so it looks fine in Notepad but spaced
