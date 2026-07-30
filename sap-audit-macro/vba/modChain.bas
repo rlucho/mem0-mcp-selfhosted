@@ -323,16 +323,21 @@ End Function
 '-----------------------------------------------------------------------
 Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainResult, _
                                  ByVal folder As String, ByVal fileStem As String) As String
-    Dim toolboxId As String, saveId As String
-    Dim toolbox As Object
+    Dim toolboxId As String, gridId As String, exportItem As String
+    Dim saveWindow As String, columnName As String
+    Dim toolbox As Object, grid As Object
+    Dim target As String
 
     toolboxId = modConfig.ElementIdOrBlank("Invoice.GosToolbox")
-    saveId = modConfig.ElementIdOrBlank("Invoice.SaveButton")
+    gridId = modConfig.ElementIdOrBlank("Invoice.AttachListGrid")
+    exportItem = modConfig.ElementIdOrBlank("Invoice.ExportMenuItem")
+    saveWindow = modConfig.ElementIdOrBlank("Invoice.SaveWindow")
+    columnName = modConfig.ElementIdOrBlank("Invoice.AttachListColumn")
 
-    If Len(toolboxId) = 0 Or Len(saveId) = 0 Then
-        result.Notes = "Invoice.GosToolbox / Invoice.SaveButton are blank on the Screen " & _
-                       "Map, so no PDF download was attempted. Everything needed to " & _
-                       "fetch it by hand is recorded: payment " & result.ZpPaymentDocument & _
+    If Len(toolboxId) = 0 Or Len(gridId) = 0 Or Len(exportItem) = 0 Then
+        result.Notes = "The Invoice.* rows are not filled in, so no PDF download was " & _
+                       "attempted. Everything needed to fetch it by hand is recorded: " & _
+                       "payment " & result.ZpPaymentDocument & _
                        IIf(Len(result.InvoiceNumber) > 0, _
                            ", invoice " & result.InvoiceNumber, "") & _
                        IIf(Len(result.InvoiceSupplier) > 0, _
@@ -341,12 +346,13 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
         Exit Function
     End If
 
-    If modSafety.BlockedByDryRun("Would save the invoice PDF for payment " & _
-                                 result.ZpPaymentDocument) Then Exit Function
+    target = modUtil.JoinPath(folder, fileStem & "_invoice.pdf")
+    If modSafety.BlockedByDryRun("Would save the invoice PDF to " & target) Then Exit Function
 
     If Not modSapConnect.Exists(toolboxId) Then
         result.Notes = "The services-for-object toolbox is not on this screen, so the " & _
-                       "attachment list could not be opened."
+                       "attachment list could not be opened. The invoice may not be the " & _
+                       "object the attachment hangs off."
         modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "MANUAL", vbNullString
         Exit Function
     End If
@@ -358,27 +364,69 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
     On Error GoTo 0
     modSapConnect.WaitForSap
 
-    If Not modSapConnect.ModalWindowOpen() Then
-        result.Notes = "No attachment list appeared. On many configurations SAP hands " & _
-                       "the document straight to the external viewer, which a script " & _
-                       "cannot capture. Fetch this one by hand, or ask Basis for a " & _
-                       "content-server extract covering all the samples at once."
+    If Not modSapConnect.Exists(gridId) Then
+        result.Notes = "The attachment list did not open, or " & gridId & " is wrong " & _
+                       "for it. Nothing was downloaded."
         modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "MANUAL", vbNullString
+        CloseAttachmentList
         Exit Function
     End If
 
-    If Not modSapConnect.Exists(saveId) Then
-        result.Notes = "The attachment list opened but Invoice.SaveButton (" & saveId & _
-                       ") is not on it. Record that dialog and correct the Screen Map."
+    Set grid = modSapConnect.Element(gridId)
+
+    ' Take the first attachment. Where a document carries several, the run
+    ' says so rather than silently picking one and calling it the invoice.
+    On Error Resume Next
+    If grid.RowCount > 1 Then
+        modLog.LogAction sampleIdx, "Invoice PDF", _
+                     grid.RowCount & " attachments on this document; the first was " & _
+                     "taken. Check by hand which one the auditor wants.", _
+                     "MANUAL", vbNullString
+    End If
+    If Len(columnName) > 0 Then grid.setCurrentCell 0, columnName
+    grid.selectedRows = "0"
+    On Error GoTo 0
+    modSapConnect.WaitForSap
+
+    ' The export is a context-menu item on the grid, not a toolbar button.
+    On Error Resume Next
+    grid.contextMenu
+    grid.selectContextMenuItem exportItem
+    On Error GoTo 0
+    modSapConnect.WaitForSap
+
+    If Len(saveWindow) = 0 Then saveWindow = "wnd[2]"
+
+    If Not modSapConnect.Exists(saveWindow) Then
+        result.Notes = "The attachment export produced no save dialog in " & saveWindow & _
+                       ". SAP may have handed the document to the external viewer instead."
         modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "MANUAL", vbNullString
-        CloseModal
+        CloseAttachmentList
         Exit Function
     End If
 
-    modSafety.GuardedPress saveId
-    SaveAttachedPdf = modExport.CompleteSaveDialogPublic( _
-        sampleIdx, folder, fileStem & "_invoice.pdf")
+    ' The PDF dialog is one window deeper than the list exports, because the
+    ' attachment list itself is already wnd[1].
+    SaveAttachedPdf = modExport.CompleteSaveDialogIn( _
+        sampleIdx, saveWindow, folder, fileStem & "_invoice.pdf")
+
+    CloseAttachmentList
 End Function
+
+Private Sub CloseAttachmentList()
+    Dim closeId As String
+
+    closeId = modConfig.ElementIdOrBlank("Invoice.CloseAttachList")
+
+    On Error Resume Next
+    If Len(closeId) > 0 And modSapConnect.Exists(closeId) Then
+        modSapConnect.Element(closeId).Press
+    ElseIf modSapConnect.Exists("wnd[1]") Then
+        modSapConnect.Element("wnd[1]").Close
+    End If
+    On Error GoTo 0
+    modSapConnect.WaitForSap
+End Sub
 
 '-----------------------------------------------------------------------
 ' Screen steps

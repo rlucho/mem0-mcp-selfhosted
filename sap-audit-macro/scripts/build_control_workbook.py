@@ -118,6 +118,15 @@ CONTROL_SETTINGS = [
     ("Payment usage type column", "",
      "Caption of the document-type column in that same file. Without it every document "
      "is taken rather than only the ZP ones, and the Log says so."),
+    ("ZP list amount column", "",
+     "Caption of the amount column in the exported FBL1N payment list. Leave blank -- the "
+     "macro tries the caption, then the SAP technical name, then works it out from what "
+     "the column contains, which is language-independent. Only fill this in if the Log "
+     "says it picked the wrong one."),
+    ("ZP list vendor column", "",
+     "Caption of the vendor-name column in that same file. Same rules."),
+    ("ZP list document column", "",
+     "Caption of the document-number column in that same file. Same rules."),
     ("Invoice list amount column", "",
      "Santander SCF route only. Caption of the amount column in the exported list of "
      "invoices behind an SCF payment. Blank falls back to a built-in list of captions."),
@@ -125,6 +134,11 @@ CONTROL_SETTINGS = [
      "Caption of the supplier column in that same file."),
     ("Invoice list document column", "",
      "Caption of the invoice-number column in that same file."),
+    ("Extra popup titles to allow", "",
+     "Pipe-separated. The run stops on any modal popup it does not recognise rather than "
+     "pressing Enter through it. The save dialog and the attachment list are identified by "
+     "their contents, so language does not matter for those -- add a title here only if "
+     "your system shows a popup the run does not expect."),
     ("Operator name", "",
      "Written into the log for the audit trail."),
 ]
@@ -348,44 +362,43 @@ SCREEN_MAP_ROWS = [
      "wnd[1]/usr/ctxtDY_FILE_ENCODING", "No"),
     ("Save.GenerateButton", "Confirm the save. btn[0], not btn[11]",
      "wnd[1]/tbar[0]/btn[0]", "Yes"),
-    ("--- Steps 8-9: FBL1N, the ZP payments of the batch (PREDICTED) ---", "", "", ""),
-    ("Fbl1n.CompanyCode", "Company code. PREDICTED from standard RFITEMAP -- no recording "
-     "reaches FBL1N. Run modProbe.ProbeCurrentScreen on the FBL1N selection screen to "
-     "check every Fbl1n.* row at once", "wnd[0]/usr/ctxtDD_BUKRS-LOW", "No"),
-    ("Fbl1n.AllItemsRadio", "'All items' radio. PREDICTED", "wnd[0]/usr/radX_AISEL", "No"),
-    ("Fbl1n.PostingDateFrom", "Posting date, low. PREDICTED",
-     "wnd[0]/usr/ctxtSO_BUDAT-LOW", "No"),
-    ("Fbl1n.PostingDateTo", "Posting date, high. PREDICTED",
-     "wnd[0]/usr/ctxtSO_BUDAT-HIGH", "No"),
-    ("Fbl1n.DocNumberFrom", "Document number, single value. NOTE: on standard FBL1N the "
-     "document number lives in dynamic selections, not the main screen -- if the probe "
-     "cannot find this, leave the whole Fbl1n block blank and use the fallback described "
-     "in the README. PREDICTED", "wnd[0]/usr/ctxtSO_BELNR-LOW", "No"),
-    ("Fbl1n.DocNumberMultiSelect", "The arrow button beside it that opens multiple "
-     "selection. PREDICTED", "wnd[0]/usr/btn%_SO_BELNR_%_APP_%-VALU_PUSH", "No"),
+    ("--- Steps 8-9: FBL1N, the ZP payments of the batch ---", "", "", ""),
+    ("Fbl1n.AllItemsRadio", "'All items' radio", "wnd[0]/usr/radX_AISEL", "No"),
+    ("Fbl1n.CompanyCode", "Company code. KD_BUKRS, not the DD_BUKRS that was predicted",
+     "wnd[0]/usr/ctxtKD_BUKRS-LOW", "No"),
+    ("Fbl1n.PostingDateFrom", "Posting date, low", "wnd[0]/usr/ctxtSO_BUDAT-LOW", "No"),
+    ("Fbl1n.PostingDateTo", "Posting date, high", "wnd[0]/usr/ctxtSO_BUDAT-HIGH", "No"),
+    ("Fbl1n.DynamicSelections", "Opens the dynamic-selections block. The document number "
+     "is NOT on the main selection screen -- it lives in dynamic selections, so this has "
+     "to be pressed before the field below exists", "wnd[0]/tbar[1]/btn[16]", "No"),
+    ("Fbl1n.DocNumberMultiSelect", "Multiple-selection arrow for document number, inside "
+     "the dynamic-selections subscreen",
+     "wnd[0]/usr/ssub%_SUBSCREEN_%_SUB%_CONTAINER:SAPLSSEL:2001/"
+     "ssubSUBSCREEN_CONTAINER2:SAPLSSEL:2000/ssubSUBSCREEN_CONTAINER:SAPLSSEL:1106/"
+     "btn%_%%DYN011_%_APP_%-VALU_PUSH", "No"),
     ("MultiSel.PasteFromClipboard", "'Upload from clipboard' on the multiple-selection "
-     "dialog. PREDICTED", "wnd[1]/tbar[0]/btn[24]", "No"),
-    ("MultiSel.Confirm", "Copy/Execute on that dialog. PREDICTED",
-     "wnd[1]/tbar[0]/btn[8]", "No"),
-    ("Fbl1n.ExecuteButton", "Execute. PREDICTED", "wnd[0]/tbar[1]/btn[8]", "No"),
-    ("Fbl1n.ResultGrid", "ALV grid of vendor line items. PREDICTED",
-     "wnd[0]/usr/cntlCONTAINER/shellcont/shell", "No"),
-    ("Fbl1n.Col.Amount", "DC amount column. PREDICTED", "DMSHB", "No"),
-    ("Fbl1n.Col.DocNumber", "Document number column. PREDICTED", "BELNR", "No"),
-    ("Fbl1n.Col.Vendor", "Vendor account column. PREDICTED", "LIFNR", "No"),
-    ("Fbl1n.Col.VendorName", "Vendor name column. PREDICTED", "NAME1", "No"),
-    ("--- Step 10: the invoice PDF (NOT RECORDED) ---", "", "", ""),
-    ("Invoice.GosToolbox", "Services-for-object toolbox on the title bar. PREDICTED",
-     "wnd[0]/titl/shellcont/shell", "No"),
-    ("Invoice.AttachListGrid", "Attachment-list grid. PREDICTED",
-     "wnd[1]/usr/cntlCONTAINER/shellcont/shell", "No"),
-    ("Invoice.SaveButton", "Save/export button on the attachment list. PREDICTED",
-     "wnd[1]/tbar[0]/btn[5]", "No"),
-    ("--- Step 10, Santander SCF only: the extra hop (NOT RECORDED) ---", "", "", ""),
-    ("Scf.OpenInvoices", "How you get from the SCF payment to the invoices it settled. "
-     "A menu entry, a button, or a field to focus and F2 -- the macro reads the control "
-     "type and does the right thing. BLOCKED: no recording covers it", "", "No"),
-    ("Scf.InvoiceListMenu", "Menu path that lists those invoices. BLOCKED", "", "No"),
+     "dialog", "wnd[1]/tbar[0]/btn[24]", "No"),
+    ("MultiSel.Confirm", "Copy on that dialog", "wnd[1]/tbar[0]/btn[8]", "No"),
+    ("Fbl1n.ExecuteButton", "Execute", "wnd[0]/tbar[1]/btn[8]", "No"),
+    ("Fbl1n.ResultAnchor", "Confirms the FBL1N result came up. NOTE: FBL1N renders as a "
+     "CLASSIC LIST here (lbl[x,y]), not an ALV grid, so there is no grid to read -- the "
+     "list is exported and read back instead. VERIFY", "wnd[0]/usr/lbl[164,8]", "No"),
+    ("--- Step 10: the largest payment's invoices, and the PDF ---", "", "", ""),
+    ("Payment.UsageMenu", "Environment > Payment usage from inside the payment document. "
+     "menu[4] here, not the menu[5] used from the clearing document -- menu indices differ "
+     "per screen. VERIFY", "wnd[0]/mbar/menu[4]/menu[3]", "No"),
+    ("Invoice.GosToolbox", "Services-for-object toolbox. shellcont[2], not the plain "
+     "shellcont that was predicted", "wnd[0]/titl/shellcont[2]/shell", "No"),
+    ("Invoice.AttachListGrid", "Attachment-list grid. CONTAINER_0100",
+     "wnd[1]/usr/cntlCONTAINER_0100/shellcont/shell", "No"),
+    ("Invoice.AttachListColumn", "Column used to select the attachment row",
+     "BITM_DESCR", "No"),
+    ("Invoice.ExportMenuItem", "Context-menu entry that saves the attachment. A CONTEXT "
+     "MENU item, not the toolbar button that was predicted", "%ATTA_EXPORT", "No"),
+    ("Invoice.SaveWindow", "Window the PDF save dialog opens in. wnd[2], because the "
+     "attachment list is already wnd[1]", "wnd[2]", "No"),
+    ("Invoice.CloseAttachList", "Closes the attachment list afterwards",
+     "wnd[1]/tbar[0]/btn[0]", "No"),
 ]
 
 

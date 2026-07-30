@@ -36,8 +36,25 @@ Private mHeaderRow As Long        ' 0 when no header was recognised
 Private mPath As String
 Private mWasWorkbook As Boolean
 
-' SAP writes these lists in the logged-on language, so the captions to look
-' for are settings rather than constants. These are the fallbacks.
+' LANGUAGE INDEPENDENCE
+'
+' Column captions are translated -- 'Document Type' is 'Belegart' on a
+' German logon, 'Tipo de documento' on a Spanish one -- so matching on them
+' only works for whoever happened to write the list. Everything below tries
+' three things in order, and only the first is language-dependent:
+'
+'   1. a caption the operator named on the Control sheet, or one of the
+'      built-in captions listed here
+'   2. the SAP technical field name, which is the same in every language:
+'      BELNR, BLART, DMBTR, WRBTR, LIFNR, NAME1
+'   3. what the column actually contains -- the amount column is the one
+'      whose cells parse as signed decimals, the document-type column is
+'      the one that actually holds the wanted code, the document-number
+'      column is the one holding long digit strings
+'
+' Step 3 is the one that always works. The captions are kept because when
+' they do match they are unambiguous, and because a wrong guess at step 3
+' is worth avoiding on a list with several numeric columns.
 Private Const DEFAULT_AMOUNT_CAPTIONS As String = _
     "Amount in local currency|Amount in LC|Amount|LC amount|Amnt in loc.cur.|" & _
     "Amount in doc. curr.|DC amount|DMBTR|WRBTR|KWBTR"
@@ -328,11 +345,30 @@ Public Function FindColumns(ByVal sampleIdx As Long, _
         End If
     Next r
 
+    ' No caption matched -- which is the normal case on a non-English logon.
+    ' Fall back to what the columns contain, and say which it picked so a bad
+    ' guess is visible on the first sample rather than after all 56.
+    mHeaderRow = 1
+    amountCol = ColumnThatLooksLikeAmount(2)
+
+    If amountCol = 0 Then
+        modLog.LogAction sampleIdx, "Read export", _
+                     "No column in " & mPath & " matched a known caption or looks like " & _
+                     "an amount. Open the file and name its headings in the '" & _
+                     amountSetting & "' setting on the Control sheet.", "ERROR", mPath
+        Exit Function
+    End If
+
+    supplierCol = ColumnThatLooksLikeName(2, amountCol)
+    documentCol = ColumnThatLooksLikeDocumentNumber(2, amountCol)
+    FindColumns = True
+
     modLog.LogAction sampleIdx, "Read export", _
-                 "No header row in " & mPath & " matched the expected captions. Open the " & _
-                 "file, then copy its real column headings into the '" & amountSetting & _
-                 "' and '" & supplierSetting & "' settings on the Control sheet.", _
-                 "ERROR", mPath
+                 "No caption matched, so columns were identified by content: amount = " & _
+                 "column " & amountCol & ", name = column " & supplierCol & _
+                 ", document = column " & documentCol & ". Check that against " & mPath & _
+                 " -- if it is wrong, name the headings on the Control sheet.", _
+                 "MANUAL", mPath
 End Function
 
 ' Index of the first column on the given row whose caption matches one of the
@@ -390,6 +426,136 @@ End Function
 
 Private Function LesserOf(ByVal a As Long, ByVal b As Long) As Long
     LesserOf = IIf(a < b, a, b)
+End Function
+
+'-----------------------------------------------------------------------
+' Content-based column detection -- the language-independent fallback.
+'-----------------------------------------------------------------------
+' The column whose cells most often parse as a non-zero decimal amount.
+' Ties break towards the column with the largest magnitude, since a
+' quantity or a tax rate column rarely carries the biggest numbers.
+Public Function ColumnThatLooksLikeAmount(ByVal firstDataRow As Long) As Long
+    Dim c As Long, r As Long
+    Dim hits As Long, bestHits As Long
+    Dim biggest As Double, bestBiggest As Double
+    Dim value As Double
+    Dim text As String
+
+    For c = 1 To mColCount
+        hits = 0
+        biggest = 0
+
+        For r = firstDataRow To mRowCount
+            text = mCells(r, c)
+            ' A decimal separator is what distinguishes money from a document
+            ' number -- both are digit strings otherwise.
+            If InStr(text, ",") > 0 Or InStr(text, ".") > 0 Then
+                value = Abs(modUtil.ParseSapAmount(text))
+                If value <> 0 Then
+                    hits = hits + 1
+                    If value > biggest Then biggest = value
+                End If
+            End If
+        Next r
+
+        If hits > bestHits Or (hits = bestHits And hits > 0 And biggest > bestBiggest) Then
+            bestHits = hits
+            bestBiggest = biggest
+            ColumnThatLooksLikeAmount = c
+        End If
+    Next c
+
+    If bestHits = 0 Then ColumnThatLooksLikeAmount = 0
+End Function
+
+' The column that actually contains the wanted code. Finding the document
+' type column by looking for 'ZP' in it needs no translation at all.
+Public Function ColumnContaining(ByVal firstDataRow As Long, ByVal wanted As String) As Long
+    Dim c As Long, r As Long
+    Dim hits As Long, bestHits As Long
+    Dim target As String
+
+    target = Normalise(wanted)
+    If Len(target) = 0 Then Exit Function
+
+    For c = 1 To mColCount
+        hits = 0
+        For r = firstDataRow To mRowCount
+            If Normalise(mCells(r, c)) = target Then hits = hits + 1
+        Next r
+
+        If hits > bestHits Then
+            bestHits = hits
+            ColumnContaining = c
+        End If
+    Next c
+End Function
+
+' The column of long digit strings that is not the amount column -- a
+' document number. Ignores anything with a decimal separator.
+Public Function ColumnThatLooksLikeDocumentNumber(ByVal firstDataRow As Long, _
+                                                  ByVal skipColumn As Long) As Long
+    Dim c As Long, r As Long
+    Dim hits As Long, bestHits As Long
+    Dim text As String
+
+    For c = 1 To mColCount
+        If c <> skipColumn Then
+            hits = 0
+            For r = firstDataRow To mRowCount
+                text = mCells(r, c)
+                If Len(text) >= 8 And IsAllDigits(text) Then hits = hits + 1
+            Next r
+
+            If hits > bestHits Then
+                bestHits = hits
+                ColumnThatLooksLikeDocumentNumber = c
+            End If
+        End If
+    Next c
+End Function
+
+' The column with the most alphabetic content -- a name.
+Public Function ColumnThatLooksLikeName(ByVal firstDataRow As Long, _
+                                        ByVal skipColumn As Long) As Long
+    Dim c As Long, r As Long
+    Dim score As Long, bestScore As Long
+
+    For c = 1 To mColCount
+        If c <> skipColumn Then
+            score = 0
+            For r = firstDataRow To mRowCount
+                score = score + LetterCount(mCells(r, c))
+            Next r
+
+            If score > bestScore Then
+                bestScore = score
+                ColumnThatLooksLikeName = c
+            End If
+        End If
+    Next c
+End Function
+
+Private Function IsAllDigits(ByVal text As String) As Boolean
+    Dim i As Long
+    Dim ch As String
+
+    If Len(text) = 0 Then Exit Function
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch < "0" Or ch > "9" Then Exit Function
+    Next i
+    IsAllDigits = True
+End Function
+
+Private Function LetterCount(ByVal text As String) As Long
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(text)
+        ch = UCase$(Mid$(text, i, 1))
+        If ch >= "A" And ch <= "Z" Then LetterCount = LetterCount + 1
+    Next i
 End Function
 
 '-----------------------------------------------------------------------
@@ -501,11 +667,36 @@ Public Function DocumentNumbersOfType(ByVal path As String, ByVal sampleIdx As L
         End If
     Next r
 
+    ' Caption match failed. Find the type column by looking for the wanted
+    ' code itself -- 'ZP' is 'ZP' in every language -- and the document-number
+    ' column by its shape. This is what makes the step language-independent.
+    If typeCol = 0 Then
+        typeCol = ColumnContaining(2, wantedType)
+        If typeCol > 0 Then
+            mHeaderRow = 1
+            modLog.LogAction sampleIdx, "ZP numbers", _
+                         "No caption matched, so column " & typeCol & " was taken as the " & _
+                         "document type because it holds '" & wantedType & "'.", _
+                         "OK", path
+        End If
+    End If
+
+    If documentCol = 0 Then
+        documentCol = ColumnThatLooksLikeDocumentNumber(2, ColumnThatLooksLikeAmount(2))
+        If documentCol > 0 Then
+            mHeaderRow = 1
+            modLog.LogAction sampleIdx, "ZP numbers", _
+                         "No caption matched, so column " & documentCol & " was taken as " & _
+                         "the document number because it holds long digit strings. Check " & _
+                         "that against " & path & ".", "MANUAL", path
+        End If
+    End If
+
     If documentCol = 0 Then
         modLog.LogAction sampleIdx, "ZP numbers", _
-                     "No document-number column found in " & path & ". Open it and name " & _
-                     "the heading in 'Payment usage document column' on the Control sheet.", _
-                     "ERROR", path
+                     "No document-number column found in " & path & ", by caption or by " & _
+                     "content. Open it and name the heading in 'Payment usage document " & _
+                     "column' on the Control sheet.", "ERROR", path
         Exit Function
     End If
 

@@ -29,8 +29,21 @@ Private Const BLOCKED_OKCODES As String = _
     "BU|SICH|POST|SAVE|DELE|LOES|LOSC|STOR|PARK|HALT|FBRA|FBR2|BUCH|AB|ABBR_SAVE"
 
 ' Substrings that mark a write action in a button tooltip or menu entry.
+'
+' LANGUAGE NOTE. Button labels are translated, so this list only bites on a
+' logon whose language it covers. That is acceptable only because it is the
+' second line of defence, not the first: every ID this module presses comes
+' from the curated Screen Map, so the text check exists to catch the case
+' where a recorded ID has moved to a different function on another release.
+' Where it does not match, the OK-code and VKey blocks below still apply,
+' and the authorisation profile still applies underneath everything.
 Private Const BLOCKED_TEXT_FRAGMENTS As String = _
-    "POST|SAVE|SICHERN|BUCHEN|DELETE|REVERSE|CHANGE|EDIT|PARK|HOLD|RESET|CLEAR|RELEASE"
+    "POST|SAVE|DELETE|REVERSE|CHANGE|EDIT|PARK|HOLD|RESET|CLEAR|RELEASE|" & _
+    "SICHERN|BUCHEN|LOESCHEN|LÖSCHEN|STORNIEREN|AENDERN|ÄNDERN|" & _
+    "GUARDAR|CONTABILIZAR|BORRAR|ANULAR|MODIFICAR|" & _
+    "ENREGISTRER|COMPTABILISER|SUPPRIMER|EXTOURNER|MODIFIER|" & _
+    "GRAVAR|CONTABILIZAR|ELIMINAR|ESTORNAR|" & _
+    "SALVA|REGISTRA|CANCELLA|STORNA|MODIFICA"
 
 ' Function keys that commit on standard SAP screens. 11 is Save.
 Private Const BLOCKED_VKEYS As String = "11"
@@ -190,6 +203,41 @@ Public Sub AssertPopupKnown()
                   "modSafety or handle it explicitly."
     End If
 End Sub
+
+' Identify a popup by what it contains rather than what it is called.
+Private Function PopupLooksKnownByStructure() As Boolean
+    Dim probe As Variant
+
+    ' The save dialog, at either depth.
+    For Each probe In Array("wnd[1]/usr/ctxtDY_PATH", "wnd[2]/usr/ctxtDY_PATH", _
+                            "wnd[1]/usr/ctxtDY_FILENAME", "wnd[2]/usr/ctxtDY_FILENAME")
+        If modSapConnect.Exists(CStr(probe)) Then
+            PopupLooksKnownByStructure = True
+            Exit Function
+        End If
+    Next probe
+
+    ' The attachment list, and the multiple-selection dialog.
+    For Each probe In Array(modConfig.ElementIdOrBlank("Invoice.AttachListGrid"), _
+                            modConfig.ElementIdOrBlank("MultiSel.PasteFromClipboard"))
+        If Len(CStr(probe)) > 0 Then
+            If modSapConnect.Exists(CStr(probe)) Then
+                PopupLooksKnownByStructure = True
+                Exit Function
+            End If
+        End If
+    Next probe
+
+    ' An operator who has met a popup this does not know can widen it without
+    ' editing code, in whatever language their system speaks.
+    If TitleIsKnown(ExtraKnownTitles()) Then PopupLooksKnownByStructure = True
+End Function
+
+Private Function ExtraKnownTitles() As String
+    On Error Resume Next
+    ExtraKnownTitles = Trim$(modConfig.Setting("Extra popup titles to allow"))
+    On Error GoTo 0
+End Function
 
 Private Function TitleIsKnown(ByVal title As String) As Boolean
     Dim known() As String

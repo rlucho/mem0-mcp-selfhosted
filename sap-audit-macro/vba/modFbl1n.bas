@@ -7,20 +7,25 @@ Attribute VB_Name = "modFbl1n"
 ' documents, sorts by amount descending, exports the list as evidence,
 ' and returns the largest payment in the batch.
 '
-' NOT RECORDED. None of Audit.vbs, Audit2.vbs, Audit3.vbs or Audit5.vbs
-' reaches FBL1N -- all four stop at the Payment Usage export. So every
-' Fbl1n.* and MultiSel.* row on the Screen Map is a standard-SAP guess
-' rather than a captured value, and the whole stage is gated: with the
-' required rows blank it logs what it would have done and the sample
-' finishes at step 5 instead of failing.
+' N1.vbs settled the selection screen, and corrected two predictions: the
+' company code is KD_BUKRS, not DD_BUKRS, and the document number is not on
+' the main selection screen at all -- it lives in dynamic selections, which
+' have to be opened with tbar[1]/btn[16] before the multiple-selection
+' arrow exists.
 '
-' The largest payment is found by reading the grid's own values, not by
-' sorting and taking row 0. The sort still happens, because it is what the
-' auditor's own walkthrough does and it makes the exported evidence match
-' what a human would produce -- but the decision does not depend on it.
-' Worth being careful about: in the recordings the operator sorted
-' ascending and took row index 1, which on a list of negative amounts is
-' the *second* largest. Reading values avoids inheriting that.
+' It also showed that FBL1N renders as a CLASSIC LIST here, addressed as
+' lbl[x,y], not as an ALV grid. That matters more than it sounds: there is
+' no grid to read row by row, and the recording navigates it by clicking
+' screen positions -- lbl[164,8], lbl[164,10]. Those coordinates are fixed
+' screen rows. Replaying them across 56 batches of different sizes would
+' open whichever document happened to land on row 8, silently, with no
+' error to notice.
+'
+' So the list is not navigated by position. It is exported with the same
+' List > Save/Send > File path used everywhere else, read back off disk to
+' find the largest payment by value, and that payment is then reached by
+' its document number. Slower by one export; correct regardless of how many
+' rows the batch has.
 '=======================================================================
 Option Explicit
 
@@ -42,8 +47,7 @@ End Type
 '-----------------------------------------------------------------------
 Public Function IsConfigured() As Boolean
     IsConfigured = (Len(modConfig.ElementIdOrBlank("Fbl1n.CompanyCode")) > 0) And _
-                   (Len(modConfig.ElementIdOrBlank("Fbl1n.ExecuteButton")) > 0) And _
-                   (Len(modConfig.ElementIdOrBlank("Fbl1n.ResultGrid")) > 0)
+                   (Len(modConfig.ElementIdOrBlank("Fbl1n.ExecuteButton")) > 0)
 End Function
 
 '-----------------------------------------------------------------------
@@ -97,25 +101,21 @@ Public Function LargestPaymentOfBatch(ByVal sampleIdx As Long, _
         Exit Function
     End If
 
-    If Not modSapConnect.Exists(modConfig.ElementId("Fbl1n.ResultGrid")) Then
-        result.Notes = "FBL1N ran but its result grid is not on screen. Either the " & _
-                       "filter matched nothing, or Fbl1n.ResultGrid is wrong. Status " & _
-                       "bar: " & modSapConnect.StatusBarText()
+    ' Export the whole list, then decide from the file. Reading the file
+    ' rather than the screen is what makes this safe across batches of
+    ' different sizes -- see the note at the top of this module.
+    result.ExportFile = modExport.ExportClassicList( _
+        sampleIdx, folder, fileStem & "_ZP_payments.xlsx")
+
+    If Len(result.ExportFile) = 0 Then
+        result.Notes = "The FBL1N list did not export, so the largest payment of the " & _
+                       "batch could not be identified."
         modLog.LogAction sampleIdx, "FBL1N", result.Notes, "ERROR", vbNullString
         LargestPaymentOfBatch = result
         Exit Function
     End If
 
-    SortByAmountDescending
-
-    ' Step 7 -- the batch's payment list, as evidence.
-    result.ExportFile = modExport.ExportAlvGridById( _
-        sampleIdx, "Fbl1n.ResultGrid", folder, fileStem & "_ZP_payments.xlsx")
-
-    ' Step 8 -- the largest payment, read from the grid rather than assumed
-    ' to be the first row after sorting.
-    result = FindLargest(sampleIdx, result)
-
+    result = LargestInExport(sampleIdx, result)
     LargestPaymentOfBatch = result
     Exit Function
 
@@ -123,6 +123,47 @@ Failed:
     result.Notes = "The FBL1N stage stopped: " & Err.Description
     modLog.LogAction sampleIdx, "FBL1N failed", Err.Description, "ERROR", vbNullString
     LargestPaymentOfBatch = result
+End Function
+
+'-----------------------------------------------------------------------
+' The largest payment in the exported list.
+'-----------------------------------------------------------------------
+Private Function LargestInExport(ByVal sampleIdx As Long, _
+                                 ByRef partial As ZpPayment) As ZpPayment
+    Dim result As ZpPayment
+    Dim largest As ListRow
+
+    result = partial
+
+    largest = modExportRead.LargestRow(result.ExportFile, sampleIdx, _
+                                       "ZP list amount column", _
+                                       "ZP list vendor column", _
+                                       "ZP list document column")
+
+    If Not largest.Found Then
+        result.Notes = "Exported " & result.ExportFile & " but no amount could be read " & _
+                       "from it. Open the file and copy its column headings into the " & _
+                       "'ZP list ...' settings on the Control sheet."
+        modLog.LogAction sampleIdx, "FBL1N", result.Notes, "ERROR", result.ExportFile
+        LargestInExport = result
+        Exit Function
+    End If
+
+    result.Found = True
+    result.Amount = largest.Amount
+    result.DocumentNumber = largest.DocumentNumber
+    result.VendorName = largest.Supplier
+    result.RowsConsidered = largest.RowsConsidered
+
+    modLog.LogAction sampleIdx, "FBL1N", _
+                 "Largest of " & largest.RowsConsidered & " payments in the batch: " & _
+                 Format$(largest.Amount, "#,##0.00") & _
+                 IIf(Len(largest.DocumentNumber) > 0, _
+                     ", document " & largest.DocumentNumber, "") & _
+                 IIf(Len(largest.Supplier) > 0, ", " & largest.Supplier, ""), _
+                 "OK", result.ExportFile
+
+    LargestInExport = result
 End Function
 
 '-----------------------------------------------------------------------

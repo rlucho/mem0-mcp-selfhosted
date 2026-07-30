@@ -124,6 +124,67 @@ Public Function CompleteSaveDialogPublic(ByVal sampleIdx As Long, ByVal folder A
     CompleteSaveDialogPublic = CompleteSaveDialog(sampleIdx, folder, fileName)
 End Function
 
+' Same, for a save dialog that opened somewhere other than wnd[1]. The
+' attachment export lands in wnd[2], because the attachment list itself is
+' already occupying wnd[1].
+Public Function CompleteSaveDialogIn(ByVal sampleIdx As Long, ByVal windowId As String, _
+                                     ByVal folder As String, ByVal fileName As String) As String
+    Dim target As String
+    Dim pathId As String, nameId As String
+
+    modUtil.EnsureFolder folder
+    target = modUtil.JoinPath(folder, fileName)
+
+    If modUtil.FileExists(target) Then
+        fileName = UniqueName(folder, fileName)
+        target = modUtil.JoinPath(folder, fileName)
+    End If
+
+    ' Rebase the recorded wnd[1] paths onto whichever window this dialog is in,
+    ' so one set of Save.* rows serves both depths.
+    pathId = Rebase(modConfig.ElementId("Save.Path"), windowId)
+    nameId = Rebase(modConfig.ElementId("Save.FileName"), windowId)
+
+    If Not modSapConnect.Exists(pathId) Or Not modSapConnect.Exists(nameId) Then
+        modLog.LogAction sampleIdx, "Export", _
+                     "The save dialog in " & windowId & " does not carry " & pathId & _
+                     " / " & nameId & ", so the file could not be placed.", _
+                     "ERROR", vbNullString
+        Exit Function
+    End If
+
+    modSapConnect.Element(pathId).Text = folder
+    modSapConnect.Element(nameId).Text = fileName
+
+    modSafety.GuardedPress Rebase(modConfig.ElementId("Save.GenerateButton"), windowId)
+    modSapConnect.WaitForSap
+
+    If Not WaitForFile(target, 20) Then
+        modLog.LogAction sampleIdx, "Export", _
+                     "SAP reported no error but " & target & " did not appear.", _
+                     "ERROR", target
+        Exit Function
+    End If
+
+    modLog.LogAction sampleIdx, "Export", _
+                 "Wrote " & Format$(modUtil.FileSizeBytes(target) / 1024, "0.0") & " KB", _
+                 "OK", target
+
+    CompleteSaveDialogIn = target
+End Function
+
+' 'wnd[1]/usr/ctxtDY_PATH' + 'wnd[2]' -> 'wnd[2]/usr/ctxtDY_PATH'
+Private Function Rebase(ByVal elementId As String, ByVal windowId As String) As String
+    Dim slash As Long
+
+    slash = InStr(elementId, "/")
+    If slash = 0 Then
+        Rebase = elementId
+    Else
+        Rebase = windowId & Mid$(elementId, slash)
+    End If
+End Function
+
 '-----------------------------------------------------------------------
 ' The 'in which format?' popup. Not every release shows it, and not every
 ' list offers the same options, so this is best-effort and never fatal.
