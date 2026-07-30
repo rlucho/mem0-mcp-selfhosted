@@ -83,8 +83,13 @@ CONTROL_SETTINGS = [
      "Optional FEBAN filter. Leave blank for all house banks."),
     ("Account ID", "",
      "Optional FEBAN filter. Leave blank for all accounts."),
-    ("Download root folder", r"C:\Audit\PP2_FY26\Extracts",
-     "Created if missing. One subfolder per month tab, e.g. ...\\Extracts\\Sep 25."),
+    ("Download root folder", r"C:\Users\eslucres\Documents\Audit GBKM",
+     "Taken from recordings/Audit.vbs. Created if missing. One subfolder per month tab, "
+     "e.g. ...\\Audit GBKM\\Sep 25."),
+    ("Confirming party name", "SANTANDER SCF",
+     "A cleared item whose supplier name matches this is treated as a confirming "
+     "(supply-chain-finance) payment and routed down the Audit2 path, which needs extra "
+     "steps. Matched case-insensitively, ignoring spaces."),
     ("Run mode", "DRY RUN",
      "DRY RUN walks every screen and logs what it would export, without exporting. "
      "EXTRACT performs the exports. Always complete one clean DRY RUN first."),
@@ -95,10 +100,20 @@ CONTROL_SETTINGS = [
      "the next sample."),
     ("Max seconds to wait per screen", 60,
      "Guards against an indefinite hang when SAP is slow."),
-    ("SAP date format", "DMY",
-     "How your SAP user renders dates, from SU3 > Defaults. DMY = 31.12.2025, "
-     "DMY/ = 31/12/2025, MDY = 12/31/2025, YMD = 2025-12-31. Get this wrong and "
-     "FEBAN silently searches the wrong period."),
+    ("SAP date format", "DDMMYYYY",
+     "How dates are typed into SAP. DDMMYYYY = 01092025, which is what "
+     "recordings/Audit.vbs used and therefore what is known to work here. Also "
+     "supported: DMY = 31.12.2025, DMY/ = 31/12/2025, MDY = 12/31/2025, "
+     "YMD = 2025-12-31. Get this wrong and FEBAN silently searches the wrong period."),
+    ("Cleared list amount column", "",
+     "Caption of the amount column in the exported cleared-items list, if the macro "
+     "does not find it on its own. Open the first exported file and copy the heading "
+     "exactly. Leave blank to let the macro try its built-in list of captions."),
+    ("Cleared list supplier column", "",
+     "Caption of the supplier-name column in that same file. Same rules."),
+    ("Cleared list document column", "",
+     "Caption of the invoice document-number column in that same file. Optional -- "
+     "without it the run still identifies the supplier and amount."),
     ("Operator name", "",
      "Written into the log for the audit trail."),
 ]
@@ -191,14 +206,25 @@ def build_control(workbook: Workbook) -> None:
     progress_row = header_row + len(CONTROL_SETTINGS) + 3
     sheet[f"B{progress_row}"] = "Progress (formulas over the Samples sheet)"
     sheet[f"B{progress_row}"].font = SECTION_FONT
+    # One counter per status modMain can write, so the sheet reflects the run
+    # rather than only its successes.
     progress = [
         ("Samples in scope", "=COUNTA(Samples!A5:A1000)"),
-        ("Completed", '=COUNTIF(Samples!J5:J1000,"DONE")'),
-        ("Errored", '=COUNTIF(Samples!J5:J1000,"ERROR")'),
-        ("Not started", '=COUNTBLANK(Samples!J5:J60)'),
+        ("DONE -- invoice downloaded", '=COUNTIF(Samples!J5:J1000,"DONE")'),
+        ("BLOCKED_SCF -- Santander, needs the Audit2 steps",
+         '=COUNTIF(Samples!J5:J1000,"BLOCKED_SCF")'),
+        ("PARTIAL -- traced, no invoice file", '=COUNTIF(Samples!J5:J1000,"PARTIAL")'),
+        ("NOT FOUND -- no matching statement line",
+         '=COUNTIF(Samples!J5:J1000,"NOT FOUND")'),
+        ("AMBIGUOUS -- more than one line matched",
+         '=COUNTIF(Samples!J5:J1000,"AMBIGUOUS")'),
+        ("ERROR", '=COUNTIF(Samples!J5:J1000,"ERROR")'),
+        ("Not started", "=COUNTBLANK(Samples!J5:J60)"),
         ("Files downloaded", "=SUM(Samples!N5:N1000)"),
         ("Samples with no named beneficiary in the request",
          '=COUNTIF(Samples!I5:I1000,"*no_named_beneficiary*")'),
+        ("Samples the request already names as SANTANDER SCF",
+         '=COUNTIF(Samples!G5:G1000,"*SANTANDER*")'),
     ]
     for offset, (label, formula) in enumerate(progress):
         row = progress_row + 1 + offset
@@ -238,61 +264,89 @@ def build_control(workbook: Workbook) -> None:
 # Screen Map
 # --------------------------------------------------------------------------- #
 
-# key, what it is, example ID, required?
+# key, what it is, ID, required?
+#
+# The IDs below are the ones actually captured in recordings/Audit.vbs on this
+# system, not generic examples -- 'recorded' in the Source column marks those.
+# 'VERIFY' marks a row the recording did not cover, where the value is a
+# standard-but-unconfirmed guess that has to be checked before an EXTRACT run.
 SCREEN_MAP_ROWS = [
-    ("--- FEBAN selection screen ---", "", "", ""),
+    ("--- FEBAN selection screen (a MODAL dialog on this system, wnd[1]) ---", "", "", ""),
+    ("FEBAN.SelectionWindow", "Window the selection fields sit in. wnd[1] here, "
+     "because FEBAN opens its selection as a popup rather than a full screen",
+     "wnd[1]", "Yes"),
     ("FEBAN.CompanyCode", "Company code input field",
-     "wnd[0]/usr/ctxtFEBA_SEL-BUKRS", "Yes"),
-    ("FEBAN.HouseBank", "House bank input field",
-     "wnd[0]/usr/ctxtFEBA_SEL-HBKID", "No"),
-    ("FEBAN.AccountId", "Account ID input field",
-     "wnd[0]/usr/ctxtFEBA_SEL-HKTID", "No"),
+     "wnd[1]/usr/ctxtSL_BUKRS-LOW", "Yes"),
     ("FEBAN.StatementDateFrom", "Statement date, low value",
-     "wnd[0]/usr/ctxtFEBA_SEL-AZDAT", "Yes"),
+     "wnd[1]/usr/ctxtSL_AZDAT-LOW", "Yes"),
     ("FEBAN.StatementDateTo", "Statement date, high value",
-     "wnd[0]/usr/ctxtFEBA_SEL-AZDAT_BIS", "No"),
-    ("FEBAN.ExecuteButton", "Execute. Prefer the button ID over sending F8",
-     "wnd[0]/tbar[1]/btn[8]", "Yes"),
+     "wnd[1]/usr/ctxtSL_AZDAT-HIGH", "Yes"),
+    ("FEBAN.ExecuteButton", "Execute, on the popup's own toolbar",
+     "wnd[1]/tbar[0]/btn[8]", "Yes"),
+    ("FEBAN.PostExecuteButton", "Toolbar button pressed straight after Execute in the "
+     "recording. Leave blank to skip it -- check what it does before relying on it",
+     "wnd[0]/tbar[1]/btn[14]", "No"),
     ("--- FEBAN result list ---", "", "", ""),
-    ("FEBAN.ResultGrid", "ALV grid shell holding the statement items",
-     "wnd[0]/shellcont/shell/shellcont[1]/shell[1]", "Yes"),
-    ("FEBAN.ResultTree", "Navigation tree, if this release shows one",
-     "wnd[0]/shellcont/shell/shellcont[0]/shell", "No"),
-    ("FEBAN.Col.ValueDate", "Grid column name holding the value date",
-     "VALUT", "Yes"),
-    ("FEBAN.Col.Amount", "Grid column name holding the amount",
+    ("FEBAN.ResultGrid", "ALV grid holding the statement items",
+     "wnd[0]/shellcont/shell", "Yes"),
+    ("FEBAN.Col.Amount", "Grid column holding the amount",
      "KWBTR", "Yes"),
-    ("FEBAN.Col.Status", "Grid column name holding the posting status",
+    ("FEBAN.Col.ValueDate", "Grid column holding the value date. NOT in the recording "
+     "-- run modFeban.DumpGridColumns and paste the real name here",
+     "VALUT", "Yes"),
+    ("FEBAN.Col.Status", "Grid column holding the posting status. VERIFY",
      "ESTAT", "No"),
-    ("FEBAN.Col.DocNumber", "Grid column name holding the FI document number",
+    ("FEBAN.Col.DocNumber", "Grid column holding the FI document number. VERIFY",
      "BELNR", "No"),
-    ("FEBAN.Col.Reference", "Grid column name holding the bank reference or note-to-payee",
-     "SGTXT", "No"),
-    ("--- ALV export ---", "", "", ""),
-    ("Export.ToolbarButton", "Grid toolbar export button function code",
-     "&MB_EXPORT", "Yes"),
-    ("Export.MenuItem", "Context-menu entry for local file / spreadsheet",
-     "&PC", "Yes"),
-    ("Export.FormatRadio", "Radio button for the chosen file format in the format popup",
-     "wnd[1]/usr/subSUBSCREEN_STEPLOOP:SAPLSPO5:0150/sub:SAPLSPO5:0150/radSPOPLI-SELFLAG[1,0]",
-     "No"),
-    ("Export.FormatOkButton", "Confirm the format popup",
-     "wnd[1]/tbar[0]/btn[0]", "No"),
+    ("FEBAN.Col.PartyName", "Grid column holding the beneficiary name, if the grid has one",
+     "", "No"),
+    ("--- FEBAN item detail ---", "", "", ""),
+    ("Feban.Detail.DocNumber", "FI document field on the statement-item detail screen",
+     "wnd[0]/usr/subSUB_MAIN:SAPLNEW_FEBA:4000/subSUB_APPLICATION:SAPLNEW_FEBA:2200/"
+     "subAREA1:SAPLNEW_FEBA:2201/txtD2201_BELNR", "Yes"),
+    ("--- FI document (reached with F2 from the detail screen) ---", "", "", ""),
+    ("Doc.BsegGrid", "Line-item grid on the document overview",
+     "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", "Yes"),
+    ("Doc.Col.Amount", "Line-item grid column holding the local-currency amount",
+     "DMBTR", "Yes"),
+    ("Doc.Col.Vendor", "Line-item grid column holding the vendor account. VERIFY",
+     "LIFNR", "No"),
+    ("Doc.ClearingDocField", "Clearing-document field on the line-item detail screen",
+     "wnd[0]/usr/txtBSEG-AUGBL", "Yes"),
+    ("--- Cleared items with supplier names ---", "", "", ""),
+    ("Cleared.Menu", "Menu path that produces the cleared-items list from the clearing "
+     "document. menu[5]/menu[3] in the recording",
+     "wnd[0]/mbar/menu[5]/menu[3]", "Yes"),
+    ("Cleared.ListAnchor", "A label that exists on the cleared-items list, used to "
+     "confirm the list actually came up",
+     "wnd[0]/usr/lbl[28,7]", "No"),
+    ("--- Classic list export (List > Save/Send > File) ---", "", "", ""),
+    ("Export.ListMenu", "Menu path that opens the save-list dialog",
+     "wnd[0]/mbar/menu[0]/menu[3]/menu[1]", "Yes"),
+    ("Export.FormatOkButton", "Confirm the file-format popup",
+     "wnd[1]/tbar[0]/btn[0]", "Yes"),
     ("--- Save-as dialog ---", "", "", ""),
     ("Save.Path", "Directory field", "wnd[1]/usr/ctxtDY_PATH", "Yes"),
-    ("Save.FileName", "File name field", "wnd[1]/usr/ctxtDY_FILENAME", "Yes"),
-    ("Save.Encoding", "Encoding field, where present", "wnd[1]/usr/ctxtDY_FILE_ENCODING", "No"),
-    ("Save.GenerateButton", "Generate / Replace button", "wnd[1]/tbar[0]/btn[11]", "Yes"),
-    ("--- Document drill-down (FB03) ---", "", "", ""),
-    ("FB03.DocNumber", "Document number field", "wnd[0]/usr/txtRF05L-BELNR", "No"),
-    ("FB03.CompanyCode", "Company code field", "wnd[0]/usr/ctxtRF05L-BUKRS", "No"),
-    ("FB03.FiscalYear", "Fiscal year field", "wnd[0]/usr/txtRF05L-GJAHR", "No"),
-    ("FB03.ItemGrid", "Line-item ALV grid shell", "wnd[0]/usr/cntlGRID1/shellcont/shell", "No"),
-    ("FB03.GosToolbox", "Services-for-object toolbox on the title bar",
+    ("Save.FileName", "File name field. The recording left the default in place, so "
+     "this ID is standard-but-unconfirmed. VERIFY",
+     "wnd[1]/usr/ctxtDY_FILENAME", "Yes"),
+    ("Save.Encoding", "Encoding field, where present. VERIFY", "wnd[1]/usr/ctxtDY_FILE_ENCODING", "No"),
+    ("Save.GenerateButton", "Confirm the save. btn[0], not btn[11], on this dialog",
+     "wnd[1]/tbar[0]/btn[0]", "Yes"),
+    ("--- Invoice PDF: regular supplier route ---", "", "", ""),
+    ("Invoice.GosToolbox", "Services-for-object toolbox on the title bar. NOT in the "
+     "recording -- Audit2.vbs captured no steps. VERIFY",
      "wnd[0]/titl/shellcont/shell", "No"),
-    ("--- Attachment list (OAOR / GOS) ---", "", "", ""),
-    ("Attach.ListGrid", "Attachment list grid shell", "wnd[1]/usr/cntlCONTAINER/shellcont/shell", "No"),
-    ("Attach.SaveButton", "Save / export attachment button", "wnd[1]/tbar[0]/btn[5]", "No"),
+    ("Invoice.AttachListGrid", "Attachment-list grid. VERIFY",
+     "wnd[1]/usr/cntlCONTAINER/shellcont/shell", "No"),
+    ("Invoice.SaveButton", "Save/export button on the attachment list. VERIFY",
+     "wnd[1]/tbar[0]/btn[5]", "No"),
+    ("--- Invoice PDF: Santander SCF confirming route ---", "", "", ""),
+    ("Scf.Step1", "First step of the confirming-payment route. BLOCKED: Audit2.vbs "
+     "recorded nothing, so these steps are unknown. Re-record and fill in",
+     "", "No"),
+    ("Scf.Step2", "Second step of the confirming-payment route. BLOCKED", "", "No"),
+    ("Scf.Step3", "Third step of the confirming-payment route. BLOCKED", "", "No"),
 ]
 
 
@@ -304,27 +358,30 @@ def build_screen_map(workbook: Workbook) -> None:
     sheet["B2"] = "SAP element IDs"
     sheet["B2"].font = Font(name=FONT, size=14, bold=True, color="1F3864")
     sheet["B3"] = (
-        "Record a session with Alt+F12 > Script Recording and Playback, open the .vbs "
-        "it writes, and copy each findById(\"...\") string into column F. The example "
-        "IDs in column D are typical but release-dependent -- verify every one against "
-        "your own recording before switching Run mode to EXTRACT."
+        "Column F is what the macro reads, and it is pre-filled from "
+        "recordings/Audit.vbs. Rows marked 'recorded' in column D came straight out of "
+        "that file and should be right for this system. Rows marked VERIFY were not "
+        "covered by the recording -- check each one against a fresh Alt+F12 recording "
+        "before switching Run mode to EXTRACT. Rows marked BLOCKED are unknown because "
+        "Audit2.vbs captured no steps."
     )
     sheet["B3"].font = NOTE_FONT
     sheet["B3"].alignment = Alignment(wrap_text=True, vertical="top")
     sheet.merge_cells("B3:F3")
-    sheet.row_dimensions[3].height = 42
+    sheet.row_dimensions[3].height = 56
 
     header_row = 5
-    headers = ["Key", "What it is", "Example ID (illustrative)", "Required", "Your recorded ID"]
+    headers = ["Key", "What it is", "Source", "Required", "Element ID (the macro reads this)"]
     for offset, title in enumerate(headers):
         sheet.cell(row=header_row, column=2 + offset, value=title)
     style_header(sheet, header_row, 6)
 
     row = header_row + 1
-    for key, description, example, required in SCREEN_MAP_ROWS:
+    for key, description, element_id, required in SCREEN_MAP_ROWS:
         if key.startswith("---"):
             sheet.cell(row=row, column=2, value=key.strip("- ").strip())
             sheet.cell(row=row, column=2).font = SECTION_FONT
+            sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=6)
             for col in range(2, 7):
                 sheet.cell(row=row, column=col).fill = PatternFill("solid", fgColor="DEEAF6")
                 sheet.cell(row=row, column=col).border = BOX
@@ -335,30 +392,51 @@ def build_screen_map(workbook: Workbook) -> None:
         sheet.cell(row=row, column=3, value=description).font = NOTE_FONT
         sheet.cell(row=row, column=3).alignment = Alignment(wrap_text=True, vertical="top")
 
-        example_cell = sheet.cell(row=row, column=4, value=example)
-        example_cell.font = Font(name=FONT, size=9, color="595959")
-        example_cell.fill = EXAMPLE_FILL
+        # Provenance, so nobody mistakes a standard guess for a captured value.
+        if "BLOCKED" in description:
+            source, colour = "BLOCKED", "C00000"
+        elif "VERIFY" in description or "NOT in the recording" in description:
+            source, colour = "VERIFY", "BF8F00"
+        elif element_id:
+            source, colour = "recorded", "375623"
+        else:
+            source, colour = "optional", "595959"
+
+        source_cell = sheet.cell(row=row, column=4, value=source)
+        source_cell.font = Font(name=FONT, size=9, bold=True, color=colour)
+        source_cell.alignment = Alignment(horizontal="center")
 
         required_cell = sheet.cell(row=row, column=5, value=required)
         required_cell.font = BODY_FONT
         required_cell.alignment = Alignment(horizontal="center")
 
-        target = sheet.cell(row=row, column=6)
+        target = sheet.cell(row=row, column=6, value=element_id or None)
         target.fill = INPUT_FILL
-        target.font = INPUT_FONT
+        target.font = Font(name=FONT, size=8, color="0000FF")
+        target.alignment = Alignment(wrap_text=True, vertical="top")
 
         for col in range(2, 7):
             sheet.cell(row=row, column=col).border = BOX
+        if element_id and len(element_id) > 70:
+            sheet.row_dimensions[row].height = 30
         row += 1
 
     note_row = row + 1
-    sheet.cell(row=note_row, column=2, value=(
-        "The macro reads column F only. A blank 'Required = Yes' row aborts the run with "
-        "a message naming the missing key, rather than guessing at an ID."
-    )).font = NOTE_FONT
-    sheet.cell(row=note_row, column=2).alignment = Alignment(wrap_text=True, vertical="top")
-    sheet.merge_cells(start_row=note_row, start_column=2, end_row=note_row, end_column=6)
-    sheet.row_dimensions[note_row].height = 30
+    for text in (
+        "The macro reads column F only. A blank 'Required = Yes' row aborts the run with a "
+        "message naming the missing key, rather than guessing at an ID.",
+        "FEBAN's selection screen is a modal popup on this system (wnd[1]), not a full "
+        "screen. That is why FEBAN.SelectionWindow exists -- the macro has to know which "
+        "window to press Execute in.",
+        "The recording entered dates as 8 digits with no separators (01092025). The Control "
+        "sheet's 'SAP date format' is set to DDMMYYYY to match. Do not change it to DMY "
+        "unless you have checked that this system accepts 01.09.2025 as well.",
+    ):
+        sheet.cell(row=note_row, column=2, value=text).font = NOTE_FONT
+        sheet.cell(row=note_row, column=2).alignment = Alignment(wrap_text=True, vertical="top")
+        sheet.merge_cells(start_row=note_row, start_column=2, end_row=note_row, end_column=6)
+        sheet.row_dimensions[note_row].height = 30
+        note_row += 1
 
 
 # --------------------------------------------------------------------------- #

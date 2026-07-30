@@ -81,21 +81,51 @@ The full list of data-quality findings is on the `Data Issues` sheet of the gene
 sap-audit-macro/
 ├── FEBAN_Audit_Control.xlsx    the workbook you run from
 ├── samples.csv                 the 56 samples, extracted and normalised
-├── RECORDING_GUIDE.md          Alt+F12, what to record, how to map it
+├── RECORDING_GUIDE.md          Alt+F12, what the recordings gave us, what is still missing
+├── recordings/
+│   ├── Audit.vbs               38 captured steps -- the main chain
+│   └── Audit2.vbs              boilerplate only; captured no steps
 ├── scripts/
 │   ├── extract_samples.py      auditor's xlsx  -> samples.csv
-│   └── build_control_workbook.py   samples.csv -> FEBAN_Audit_Control.xlsx
+│   ├── build_control_workbook.py   samples.csv -> FEBAN_Audit_Control.xlsx
+│   └── test_list_parser.py     tests for the list-parsing logic in modListFile.bas
 └── vba/
     ├── modConfig.bas           reads every setting and element ID from the workbook
     ├── modSafety.bas           the read-only guard
     ├── modSapConnect.bas       attaches to your running session; verifies the SID
     ├── modFeban.bas            per-month statement search and per-sample matching
-    ├── modDrilldown.bas        statement item -> FI document -> vendor -> attachment
+    ├── modChain.bas            statement item -> FI doc -> clearing doc -> invoice
+    ├── modListFile.bas         reads an exported list back to find the largest item
     ├── modExport.bas           ALV and classic list export to local files
     ├── modLog.bas              the audit trail
     ├── modUtil.bas             date, amount, filename helpers
     └── modMain.bas             entry points
 ```
+
+## The chain, per sample
+
+Following `recordings/Audit.vbs`:
+
+1. **FEBAN** for the sample's month — company code GBKM, statement date first to last day.
+   Ten executions cover all 56 samples, because FEBAN selects a period rather than a payment.
+2. **Match the statement line** on value date plus amount. Dates are compared on digits alone,
+   because SAP accepts `01092025` typed in but renders `01.09.2025` in the grid.
+3. **Drill to the FI document** — `txtD2201_BELNR` on the item detail, then F2.
+4. **Drill to the clearing document** — double-click the `DMBTR` line, read `txtBSEG-AUGBL`,
+   then F2.
+5. **Export the cleared items with supplier names** — the `menu[5]/menu[3]` list, saved via
+   *List → Save/Send → File*.
+6. **Read that export back off disk** to find the largest cleared item and its supplier. Done
+   by parsing the file rather than scraping the screen: the export happens anyway, and a
+   classic SAP list on screen is a grid of `lbl[x,y]` elements that has to be reassembled by
+   pixel position.
+7. **Fetch the invoice**, by the route the supplier implies:
+   - **Santander SCF** → confirming payment, the Audit2 route. **BLOCKED** — see below.
+   - **any other supplier** → open the payment and save its PDF.
+
+Step 6 logs which column it took as the amount and which as the supplier, so a wrong guess
+shows up on the first sample instead of quietly skewing all 56. If it picks wrong, name the
+column captions on the Control sheet.
 
 ## Setting it up
 
@@ -116,8 +146,9 @@ sap-audit-macro/
    looks — `SU3` → Defaults → Date format is the authority. Wrong value means FEBAN searches a
    period that does not exist and reports nothing found, with no error.
 
-5. **Record a session and fill in `Screen Map`** — see
-   [`RECORDING_GUIDE.md`](RECORDING_GUIDE.md). Every required row must be filled; the run
+5. **Check `Screen Map`.** It is already filled in from `recordings/Audit.vbs`. Deal with the
+   rows marked `VERIFY` and `BLOCKED` before an EXTRACT run — see
+   [`RECORDING_GUIDE.md`](RECORDING_GUIDE.md). Every required row must hold a value; the run
    aborts naming any that are blank rather than guessing at an ID.
 
 ## Running it
@@ -154,15 +185,27 @@ and, in the workbook itself:
 
 ## Known limits
 
-- **Invoice images often cannot be scripted out of SAP.** Listing the attachments works.
-  Extracting the PDF or TIFF itself usually does not: SAP hands the document to the registered
-  external viewer, and a script cannot capture that. The macro logs those as `MANUAL` rather
-  than reporting a success that left no file behind. For all 56 in one go, a read-only extract
-  from the content server by Basis is the better route — `modDrilldown`'s header explains why.
+- **The Santander SCF route is blocked.** `Audit2.vbs` captured no steps — just the scripting
+  boilerplate and a `resizeWorkingPane` call. Those samples run as far as identifying the
+  supplier and then log `BLOCKED_SCF`, carrying the clearing-document and invoice numbers so
+  they can be finished by hand. Re-record that walk and fill in the `Scf.*` rows to unblock it.
+  Eight of the 56 samples name `SANTANDER SCF` directly in the auditor's request, and more may
+  turn out to be SCF once the cleared items are read.
+- **The regular-supplier PDF download is unverified.** `Invoice.*` on the Screen Map is
+  standard SAP rather than recorded, because that walk wasn't captured either. Where those
+  rows are blank the run logs `MANUAL` with the document numbers, rather than reporting a
+  success that left no file behind.
+- **Invoice images sometimes cannot be scripted out of SAP at all.** Listing attachments works;
+  extracting the PDF often does not, because SAP hands the document to the registered external
+  viewer and a script cannot capture that. If that turns out to be the case here, a read-only
+  extract from the content server by Basis beats fighting the GUI for 56 documents.
 - **Ties are not resolved automatically.** Matching is on value date plus amount. Several
   samples are for exactly 2,450,000.00 on month-end dates, so ties are a real prospect; those
   are reported `AMBIGUOUS` for a human to settle rather than resolved by picking the first row.
-- **`FBL1N` selection-screen IDs are not in the default Screen Map.** The vendor line-item
-  export is stubbed and logs `SKIPPED` until you record that screen too.
-- **Statement lines that were never posted** come back `UNPOSTED` with no document. That is a
+- **Statement lines that were never posted** come back `PARTIAL` with no document. That is a
   finding to report, not a failure to fix.
+- **None of this has been run against SAP.** It was written from the recordings, and the
+  structural checks that can be done without SAP have been done — every cross-module
+  reference, block and `GoTo` label resolves, and the list-parsing logic is tested in
+  `scripts/test_list_parser.py`. The first `CheckSetup` and `DRY RUN` on your machine are the
+  real tests.

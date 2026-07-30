@@ -38,10 +38,14 @@ Private Const BLOCKED_VKEYS As String = "11"
 ' Modal windows the run knows how to handle. Anything else stops the run
 ' instead of being dismissed blind -- a blind Enter on an unrecognised
 ' popup is exactly how a 'read-only' script ends up committing something.
+' 'Postprocess' covers FEBAN's own selection popup, which is where the
+' company code and statement dates go on this system.
 Private Const KNOWN_POPUP_TITLES As String = _
     "Save list in file|Select Spreadsheet|Export list object to XXL|" & _
     "Information|Attachment list|Service: Attachment list|" & _
-    "Business Document Navigator|Save As|Directory Browse"
+    "Business Document Navigator|Save As|Directory Browse|" & _
+    "Postprocess|Post-process|Bank Statement|Electronic Account Statement|" & _
+    "Select File|Save in file|Restrictions"
 
 Public gWriteAttemptBlocked As Long     ' counted, and surfaced in the summary
 

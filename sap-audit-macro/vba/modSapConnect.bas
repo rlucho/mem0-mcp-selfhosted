@@ -27,8 +27,11 @@ Public Sub SapAttach()
     Dim guiAuto As Object
     Dim engine As Object
 
+    ' Two ROT names are in use. recordings/Audit.vbs on this system emits
+    ' SAPGUISERVER, so try that first and fall back to the more common SAPGUI.
     On Error Resume Next
-    Set guiAuto = GetObject("SAPGUI")
+    Set guiAuto = GetObject("SAPGUISERVER")
+    If guiAuto Is Nothing Then Set guiAuto = GetObject("SAPGUI")
     On Error GoTo 0
 
     If guiAuto Is Nothing Then

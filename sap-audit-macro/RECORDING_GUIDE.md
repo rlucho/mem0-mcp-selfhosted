@@ -33,58 +33,99 @@ security audit log (`SM19`/`SM20`) records the attach. For audit-support work th
 feature — it evidences who pulled the data — but tell Basis what you are doing rather than
 having them find out from the log.
 
-## What to record
+## What the two recordings gave us
 
-Record **one** payment line, end to end, slowly, in a single session. One good recording of
-one line gives every element ID the macro needs for all 56.
+Both are in [`recordings/`](recordings/), decoded from UTF-16 to plain text.
 
-Take sample #1 as the walkthrough — Sep-25, 03/09/2025, 8,072,447.42, `ACH PYMTS - LCL BULK
-FNDG`:
+**`Audit.vbs` — 38 captured steps, and it covers the main chain.** Everything it touched is
+already filled into the Screen Map, marked `recorded` in the Source column. The flow it
+proves out:
 
-| # | Do this | What it captures |
-|---|---|---|
-| 1 | Start the recording from a clean `SESSION_MANAGER` screen | a stable starting point |
-| 2 | Enter `FEBAN` | how your release opens the transaction |
-| 3 | Type company code `GBKM` | `FEBAN.CompanyCode` |
-| 4 | Type statement date `01.09.2025` to `30.09.2025` | `FEBAN.StatementDateFrom` / `…To` |
-| 5 | Press Execute | `FEBAN.ExecuteButton` |
-| 6 | Click once on the row for 8,072,447.42 | `FEBAN.ResultGrid`, and the grid's real ID |
-| 7 | Export the list: right-click → *Spreadsheet…* or the toolbar export button | `Export.*` |
-| 8 | In the save dialog, set a folder and file name, press Generate | `Save.*` |
-| 9 | Go back, then drill into the posted document (double-click the row, or the *Document* button) | how the drill-down works on your release |
-| 10 | In `FB03`, click the *Services for Object* toolbox → *Attachment list* | `FB03.GosToolbox`, `Attach.ListGrid` |
-| 11 | Close the attachment list with **Cancel**, not Enter | avoids opening the viewer |
-| 12 | Stop the recording | |
-
-Then **run `modFeban.DumpGridColumns`** with a FEBAN result list on screen. It prints the
-grid's real column names, which is what `FEBAN.Col.*` needs. Guessing at those is the single
-commonest reason a run matches nothing — the example values in the workbook (`VALUT`,
-`KWBTR`, `ESTAT`, `BELNR`) are typical but not universal.
-
-## Turning the recording into the Screen Map
-
-Open the `.vbs` in Notepad. It is a list of lines like:
-
-```vbscript
-session.findById("wnd[0]/usr/ctxtFEBA_SEL-BUKRS").text = "GBKM"
-session.findById("wnd[0]/tbar[1]/btn[8]").press
+```
+FEBAN
+  selection popup (wnd[1]!)   GBKM, 01092025 .. 30092025, Execute
+  result grid                 wnd[0]/shellcont/shell, sorted on KWBTR
+  double-click the row
+statement item detail         txtD2201_BELNR          -> the FI document
+  F2
+FI document overview          double-click the DMBTR line
+line item detail              txtBSEG-AUGBL           -> the clearing document
+  F2
+clearing document             mbar/menu[5]/menu[3]    -> cleared items + supplier names
+  mbar/menu[0]/menu[3]/menu[1]                        -> save-list dialog
+save dialog                   ctxtDY_PATH, btn[0]
 ```
 
-Copy the string inside each `findById("…")` into column F of the **Screen Map** sheet, next
-to the matching key. Column D holds an illustrative example for each one — useful for
-recognising which line is which, but do not assume it matches your system.
+Three things in it were worth catching:
 
-You only need the rows marked *Required = Yes* to get a first run going. The optional ones
-add the drill-down and the attachment steps.
+- **The FEBAN selection screen is a modal popup (`wnd[1]`), not a full screen.** Anything
+  written against `wnd[0]/usr/...` would fail outright.
+- **Dates were typed as 8 bare digits** — `01092025`, no separators. The Control sheet's
+  `SAP date format` is set to `DDMMYYYY` to match. This one is a silent failure if wrong:
+  FEBAN just returns nothing.
+- **The save dialog confirms with `btn[0]`, not `btn[11]`.** And the recording never set
+  `DY_FILENAME`, so it kept SAP's default name — that field's ID is the one guess left in the
+  save path, and it's marked `VERIFY`.
 
-## Things the recording will not tell you
+**`Audit2.vbs` captured nothing.** It holds the scripting boilerplate and a single
+`resizeWorkingPane` call — no steps at all. The recorder was almost certainly stopped before
+the actions, or started after them. So the Santander SCF confirming-payment route is
+**BLOCKED**: those samples run as far as identifying the supplier, then log `BLOCKED_SCF` with
+the clearing document and invoice numbers so they can be finished by hand.
 
-- **Your date format.** The recording shows `"01.09.2025"` or `"01/09/2025"` as *you* typed
-  it. Put the matching code (`DMY`, `DMY/`, `MDY`, `YMD`) on the Control sheet — `SU3` →
-  *Defaults* → *Date format* is the authority. Get it wrong and FEBAN searches a period that
-  does not exist and reports nothing found, with no error.
+## What still needs recording
+
+Three gaps. Everything marked `VERIFY` or `BLOCKED` on the Screen Map:
+
+| Gap | What to record | Screen Map keys |
+|---|---|---|
+| **The Santander SCF route** | Re-record `Audit2.vbs` from the clearing document through to the saved PDF for a confirming payment | `Scf.Step1..3` |
+| **The regular-supplier PDF** | The same walk for a non-Santander supplier: open the payment, *Services for Object* → *Attachment list*, save the PDF | `Invoice.GosToolbox`, `Invoice.AttachListGrid`, `Invoice.SaveButton` |
+| **The save dialog's file-name field** | Type a file name into the save dialog this time, rather than accepting the default | `Save.FileName` |
+
+Plus one that isn't a recording: **run `modFeban.DumpGridColumns`** with a FEBAN result list on
+screen. `Audit.vbs` only ever touched the `KWBTR` column, so the *value date* column name is
+still a guess (`VALUT`), and matching every sample depends on it. This prints the real names.
+
+When you re-record, keep it slow and single-purpose, and **close any attachment list with
+Cancel rather than Enter** — Enter hands the document to the external viewer and blocks the
+script behind it.
+
+## Turning a recording into the Screen Map
+
+Open the `.vbs` in Notepad — SAP writes it as UTF-16, so it looks fine in Notepad but spaced
+out in some editors. It is a list of lines like:
+
+```vbscript
+session.findById("wnd[1]/usr/ctxtSL_BUKRS-LOW").text = "gbkm"
+session.findById("wnd[1]/tbar[0]/btn[8]").press
+```
+
+Copy the string inside each `findById("…")` into **column F** of the **Screen Map** sheet, next
+to the matching key. Column F is the only column the macro reads. Column D says where the
+current value came from:
+
+| Source | Meaning |
+|---|---|
+| `recorded` | Came out of `Audit.vbs`. Should be right for this system. |
+| `VERIFY` | A standard SAP ID, but the recording never touched it. Check before an EXTRACT run. |
+| `BLOCKED` | Unknown, because `Audit2.vbs` captured nothing. |
+
+Ignore the recording's noise lines: `resizeWorkingPane`, `setFocus`, `caretPosition`,
+`sendVKey 4` followed by `wnd[2].close` (that's an F4 browse someone opened and cancelled).
+None of them are steps.
+
+## Things a recording will not tell you
+
+- **Whether the date format is what SAP expects.** `Audit.vbs` typed `01092025`, so
+  `DDMMYYYY` is known to work here. If you switch it, check `SU3` → *Defaults* →
+  *Date format* first. A wrong value means FEBAN searches a period that does not exist and
+  reports nothing found, with no error at all.
 - **Which house bank and account.** The samples appear to span at least two Citibank
   accounts (see `Data Issues`), so leaving both filters blank is the safer default.
-- **Batch-input style differences.** A recording made with a different SAP GUI theme
-  (Blue Crystal vs Quartz vs Fiori visual theme) can produce different container IDs for the
-  same grid. Record on the theme you will run on.
+- **What an unlabelled button does.** `Audit.vbs` presses `wnd[0]/tbar[1]/btn[14]` right after
+  Execute. That is in the Screen Map as `FEBAN.PostExecuteButton` and it is optional — check
+  what it actually does before relying on it, or clear the cell to skip it.
+- **Theme differences.** A recording made under a different SAP GUI theme (Blue Crystal vs
+  Quartz vs the Fiori visual theme) can produce different container IDs for the same grid.
+  Record on the theme you will run on.

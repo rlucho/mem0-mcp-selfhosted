@@ -187,8 +187,7 @@ End Function
 Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) As Boolean
     Dim sheet As Worksheet
     Dim match As FebanMatch
-    Dim chain As DocumentChain
-    Dim documentNumber As String
+    Dim chain As ChainResult
     Dim folder As String
     Dim stem As String
     Dim exported As String
@@ -236,35 +235,24 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     exported = modExport.ExportAlvGrid(item.Idx, folder, stem & "_FEBAN_statement.txt")
     If Len(exported) > 0 Then filesTotal = filesTotal + 1
 
-    ' 2. the posted document behind the statement line
-    documentNumber = modDrilldown.DrillToFiDocument(item.Idx, match)
+    ' 2. statement item -> FI document -> clearing document -> cleared items
+    '    with supplier names -> the invoice for the largest of them
+    chain = modChain.Walk(item.Idx, match, folder, stem)
 
-    If Len(documentNumber) > 0 Then
-        chain = modDrilldown.ReadDocument(item.Idx, documentNumber, _
-                                         Format$(item.PayDate, "yyyy"))
+    If Len(chain.ClearedItemsFile) > 0 Then filesTotal = filesTotal + 1
+    If Len(chain.InvoiceFile) > 0 Then filesTotal = filesTotal + 1
 
-        ' 3. the invoice image, where the configuration allows an export
-        If chain.AttachmentCount > 0 Then
-            filesTotal = filesTotal + _
-                         modDrilldown.DownloadAttachments(item.Idx, documentNumber, folder)
-        End If
-
-        message = "Traced to FI document " & documentNumber & _
-                  IIf(Len(chain.VendorAccount) > 0, _
-                      ", vendor " & chain.VendorAccount & " " & chain.VendorName, _
-                      ", no vendor line on the document") & _
-                  ". " & chain.AttachmentCount & " attachment(s)."
-        If Len(chain.Notes) > 0 Then message = message & " " & chain.Notes
-
-        WriteResult sheet, item.Row, "DONE", match.StatementDate & " row " & match.GridRow, _
-                    documentNumber, chain.ClearedInvoices, chain.AttachmentCount, message
-    Else
-        WriteResult sheet, item.Row, "UNPOSTED", _
-                    match.StatementDate & " row " & match.GridRow, _
-                    vbNullString, vbNullString, 0, _
-                    "Statement line found but not posted to FI, so there is no document " & _
-                    "or invoice to trace. Report it as unposted."
+    message = chain.Notes
+    If Len(chain.LargestSupplier) > 0 Then
+        message = "Largest cleared item: " & chain.LargestSupplier & " " & _
+                  Format$(chain.LargestAmount, "#,##0.00") & ". " & message
     End If
+
+    WriteResult sheet, item.Row, chain.Status, _
+                match.StatementDate & " row " & match.GridRow, _
+                chain.FiDocument, _
+                Trim$(chain.ClearingDocument & " / " & chain.LargestDocument), _
+                CountFiles(chain), message
 
     ' Return to the statement list for the next sample in this month. A
     ' drill-down can leave the session several screens deep, so this is not
@@ -291,6 +279,11 @@ SampleFailed:
     On Error GoTo 0
 End Function
 
+Private Function CountFiles(ByRef chain As ChainResult) As Long
+    If Len(chain.ClearedItemsFile) > 0 Then CountFiles = CountFiles + 1
+    If Len(chain.InvoiceFile) > 0 Then CountFiles = CountFiles + 1
+End Function
+
 Private Sub WriteResult(ByVal sheet As Worksheet, ByVal row As Long, ByVal status As String, _
                         ByVal statementItem As String, ByVal fiDoc As String, _
                         ByVal invoices As String, ByVal fileCount As Long, _
@@ -308,6 +301,7 @@ Private Sub WriteResult(ByVal sheet As Worksheet, ByVal row As Long, ByVal statu
         Case "ERROR", "NOT FOUND", "AMBIGUOUS"
             sheet.Cells(row, COL_STATUS).Font.Color = RGB(192, 0, 0)
         Case Else
+            ' PARTIAL, UNPOSTED, BLOCKED_SCF -- work left to do, not failures
             sheet.Cells(row, COL_STATUS).Font.Color = RGB(128, 96, 0)
     End Select
     sheet.Cells(row, COL_STATUS).Font.Bold = True

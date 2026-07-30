@@ -32,15 +32,53 @@ Public Function SapDate(ByVal value As Date) As String
     pattern = SapDatePattern()
 
     Select Case pattern
-        Case "DMY":  SapDate = Format$(value, "dd.mm.yyyy")   ' 31.12.2025
-        Case "DMY/": SapDate = Format$(value, "dd/mm/yyyy")   ' 31/12/2025
-        Case "MDY":  SapDate = Format$(value, "mm/dd/yyyy")   ' 12/31/2025
-        Case "YMD":  SapDate = Format$(value, "yyyy-mm-dd")   ' 2025-12-31
+        ' What recordings/Audit.vbs actually typed: 8 digits, no separators.
+        Case "DDMMYYYY": SapDate = Format$(value, "ddmmyyyy")   ' 01092025
+        Case "MMDDYYYY": SapDate = Format$(value, "mmddyyyy")   ' 09012025
+        Case "DMY":      SapDate = Format$(value, "dd.mm.yyyy") ' 31.12.2025
+        Case "DMY/":     SapDate = Format$(value, "dd/mm/yyyy") ' 31/12/2025
+        Case "MDY":      SapDate = Format$(value, "mm/dd/yyyy") ' 12/31/2025
+        Case "YMD":      SapDate = Format$(value, "yyyy-mm-dd") ' 2025-12-31
         Case Else
             Err.Raise vbObjectError + 560, "modUtil.SapDate", _
                       "'SAP date format' on the Control sheet reads '" & pattern & _
-                      "'. It must be one of DMY, DMY/, MDY or YMD -- see SU3 > Defaults."
+                      "'. It must be one of DDMMYYYY, MMDDYYYY, DMY, DMY/, MDY or YMD."
     End Select
+End Function
+
+' SAP renders dates in grid cells with separators even when it accepts them
+' typed without. So a grid value is compared on its digits alone, which makes
+' the comparison independent of both the input format and the display format.
+Public Function DateDigits(ByVal value As Date) As String
+    DateDigits = Format$(value, "yyyymmdd")
+End Function
+
+' Pull a date out of whatever a grid cell holds -- '03.09.2025', '03/09/2025',
+' '2025-09-03' or '03092025' -- and return it as yyyymmdd, or "" if unreadable.
+Public Function GridDateDigits(ByVal text As String, ByVal pattern As String) As String
+    Dim digits As String
+    Dim i As Long
+    Dim ch As String
+    Dim dd As String, mm As String, yyyy As String
+
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch >= "0" And ch <= "9" Then digits = digits & ch
+    Next i
+
+    If Len(digits) <> 8 Then Exit Function
+
+    Select Case UCase$(pattern)
+        Case "YMD"
+            GridDateDigits = digits
+            Exit Function
+        Case "MDY", "MMDDYYYY"
+            mm = Left$(digits, 2): dd = Mid$(digits, 3, 2): yyyy = Right$(digits, 4)
+        Case Else                       ' every DMY variant
+            dd = Left$(digits, 2): mm = Mid$(digits, 3, 2): yyyy = Right$(digits, 4)
+    End Select
+
+    GridDateDigits = yyyy & mm & dd
 End Function
 
 ' Probe the session's own date format. GuiSession does not expose it
@@ -58,8 +96,12 @@ Private Function SapDatePattern() As String
     If Len(override) > 0 Then
         SapDatePattern = override
     Else
-        SapDatePattern = "DMY"
+        SapDatePattern = "DDMMYYYY"      ' what the recording used
     End If
+End Function
+
+Public Function SapDatePatternPublic() As String
+    SapDatePatternPublic = SapDatePattern()
 End Function
 
 Public Function MonthStart(ByVal value As Date) As Date

@@ -42,23 +42,44 @@ Public Function ExportAlvGrid(ByVal sampleIdx As Long, ByVal folder As String, _
 End Function
 
 '-----------------------------------------------------------------------
-' Classic (non-ALV) list export. %pc is a display-side function.
+' Classic (non-ALV) list export, via the menu path the recording used:
+' List > Save/Send > File. Both are display-side functions.
+'
+' Export.ListMenu is preferred over the %pc OK-code because that is what
+' recordings/Audit.vbs actually did on this system, and %pc is not offered
+' on every classic list.
 '-----------------------------------------------------------------------
 Public Function ExportClassicList(ByVal sampleIdx As Long, ByVal folder As String, _
                                   ByVal fileName As String) As String
     Dim target As String
+    Dim menuId As String
 
     target = modUtil.JoinPath(folder, fileName)
 
-    If modSafety.BlockedByDryRun("Would export classic list to " & target) Then Exit Function
+    If modSafety.BlockedByDryRun("Would export the list to " & target) Then Exit Function
 
     modUtil.EnsureFolder folder
 
-    modSafety.GuardedOkCode "%pc"
-    modSapConnect.WaitForSap
+    menuId = modConfig.ElementIdOrBlank("Export.ListMenu")
+    If Len(menuId) > 0 And modSapConnect.Exists(menuId) Then
+        modSapConnect.Element(menuId).Select
+        modSapConnect.WaitForSap
+    Else
+        ' Fallback for a list that does offer the OK-code.
+        modSafety.GuardedOkCode "%pc"
+    End If
 
     ConfirmFormatPopupIfPresent
     ExportClassicList = CompleteSaveDialog(sampleIdx, folder, fileName)
+End Function
+
+' Same save dialog, for callers that opened it themselves -- the invoice
+' download in modChain reaches it from the attachment list, not from a list
+' export.
+Public Function CompleteSaveDialogPublic(ByVal sampleIdx As Long, ByVal folder As String, _
+                                         ByVal fileName As String) As String
+    modUtil.EnsureFolder folder
+    CompleteSaveDialogPublic = CompleteSaveDialog(sampleIdx, folder, fileName)
 End Function
 
 '-----------------------------------------------------------------------
@@ -120,6 +141,20 @@ Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As Str
     End If
 
     modSapConnect.Element(pathId).Text = folder
+
+    ' The recording left the default file name in place, so this field's ID is
+    ' standard rather than confirmed. If it is not on the dialog, SAP keeps its
+    ' own default name -- which still exports, just not where the caller
+    ' expects, so that has to be an error rather than a shrug.
+    If Not modSapConnect.Exists(nameId) Then
+        modLog.LogAction sampleIdx, "Export", _
+                     "The save dialog has no field " & nameId & ", so the file name " & _
+                     "could not be set and SAP would write its own default. Record " & _
+                     "this dialog and correct Save.FileName on the Screen Map.", _
+                     "ERROR", vbNullString
+        Exit Function
+    End If
+
     modSapConnect.Element(nameId).Text = fileName
 
     encodingId = modConfig.ElementIdOrBlank("Save.Encoding")

@@ -33,13 +33,29 @@ Public Sub OpenMonth(ByVal dateFrom As Date, ByVal dateTo As Date)
     Dim tcode As String
     Dim companyCode As String
     Dim houseBank As String, accountId As String
+    Dim selectionWindow As String
+    Dim waited As Double
 
     tcode = modConfig.Setting("Transaction for statement search")
     companyCode = modConfig.Setting("Company code")
     houseBank = modConfig.Setting("House bank")
     accountId = modConfig.Setting("Account ID")
+    selectionWindow = modConfig.ElementId("FEBAN.SelectionWindow")
 
     modSafety.StartTransaction tcode
+
+    ' On this system FEBAN opens its selection as a modal popup, so the fields
+    ' do not exist until that window is up. Wait for it rather than assuming.
+    Do While Not modSapConnect.Exists(selectionWindow)
+        modUtil.SleepSeconds 0.3
+        waited = waited + 0.3
+        If waited > modConfig.SettingNumber("Max seconds to wait per screen", 60) Then
+            Err.Raise vbObjectError + 541, "modFeban.OpenMonth", _
+                      "The FEBAN selection window (" & selectionWindow & ") never " & _
+                      "appeared after starting " & tcode & ". Current transaction is " & _
+                      modSapConnect.CurrentTransaction() & "."
+        End If
+    Loop
 
     SetField "FEBAN.CompanyCode", companyCode
     SetOptionalField "FEBAN.HouseBank", houseBank
@@ -56,14 +72,33 @@ Public Sub OpenMonth(ByVal dateFrom As Date, ByVal dateTo As Date)
                  "OK", vbNullString
 
     modSafety.GuardedPress modConfig.ElementId("FEBAN.ExecuteButton")
-    modSafety.AssertPopupKnown
 
-    ' An empty result set is a finding in its own right, not a crash.
+    ' The recording pressed a result-screen toolbar button straight after
+    ' Execute. It is optional because nobody has confirmed what it does.
+    PressPostExecuteIfConfigured
+
     If modSapConnect.StatusBarType() = "E" Or modSapConnect.StatusBarType() = "A" Then
         Err.Raise vbObjectError + 540, "modFeban.OpenMonth", _
                   "FEBAN returned an error for " & modUtil.SapDate(dateFrom) & " to " & _
                   modUtil.SapDate(dateTo) & ": " & modSapConnect.StatusBarText()
     End If
+
+    If Not modSapConnect.Exists(modConfig.ElementId("FEBAN.ResultGrid")) Then
+        Err.Raise vbObjectError + 542, "modFeban.OpenMonth", _
+                  "FEBAN ran but the result grid is not on screen. Either the period " & _
+                  "holds no statement items, or FEBAN.ResultGrid is wrong for this " & _
+                  "screen. Status bar said: " & modSapConnect.StatusBarText()
+    End If
+End Sub
+
+Private Sub PressPostExecuteIfConfigured()
+    Dim buttonId As String
+
+    buttonId = modConfig.ElementIdOrBlank("FEBAN.PostExecuteButton")
+    If Len(buttonId) = 0 Then Exit Sub
+    If Not modSapConnect.Exists(buttonId) Then Exit Sub
+
+    modSafety.GuardedPress buttonId
 End Sub
 
 Private Sub SetField(ByVal mapKey As String, ByVal value As String)
@@ -105,7 +140,11 @@ Public Function FindSample(ByVal paymentDate As Date, ByVal amount As Double) As
     tolerance = modConfig.SettingNumber("Amount match tolerance", 0.01)
     colDate = modConfig.ElementId("FEBAN.Col.ValueDate")
     colAmount = modConfig.ElementId("FEBAN.Col.Amount")
-    wantedDate = modUtil.SapDate(paymentDate)
+
+    ' Compared on digits alone. SAP accepts '01092025' typed in but renders
+    ' '01.09.2025' in the grid, so a literal string comparison would never
+    ' match -- and that failure is silent, which makes it worth avoiding.
+    wantedDate = modUtil.DateDigits(paymentDate)
 
     rowCount = GridRowCount(grid)
     If rowCount = 0 Then
@@ -115,7 +154,8 @@ Public Function FindSample(ByVal paymentDate As Date, ByVal amount As Double) As
     End If
 
     For row = 0 To rowCount - 1
-        rowDate = Trim$(GridCell(grid, row, colDate))
+        rowDate = modUtil.GridDateDigits(GridCell(grid, row, colDate), _
+                                         modUtil.SapDatePatternPublic())
         rowAmount = modUtil.ParseSapAmount(GridCell(grid, row, colAmount))
 
         If rowDate = wantedDate Then
@@ -126,7 +166,7 @@ Public Function FindSample(ByVal paymentDate As Date, ByVal amount As Double) As
                     result.Found = True
                     result.GridRow = row
                     result.StatementAmount = rowAmount
-                    result.StatementDate = rowDate
+                    result.StatementDate = Trim$(GridCell(grid, row, colDate))
                     result.PostingStatus = GridCellIfMapped(grid, row, "FEBAN.Col.Status")
                     result.DocumentNumber = GridCellIfMapped(grid, row, "FEBAN.Col.DocNumber")
                     result.Reference = GridCellIfMapped(grid, row, "FEBAN.Col.Reference")
@@ -209,6 +249,22 @@ Public Sub SelectRow(ByVal gridRow As Long)
     grid.currentCellRow = gridRow
     On Error GoTo 0
 
+    modSapConnect.WaitForSap
+End Sub
+
+' Open the statement item's detail screen, the way the recording does it:
+' put the cursor on the amount cell of the row, then double-click it.
+Public Sub OpenStatementItem(ByVal gridRow As Long)
+    Dim grid As Object
+    Dim colAmount As String
+
+    Set grid = modSapConnect.Element(modConfig.ElementId("FEBAN.ResultGrid"))
+    colAmount = modConfig.ElementId("FEBAN.Col.Amount")
+
+    grid.setCurrentCell gridRow, colAmount
+    modSapConnect.WaitForSap
+
+    grid.doubleClickCurrentCell
     modSapConnect.WaitForSap
 End Sub
 
