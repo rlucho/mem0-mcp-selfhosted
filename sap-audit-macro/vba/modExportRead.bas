@@ -161,7 +161,7 @@ Private Function LoadFromWorkbook(ByVal path As String, ByVal sampleIdx As Long)
 
     For r = 1 To mRowCount
         For c = 1 To mColCount
-            mCells(r, c) = modUtil.Squeeze(CStr(area.Cells(r, c).Text))
+            mCells(r, c) = CellText(area.Cells(r, c))
         Next c
     Next r
 
@@ -181,6 +181,27 @@ Failed:
     modLog.LogAction sampleIdx, "Read export", _
                  "Could not open " & path & " as a workbook: " & Err.Description, _
                  "ERROR", path
+End Function
+
+' .Text is what the cell DISPLAYS, which is what we want: it carries the
+' thousands and decimal separators SAP wrote, so ParseSapAmount can read
+' them. But a column too narrow for its number displays as ##### -- and
+' that would parse to zero, silently, making the largest payment look like
+' nothing. Fall back to the underlying value in that case.
+Private Function CellText(ByVal cell As Object) As String
+    Dim shown As String
+
+    On Error Resume Next
+    shown = CStr(cell.Text)
+    On Error GoTo 0
+
+    If Len(Trim$(shown)) = 0 Or InStr(shown, "##") > 0 Then
+        On Error Resume Next
+        If Not IsEmpty(cell.Value) Then shown = CStr(cell.Value)
+        On Error GoTo 0
+    End If
+
+    CellText = modUtil.Squeeze(shown)
 End Function
 
 Private Function LoadFromText(ByVal path As String, ByVal sampleIdx As Long) As Boolean

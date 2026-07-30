@@ -102,6 +102,35 @@ for name, txt, expect_supplier, expect_amount in [
 
 print(f"{'PASS' if largest_row(t3) is None else 'FAIL'}  no header          -> falls through to the guess path (returns None here)")
 
+# --- Test 4: the real shape of an FBL1N export -------------------------------
+# Taken from a live _ZP_payments.XLSX: 164 ZP rows and a trailing totals row
+# whose Document Type and Name are blank and whose amount (7,995,083.11) is
+# LARGER than any real payment. Without the type filter and the blank-supplier
+# guard, the macro would report the total as the largest payment.
+t4 = ("Company Code\tSupplier\tName 1\tDocument Type\tDocument Number\tAmount in local currency\n"
+      "GBKM\t310166\tNorthumbrian Water Lim\tZP\t1100053056\t1,786.73\n"
+      "GBKM\t424439\tSantander SCF\tZP\t1100053275\t3,714,714.37\n"
+      "GBKM\t311084\tKemsley CHP Ltd\tZP\t1100053057\t1,729,128.13\n"
+      "\t\t\t\t\t7,995,083.11\n")
+
+def largest_of_type(txt, wanted):
+    lines = [l for l in txt.split("\n") if l.strip()]
+    hdr = lines[0].split("\t")
+    ai = match_column(hdr, AMOUNT_CAPS); si = match_column(hdr, SUPPLIER_CAPS)
+    ti = match_column(hdr, DOC_CAPS if False else ["Document Type"])
+    best = None
+    for l in lines[1:]:
+        f = l.split("\t")
+        if ti >= 0 and (ti >= len(f) or normalise(f[ti]) != normalise(wanted)): continue
+        if si >= len(f) or not normalise(f[si]): continue          # blank supplier = furniture
+        v = abs(parse_sap_amount(f[ai]))
+        if best is None or v > best[0]: best = (v, f[si])
+    return best
+
+r4 = largest_of_type(t4, "ZP")
+ok4 = r4 and abs(r4[0] - 3714714.37) < 0.005 and r4[1] == "Santander SCF"
+print(f"{'PASS' if ok4 else 'FAIL'}  totals row rejected  -> {r4}   (total 7,995,083.11 must NOT win)")
+
 print("\nConfirming-party matching:")
 for supplier, expected in [("SANTANDER SCF", True), ("SCF Santander", True), ("Santander  SCF", True),
                            ("SANTANDER SCF LONDON", True), ("DS SMITH LTD", False),
