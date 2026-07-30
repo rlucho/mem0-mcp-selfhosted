@@ -87,11 +87,15 @@ sap-audit-macro/
 ├── FEBAN_Audit_Control.xlsx    the workbook you run from
 ├── samples.csv                 the 56 samples, extracted and normalised
 ├── RECORDING_GUIDE.md          Alt+F12, what each recording gave us, what is still missing
-├── recordings/                 all four, decoded from UTF-16 to plain text
+├── SETUP.md                    two steps to a first test run
+├── build_xlsm.vbs              optional one-click .xlsm build
+├── recordings/                 all six, decoded from UTF-16 to plain text
 │   ├── Audit.vbs               steps 1-7, first pass
 │   ├── Audit2.vbs              steps 1-7 incl. the ALV export and the ZP list export
 │   ├── Audit3.vbs              steps 1-6, stops at the Payment Usage list
-│   └── Audit5.vbs              steps 1-7, second-largest row, ZP list exported
+│   ├── Audit5.vbs              steps 1-7, ZP list exported
+│   ├── N1.vbs                  steps 6-10, Santander SCF, ending in the PDF
+│   └── B2.vbs                  steps 6-10, regular vendor, ending in the PDF
 ├── scripts/
 │   ├── extract_samples.py      auditor's xlsx  -> samples.csv
 │   ├── build_control_workbook.py   samples.csv -> FEBAN_Audit_Control.xlsx
@@ -108,37 +112,43 @@ sap-audit-macro/
     ├── modExport.bas           ALV and classic list export to local files
     ├── modLog.bas              the audit trail
     ├── modUtil.bas             date, amount, filename helpers
-    └── modMain.bas             entry points
+    ├── modMain.bas             entry points
 ```
 
 ## The chain, per sample
 
 ```
- 1  FEBAN            company code + statement dates from the audit row     RECORDED
- 2  result list      export it; find the row by date+amount; open it       RECORDED
- 3  item detail      Posting Area 1 Doc. number -> F2 -> FI document       RECORDED
- 4  FI document      first posting-key-40 line with a clearing doc         RECORDED
- 5  line detail      clearing doc field -> F2 -> clearing document         RECORDED
- 6  Environment > Payment Usage -> the batch's ZP documents                RECORDED
- 7  export it, read the ZP document numbers back off disk                  RECORDED
- 8  FBL1N            company code, all items, month, those ZP numbers      PREDICTED
- 9  sort by amount, export, take the LARGEST ZP payment of the batch       PREDICTED
-10  inside it, the LARGEST invoice -> export that invoice's PDF            NOT RECORDED
-      largest payment is Santander SCF -> extra hop first (BLOCKED)
-      any other vendor                -> the PDF on the payment
+ 1  FEBAN            company code + statement dates from the audit row
+ 2  result list      export it; find the row by date+amount; open it
+ 3  item detail      Posting Area 1 Doc. number -> F2 -> FI document
+ 4  FI document      first posting-key-40 line with a clearing doc
+ 5  line detail      clearing doc field -> F2 -> clearing document
+ 6  Environment > Payment Usage -> the batch's ZP documents
+ 7  export it, read the ZP document numbers back off disk
+ 8  FBL1N            company code, all items, month, those ZP numbers
+ 9  export, take the LARGEST ZP payment of the batch
+10  Payment usage on it -> the LARGEST KR invoice -> that invoice's PDF
 ```
 
-Steps 1–7 come out of the four files in [`recordings/`](recordings/) and their IDs are
-captured values. **All four recordings stop at step 7**, so 8–10 are written from standard
-SAP rather than observed. Every stage past 7 is gated: a sample whose gate is shut finishes
-at the last step that worked and records the document numbers a person needs to carry on.
+Every step is covered by a recording in [`recordings/`](recordings/), so the IDs are captured
+values rather than guesses. A stage whose Screen Map rows are blank still finishes at the last
+step that worked and records the document numbers a person needs to carry on.
 
-Two "largest" decisions, both read from the data rather than assumed from a sort order — the
-largest ZP payment, then the largest invoice inside it. Worth knowing why: the recordings
-sorted *ascending* and took row index 1, which on a list of negative amounts is the **second**
-largest. Reading values avoids inheriting that.
+**One route, not two.** `N1.vbs` walked a Santander SCF payment and `B2.vbs` a regular vendor,
+and they are the same shape. The regular one only looked shorter because there were fewer rows
+to sort through. `IsConfirmingPayment` now only colours the report.
 
-## Verifying the predicted steps without recording
+**The invoice is the KR document.** The list step 10 picks from holds several document types at
+once — ZP payments, KR vendor invoices, SB statement documents — and the KR rows carry
+*negative* amounts. Filtering to KR is what stops the largest row coming back as a payment;
+comparing on magnitude is what stops the sign mattering.
+
+Two "largest" decisions, both read from exported data rather than assumed from a sort order.
+Worth knowing why: the recordings sort the list on screen and click a row by position
+(`lbl[164,8]`), which is a fixed screen coordinate — across 56 batches of different sizes that
+opens whichever document happens to land on row 8, silently.
+
+## Verifying an ID without recording
 
 Steps 8–10 are predictions, and there is a faster way to check them than another Alt+F12
 session:
