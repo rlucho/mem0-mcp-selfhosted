@@ -79,9 +79,31 @@ Three gaps. Everything marked `VERIFY` or `BLOCKED` on the Screen Map:
 
 | Gap | What to record | Screen Map keys |
 |---|---|---|
-| **The Santander SCF route** | Re-record `Audit2.vbs` from the clearing document through to the saved PDF for a confirming payment | `Scf.Step1..3` |
+| **Level 2, the SCF route** | From the cleared-items list: get **into** the Santander SCF payment, then list the invoices it settled | `Scf.OpenPayment`, `Scf.InvoiceListMenu` |
 | **The regular-supplier PDF** | The same walk for a non-Santander supplier: open the payment, *Services for Object* → *Attachment list*, save the PDF | `Invoice.GosToolbox`, `Invoice.AttachListGrid`, `Invoice.SaveButton` |
 | **The save dialog's file-name field** | Type a file name into the save dialog this time, rather than accepting the default | `Save.FileName` |
+
+### The two steps level 2 actually needs
+
+Only **two** IDs unblock it. Everything after them reuses machinery that already works — the
+export goes through the same `Export.ListMenu` / `Save.*` path as the cleared-items list, and
+the largest-invoice pick reuses the same parser.
+
+1. **`Scf.OpenPayment`** — how you get from the cleared-items list *into* the Santander SCF
+   payment. Whatever you actually do: click a menu entry, press a button, or put the cursor on
+   a document-number field and press F2. The macro reads the control's type and does the right
+   thing, so just record the click.
+2. **`Scf.InvoiceListMenu`** — the menu path that lists the supplier invoices that SCF payment
+   settled. Probably another `mbar/menu[x]/menu[y]`, like the `menu[5]/menu[3]` that produced
+   the cleared-items list.
+
+Optionally **`Scf.InvoiceListAnchor`** — any element on that invoice list. It is used purely to
+confirm step 2 landed where expected; leave it blank to skip the check.
+
+Then, on the first run, open the exported `*_scf_invoices.txt` and check the macro picked the
+right amount and supplier column. If it guessed wrong, copy the real captions into the
+**`SCF invoice list ...`** settings on the Control sheet. The log says which columns it chose,
+so you do not have to guess whether it got it right.
 
 Plus one that isn't a recording: **run `modFeban.DumpGridColumns`** with a FEBAN result list on
 screen. `Audit.vbs` only ever touched the `KWBTR` column, so the *value date* column name is

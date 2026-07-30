@@ -16,27 +16,52 @@ Attribute VB_Name = "modChain"
 '     menu[0]/menu[3]/menu[1]       export to a local file
 '
 ' The export is then read back off disk to find the largest cleared item
-' and its supplier, which decides the invoice route:
+' and its supplier. That decides which of two routes fetches the invoice:
 '
-'   supplier = SANTANDER SCF  -> confirming payment, Audit2 route
-'   any other supplier        -> open the payment, download its PDF
+'   LEVEL 1  largest cleared item behind the statement line
+'            |
+'            +-- supplier is NOT Santander SCF
+'            |     open that payment, save its PDF.  Done.
+'            |
+'            +-- supplier IS Santander SCF  (a confirming payment)
+'                  LEVEL 2  open the SCF payment, list the invoices it
+'                           settled, and take the largest of those.
+'                           Save that invoice's PDF.
 '
-' BLOCKED: the Santander SCF route cannot be implemented yet. Audit2.vbs
-' captured no steps -- only the scripting boilerplate and a
-' resizeWorkingPane call -- so the extra steps a confirming payment needs
-' are unknown. Those samples are logged BLOCKED_SCF with everything
-' needed to finish them by hand, and the run carries on.
+' Level 2 exists because a confirming payment goes to the finance provider,
+' not to the supplier, so the SCF payment has to be opened to find the
+' underlying supplier invoices behind it. Both levels pick their winner the
+' same way -- export the list, read it back, take the largest -- so
+' modListFile does the work twice.
+'
+' BLOCKED: the level-2 navigation is not known. Audit2.vbs captured no
+' steps, only the scripting boilerplate and a resizeWorkingPane call, so
+' the Scf.* rows on the Screen Map are empty. While they are empty those
+' samples stop after level 1 and log BLOCKED_SCF carrying everything
+' needed to finish them by hand, and the run carries on. Fill the Scf.*
+' rows in from a fresh recording and level 2 runs with no code change.
 '=======================================================================
 Option Explicit
 
 Public Type ChainResult
     FiDocument As String
     ClearingDocument As String
+
+    ' Level 1 -- the cleared items behind the statement line
     ClearedItemsFile As String
     LargestSupplier As String
     LargestAmount As Double
     LargestDocument As String
+    ClearedItemCount As Long
     IsConfirmingPayment As Boolean
+
+    ' Level 2 -- the invoices behind a Santander SCF confirming payment
+    ScfInvoiceListFile As String
+    ScfInvoiceNumber As String
+    ScfInvoiceSupplier As String
+    ScfInvoiceAmount As Double
+    ScfInvoiceCount As Long
+
     InvoiceFile As String
     Status As String              ' DONE | BLOCKED_SCF | PARTIAL | ERROR
     Notes As String
@@ -105,27 +130,20 @@ Public Function Walk(ByVal sampleIdx As Long, ByVal match As FebanMatch, _
     ' 6. read the export back to decide the invoice route
     IdentifyLargestItem sampleIdx, result
 
-    ' 7. fetch the invoice down whichever route applies
+    ' 7. fetch the invoice down whichever route the largest supplier implies
     If result.IsConfirmingPayment Then
-        result.Status = "BLOCKED_SCF"
-        result.Notes = "Largest cleared item is " & result.LargestSupplier & " for " & _
-                       Format$(result.LargestAmount, "#,##0.00") & _
-                       IIf(Len(result.LargestDocument) > 0, _
-                           " (document " & result.LargestDocument & ")", "") & _
-                       ", so this is a confirming payment and needs the Audit2 route. " & _
-                       "Those steps are unknown -- Audit2.vbs recorded nothing. " & _
-                       "Re-record it and fill in the Scf.* rows on the Screen Map."
-        modLog.LogAction sampleIdx, "Invoice route", result.Notes, "MANUAL", vbNullString
+        WalkScfRoute sampleIdx, result, folder, fileStem
     Else
         result.InvoiceFile = DownloadRegularInvoice(sampleIdx, result, folder, fileStem)
+
         If Len(result.InvoiceFile) > 0 Then
             result.Status = "DONE"
+            result.Notes = LargestItemSummary(result) & " Regular supplier, so its PDF " & _
+                           "was saved directly."
         Else
             result.Status = "PARTIAL"
-            If Len(result.Notes) = 0 Then
-                result.Notes = "Cleared items exported, but the invoice PDF was not " & _
-                               "written. See the Log for which step stopped."
-            End If
+            result.Notes = LargestItemSummary(result) & " Regular supplier, but the PDF " & _
+                           "was not written. " & result.Notes
         End If
     End If
 
@@ -242,6 +260,7 @@ Private Sub IdentifyLargestItem(ByVal sampleIdx As Long, ByRef result As ChainRe
     result.LargestSupplier = largest.Supplier
     result.LargestAmount = largest.Amount
     result.LargestDocument = largest.DocumentNumber
+    result.ClearedItemCount = largest.RowsConsidered
 
     confirmingName = modConfig.Setting("Confirming party name")
     result.IsConfirmingPayment = NamesMatch(largest.Supplier, confirmingName)
@@ -291,6 +310,196 @@ Private Function LettersAndDigits(ByVal text As String) As String
         End If
     Next i
 End Function
+
+'-----------------------------------------------------------------------
+' LEVEL 2 -- Santander SCF confirming payment.
+'
+' A confirming payment settles the finance provider, not the supplier, so
+' the SCF payment has to be opened to reach the supplier invoices behind
+' it. The largest of those is the one the auditor wants.
+'
+' Structured as four named steps rather than an opaque Step1/2/3, so a
+' fresh recording maps onto it line by line:
+'
+'   Scf.OpenPayment       get into the SCF payment from the cleared list
+'   Scf.InvoiceListMenu   list the invoices that payment settled
+'   (export + read back)  reuses Export.ListMenu / Save.* / modListFile
+'   Invoice.*             save the largest invoice's PDF
+'-----------------------------------------------------------------------
+Private Sub WalkScfRoute(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                         ByVal folder As String, ByVal fileStem As String)
+    Dim openId As String, listMenuId As String
+    Dim largest As ListRow
+    Dim identity As String
+
+    identity = LargestItemSummary(result) & " That is the confirming party, so the " & _
+               "invoice sits one level deeper."
+
+    openId = modConfig.ElementIdOrBlank("Scf.OpenPayment")
+    listMenuId = modConfig.ElementIdOrBlank("Scf.InvoiceListMenu")
+
+    ' While the recording is missing, stop here and hand over everything a
+    ' person needs to finish the sample by hand.
+    If Len(openId) = 0 Or Len(listMenuId) = 0 Then
+        result.Status = "BLOCKED_SCF"
+        result.Notes = identity & " The steps into the SCF payment are not known -- " & _
+                       "Audit2.vbs recorded nothing, so Scf.OpenPayment and " & _
+                       "Scf.InvoiceListMenu are blank on the Screen Map. To finish " & _
+                       "this one by hand: open clearing document " & _
+                       result.ClearingDocument & ", find the " & result.LargestSupplier & _
+                       " item" & IIf(Len(result.LargestDocument) > 0, _
+                                     " (document " & result.LargestDocument & ")", "") & _
+                       ", open it, and take the largest invoice behind it. The cleared " & _
+                       "items are already exported to " & result.ClearedItemsFile & "."
+        modLog.LogAction sampleIdx, "SCF route", result.Notes, "MANUAL", _
+                     result.ClearedItemsFile
+        Exit Sub
+    End If
+
+    On Error GoTo Failed
+
+    ' Step 1 -- into the SCF payment
+    If Not modSapConnect.Exists(openId) Then
+        result.Status = "BLOCKED_SCF"
+        result.Notes = identity & " Scf.OpenPayment (" & openId & ") is not on this " & _
+                       "screen, so the SCF payment could not be opened. Re-check that " & _
+                       "ID against the recording."
+        modLog.LogAction sampleIdx, "SCF route", result.Notes, "ERROR", vbNullString
+        Exit Sub
+    End If
+
+    ActivateElement openId
+    modSafety.AssertPopupKnown
+
+    ' Step 2 -- its invoice list
+    modSapConnect.Element(listMenuId).Select
+    modSapConnect.WaitForSap
+    modSafety.AssertPopupKnown
+    AssertAnchorPresent sampleIdx, "Scf.InvoiceListAnchor", "Scf.InvoiceListMenu"
+
+    ' Step 3 -- export it, then read it back for the largest invoice
+    result.ScfInvoiceListFile = modExport.ExportClassicList( _
+        sampleIdx, folder, fileStem & "_scf_invoices.txt")
+
+    If Len(result.ScfInvoiceListFile) = 0 Then
+        result.Status = IIf(modConfig.IsDryRun(), "BLOCKED_SCF", "PARTIAL")
+        result.Notes = identity & " The SCF invoice list was not exported, so the " & _
+                       "largest invoice could not be identified."
+        Exit Sub
+    End If
+
+    largest = modListFile.LargestRowWithCaptions( _
+        result.ScfInvoiceListFile, sampleIdx, _
+        "SCF invoice list amount column", _
+        "SCF invoice list supplier column", _
+        "SCF invoice list document column")
+
+    If Not largest.Found Then
+        result.Status = "PARTIAL"
+        result.Notes = identity & " Exported " & result.ScfInvoiceListFile & " but could " & _
+                       "not read an amount and supplier out of it. Open it and name its " & _
+                       "column captions in the 'SCF invoice list ...' settings on the " & _
+                       "Control sheet."
+        Exit Sub
+    End If
+
+    result.ScfInvoiceNumber = largest.DocumentNumber
+    result.ScfInvoiceSupplier = largest.Supplier
+    result.ScfInvoiceAmount = largest.Amount
+    result.ScfInvoiceCount = largest.RowsConsidered
+
+    modLog.LogAction sampleIdx, "SCF largest invoice", _
+                 "Largest of " & largest.RowsConsidered & " invoices behind the " & _
+                 result.LargestSupplier & " payment: " & largest.Supplier & " " & _
+                 Format$(largest.Amount, "#,##0.00") & _
+                 IIf(Len(largest.DocumentNumber) > 0, _
+                     ", invoice " & largest.DocumentNumber, ""), _
+                 "OK", result.ScfInvoiceListFile
+
+    ' Step 4 -- that invoice's PDF
+    result.InvoiceFile = DownloadRegularInvoice(sampleIdx, result, folder, _
+                                               fileStem & "_scf")
+
+    If Len(result.InvoiceFile) > 0 Then
+        result.Status = "DONE"
+        result.Notes = identity & " Largest invoice behind it: " & _
+                       result.ScfInvoiceSupplier & " " & _
+                       Format$(result.ScfInvoiceAmount, "#,##0.00") & _
+                       IIf(Len(result.ScfInvoiceNumber) > 0, _
+                           ", invoice " & result.ScfInvoiceNumber, "") & "."
+    Else
+        result.Status = "PARTIAL"
+        result.Notes = identity & " Identified the largest invoice as " & _
+                       result.ScfInvoiceSupplier & " " & _
+                       Format$(result.ScfInvoiceAmount, "#,##0.00") & _
+                       IIf(Len(result.ScfInvoiceNumber) > 0, _
+                           " (invoice " & result.ScfInvoiceNumber & ")", "") & _
+                       ", but its PDF was not written. See the Log."
+    End If
+
+    Exit Sub
+
+Failed:
+    result.Status = "PARTIAL"
+    result.Notes = identity & " The SCF route stopped: " & Err.Description
+    modLog.LogAction sampleIdx, "SCF route failed", Err.Description, "ERROR", vbNullString
+End Sub
+
+' One sentence naming the level-1 winner, reused by both routes so every
+' sample's message says which cleared item drove the decision.
+Private Function LargestItemSummary(ByRef result As ChainResult) As String
+    LargestItemSummary = "Largest of " & result.ClearedItemCount & " cleared items: " & _
+                         result.LargestSupplier & " " & _
+                         Format$(result.LargestAmount, "#,##0.00") & _
+                         IIf(Len(result.LargestDocument) > 0, _
+                             " (document " & result.LargestDocument & ")", "") & "."
+End Function
+
+' A recorded step is either a menu entry, a button, or a field you put the
+' cursor on and press F2. Which one is not knowable from the ID alone, so
+' try them in order of least side effect.
+Private Sub ActivateElement(ByVal elementId As String)
+    Dim control As Object
+    Dim kind As String
+
+    Set control = modSapConnect.Element(elementId)
+
+    kind = vbNullString
+    On Error Resume Next
+    kind = control.Type
+    On Error GoTo 0
+
+    Select Case kind
+        Case "GuiMenu"
+            control.Select
+        Case "GuiButton", "GuiToolbarControl"
+            modSafety.GuardedPress elementId
+            Exit Sub
+        Case Else
+            ' A text field: focus it and press F2, the way Audit.vbs drills in.
+            On Error Resume Next
+            control.SetFocus
+            On Error GoTo 0
+            modSafety.GuardedSendVKey "wnd[0]", 2
+            Exit Sub
+    End Select
+
+    modSapConnect.WaitForSap
+End Sub
+
+Private Sub AssertAnchorPresent(ByVal sampleIdx As Long, ByVal anchorKey As String, _
+                                ByVal stepKey As String)
+    Dim anchorId As String
+
+    anchorId = modConfig.ElementIdOrBlank(anchorKey)
+    If Len(anchorId) = 0 Then Exit Sub
+    If modSapConnect.Exists(anchorId) Then Exit Sub
+
+    modLog.LogAction sampleIdx, "SCF route", _
+                 stepKey & " did not produce the expected screen -- the anchor " & _
+                 anchorId & " is not there. Clear " & anchorKey & " on the Screen Map " & _
+                 "to skip this check.", "ERROR", vbNullString
+End Sub
 
 '-----------------------------------------------------------------------
 ' Regular-supplier invoice route: open the payment and save its PDF.

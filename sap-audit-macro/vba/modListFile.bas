@@ -36,6 +36,19 @@ Private Const DEFAULT_DOCUMENT_CAPTIONS As String = _
 ' The largest-magnitude row in an exported cleared-items list.
 '-----------------------------------------------------------------------
 Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long) As ListRow
+    LargestRow = LargestRowWithCaptions(path, sampleIdx, _
+                                        "Cleared list amount column", _
+                                        "Cleared list supplier column", _
+                                        "Cleared list document column")
+End Function
+
+' Same, but told which Control-sheet settings name the column captions. The
+' SCF invoice list is a different report from the cleared-items list, so it
+' gets its own captions and falls back to the cleared-items ones.
+Public Function LargestRowWithCaptions(ByVal path As String, ByVal sampleIdx As Long, _
+                                       ByVal amountSetting As String, _
+                                       ByVal supplierSetting As String, _
+                                       ByVal documentSetting As String) As ListRow
     Dim result As ListRow
     Dim lines() As String
     Dim delimiter As String
@@ -52,7 +65,8 @@ Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long) As Lis
     If UBound(lines) < LBound(lines) Then Exit Function
 
     delimiter = DetectDelimiter(lines)
-    headerIndex = FindHeaderIndex(lines, delimiter, amountCol, supplierCol, documentCol)
+    headerIndex = FindHeaderIndex(lines, delimiter, amountCol, supplierCol, documentCol, _
+                                  amountSetting, supplierSetting, documentSetting)
 
     If headerIndex < 0 Then
         ' No recognisable header. Fall back to picking the column that looks
@@ -64,8 +78,9 @@ Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long) As Lis
         If amountCol < 0 Or supplierCol < 0 Then
             modLog.LogAction sampleIdx, "Parse list", _
                          "No header row recognised in " & path & " and the columns " & _
-                         "could not be guessed either. Add this file's caption to the " & _
-                         "'Cleared list ...' settings on the Control sheet.", _
+                         "could not be guessed either. Open the file and copy its " & _
+                         "column captions into the '" & amountSetting & "' and '" & _
+                         supplierSetting & "' settings on the Control sheet.", _
                          "ERROR", path
             Exit Function
         End If
@@ -167,14 +182,22 @@ End Function
 ' line matches enough of the configured captions.
 Private Function FindHeaderIndex(ByRef lines() As String, ByVal delimiter As String, _
                                  ByRef amountCol As Long, ByRef supplierCol As Long, _
-                                 ByRef documentCol As Long) As Long
+                                 ByRef documentCol As Long, _
+                                 ByVal amountSetting As String, _
+                                 ByVal supplierSetting As String, _
+                                 ByVal documentSetting As String) As Long
     Dim amountCaptions As String, supplierCaptions As String, documentCaptions As String
     Dim i As Long
     Dim fields() As String
 
-    amountCaptions = CaptionSetting("Cleared list amount column", DEFAULT_AMOUNT_CAPTIONS)
-    supplierCaptions = CaptionSetting("Cleared list supplier column", DEFAULT_SUPPLIER_CAPTIONS)
-    documentCaptions = CaptionSetting("Cleared list document column", DEFAULT_DOCUMENT_CAPTIONS)
+    ' The cleared-items captions are appended as a second fallback, so an SCF
+    ' invoice list that happens to share captions with it still parses.
+    amountCaptions = CaptionSetting(amountSetting, _
+                     CaptionSetting("Cleared list amount column", DEFAULT_AMOUNT_CAPTIONS))
+    supplierCaptions = CaptionSetting(supplierSetting, _
+                     CaptionSetting("Cleared list supplier column", DEFAULT_SUPPLIER_CAPTIONS))
+    documentCaptions = CaptionSetting(documentSetting, _
+                     CaptionSetting("Cleared list document column", DEFAULT_DOCUMENT_CAPTIONS))
 
     FindHeaderIndex = -1
 

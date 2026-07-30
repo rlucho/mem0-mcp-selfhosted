@@ -119,9 +119,24 @@ Following `recordings/Audit.vbs`:
    by parsing the file rather than scraping the screen: the export happens anyway, and a
    classic SAP list on screen is a grid of `lbl[x,y]` elements that has to be reassembled by
    pixel position.
-7. **Fetch the invoice**, by the route the supplier implies:
-   - **Santander SCF** → confirming payment, the Audit2 route. **BLOCKED** — see below.
-   - **any other supplier** → open the payment and save its PDF.
+7. **Fetch the invoice**, by the route the level-1 supplier implies:
+
+```
+LEVEL 1   largest cleared item behind the statement line
+          |
+          +-- supplier is NOT Santander SCF
+          |     open that payment, save its PDF.  Done.
+          |
+          +-- supplier IS Santander SCF  (a confirming payment)
+                LEVEL 2   open the SCF payment, list the invoices it settled,
+                          take the largest of THOSE, save that invoice's PDF.
+```
+
+Level 2 exists because a confirming payment settles the finance provider, not the supplier —
+so the SCF payment has to be opened to reach the underlying supplier invoices. Both levels
+pick their winner the same way (export the list, read it back, take the largest), so
+`modListFile` does the work twice with its own column captions each time. **Level 2 is
+BLOCKED** — see below.
 
 Step 6 logs which column it took as the amount and which as the supplier, so a wrong guess
 shows up on the first sample instead of quietly skewing all 56. If it picks wrong, name the
@@ -185,12 +200,14 @@ and, in the workbook itself:
 
 ## Known limits
 
-- **The Santander SCF route is blocked.** `Audit2.vbs` captured no steps — just the scripting
-  boilerplate and a `resizeWorkingPane` call. Those samples run as far as identifying the
-  supplier and then log `BLOCKED_SCF`, carrying the clearing-document and invoice numbers so
-  they can be finished by hand. Re-record that walk and fill in the `Scf.*` rows to unblock it.
-  Eight of the 56 samples name `SANTANDER SCF` directly in the auditor's request, and more may
-  turn out to be SCF once the cleared items are read.
+- **Level 2, the Santander SCF route, is blocked.** `Audit2.vbs` captured no steps — just the
+  scripting boilerplate and a `resizeWorkingPane` call. Those samples run all of level 1, then
+  log `BLOCKED_SCF` carrying the clearing document, the SCF item's document number and the path
+  to the exported cleared-items list, so they can be finished by hand. Filling in
+  `Scf.OpenPayment` and `Scf.InvoiceListMenu` from a fresh recording turns level 2 on with **no
+  code change**. Eight of the 56 samples name `SANTANDER SCF` directly in the auditor's request,
+  and more may turn out to be SCF once the cleared items are read — the branch is decided by
+  what the cleared-items list says, not by the request.
 - **The regular-supplier PDF download is unverified.** `Invoice.*` on the Screen Map is
   standard SAP rather than recorded, because that walk wasn't captured either. Where those
   rows are blank the run logs `MANUAL` with the document numbers, rather than reporting a

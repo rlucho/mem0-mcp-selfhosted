@@ -114,6 +114,14 @@ CONTROL_SETTINGS = [
     ("Cleared list document column", "",
      "Caption of the invoice document-number column in that same file. Optional -- "
      "without it the run still identifies the supplier and amount."),
+    ("SCF invoice list amount column", "",
+     "Level 2 only. Caption of the amount column in the exported list of invoices behind "
+     "a Santander SCF payment. Leave blank to fall back to the 'Cleared list ...' "
+     "captions and then the built-in list."),
+    ("SCF invoice list supplier column", "",
+     "Level 2 only. Caption of the supplier column in that same file."),
+    ("SCF invoice list document column", "",
+     "Level 2 only. Caption of the invoice-number column in that same file."),
     ("Operator name", "",
      "Written into the log for the audit trail."),
 ]
@@ -277,6 +285,11 @@ SCREEN_MAP_ROWS = [
      "wnd[1]", "Yes"),
     ("FEBAN.CompanyCode", "Company code input field",
      "wnd[1]/usr/ctxtSL_BUKRS-LOW", "Yes"),
+    ("FEBAN.HouseBank", "House bank filter. Not in the recording, which left it blank. "
+     "Worth setting if the EUR account turns out to be out of scope. VERIFY",
+     "wnd[1]/usr/ctxtSL_HBKID-LOW", "No"),
+    ("FEBAN.AccountId", "Account ID filter. Same. VERIFY",
+     "wnd[1]/usr/ctxtSL_HKTID-LOW", "No"),
     ("FEBAN.StatementDateFrom", "Statement date, low value",
      "wnd[1]/usr/ctxtSL_AZDAT-LOW", "Yes"),
     ("FEBAN.StatementDateTo", "Statement date, high value",
@@ -298,8 +311,8 @@ SCREEN_MAP_ROWS = [
      "ESTAT", "No"),
     ("FEBAN.Col.DocNumber", "Grid column holding the FI document number. VERIFY",
      "BELNR", "No"),
-    ("FEBAN.Col.PartyName", "Grid column holding the beneficiary name, if the grid has one",
-     "", "No"),
+    ("FEBAN.Col.Reference", "Grid column holding the bank reference or note-to-payee, "
+     "logged alongside each match as context. VERIFY", "SGTXT", "No"),
     ("--- FEBAN item detail ---", "", "", ""),
     ("Feban.Detail.DocNumber", "FI document field on the statement-item detail screen",
      "wnd[0]/usr/subSUB_MAIN:SAPLNEW_FEBA:4000/subSUB_APPLICATION:SAPLNEW_FEBA:2200/"
@@ -309,8 +322,6 @@ SCREEN_MAP_ROWS = [
      "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", "Yes"),
     ("Doc.Col.Amount", "Line-item grid column holding the local-currency amount",
      "DMBTR", "Yes"),
-    ("Doc.Col.Vendor", "Line-item grid column holding the vendor account. VERIFY",
-     "LIFNR", "No"),
     ("Doc.ClearingDocField", "Clearing-document field on the line-item detail screen",
      "wnd[0]/usr/txtBSEG-AUGBL", "Yes"),
     ("--- Cleared items with supplier names ---", "", "", ""),
@@ -320,6 +331,15 @@ SCREEN_MAP_ROWS = [
     ("Cleared.ListAnchor", "A label that exists on the cleared-items list, used to "
      "confirm the list actually came up",
      "wnd[0]/usr/lbl[28,7]", "No"),
+    ("--- FEBAN statement-list export (optional period context) ---", "", "", ""),
+    ("Export.AlvToolbarButton", "Function code of the export button on the FEBAN grid's "
+     "own toolbar. The recording never exported this grid, so this is unrecorded and the "
+     "whole step is optional -- leave both blank to skip it. VERIFY",
+     "&MB_EXPORT", "No"),
+    ("Export.AlvMenuItem", "Context-menu entry for local file / spreadsheet. VERIFY",
+     "&PC", "No"),
+    ("Export.AlvFormatRadio", "Radio button for the file format, if that popup appears. "
+     "VERIFY", "", "No"),
     ("--- Classic list export (List > Save/Send > File) ---", "", "", ""),
     ("Export.ListMenu", "Menu path that opens the save-list dialog",
      "wnd[0]/mbar/menu[0]/menu[3]/menu[1]", "Yes"),
@@ -341,12 +361,17 @@ SCREEN_MAP_ROWS = [
      "wnd[1]/usr/cntlCONTAINER/shellcont/shell", "No"),
     ("Invoice.SaveButton", "Save/export button on the attachment list. VERIFY",
      "wnd[1]/tbar[0]/btn[5]", "No"),
-    ("--- Invoice PDF: Santander SCF confirming route ---", "", "", ""),
-    ("Scf.Step1", "First step of the confirming-payment route. BLOCKED: Audit2.vbs "
-     "recorded nothing, so these steps are unknown. Re-record and fill in",
+    ("--- Level 2: Santander SCF confirming route ---", "", "", ""),
+    ("Scf.OpenPayment", "How you get from the cleared-items list into the Santander SCF "
+     "payment. A menu entry, a button, or a field to put the cursor on and press F2 -- "
+     "the macro works out which from the control type. BLOCKED: Audit2.vbs recorded "
+     "nothing, so this is unknown",
      "", "No"),
-    ("Scf.Step2", "Second step of the confirming-payment route. BLOCKED", "", "No"),
-    ("Scf.Step3", "Third step of the confirming-payment route. BLOCKED", "", "No"),
+    ("Scf.InvoiceListMenu", "Menu path that lists the supplier invoices that SCF payment "
+     "settled. BLOCKED", "", "No"),
+    ("Scf.InvoiceListAnchor", "Optional. An element that exists on that invoice list, "
+     "used only to confirm the previous step landed where expected. BLOCKED",
+     "", "No"),
 ]
 
 

@@ -123,6 +123,14 @@ Public Sub RunExtract()
         ' inline handler -- 'Resume' back into a For Each is fragile.
         If TryOpenMonth(CStr(monthKey), CDate(monthTabs(monthKey)(0)), _
                         CDate(monthTabs(monthKey)(1))) Then
+
+            ' The statement list is per period, so export it once here rather
+            ' than once per sample -- otherwise Sep 25 alone would write seven
+            ' copies of the same list.
+            If Len(ExportMonthStatementList(CStr(monthKey))) > 0 Then
+                files = files + 1
+            End If
+
             For i = 1 To count
                 If samples(i).MonthTab = CStr(monthKey) Then
                     If ProcessSample(samples(i), files) Then
@@ -165,6 +173,28 @@ Failed:
            vbCritical, "FEBAN audit extract"
 End Sub
 
+' The FEBAN result list for the month now on screen, as period context. Best
+' effort -- it is not part of the evidence chain, so a failure here is logged
+' and the samples run anyway.
+Private Function ExportMonthStatementList(ByVal monthTab As String) As String
+    Dim folder As String
+
+    On Error GoTo Failed
+
+    folder = modUtil.JoinPath(modConfig.Setting("Download root folder"), _
+                              modUtil.SafeFileName(monthTab))
+
+    ExportMonthStatementList = modExport.ExportAlvGrid( _
+        0, folder, "00_" & modUtil.SafeFileName(monthTab) & "_FEBAN_statement.txt")
+    Exit Function
+
+Failed:
+    modLog.LogAction 0, "Export statement list", _
+                 "Could not export the " & monthTab & " statement list: " & _
+                 Err.Description & ". The samples in this month are unaffected.", _
+                 "SKIPPED", vbNullString
+End Function
+
 ' Open one FEBAN period, logging rather than raising on failure so that a
 ' bad month does not take the whole run down with it.
 Private Function TryOpenMonth(ByVal monthTab As String, ByVal dateFrom As Date, _
@@ -190,7 +220,6 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     Dim chain As ChainResult
     Dim folder As String
     Dim stem As String
-    Dim exported As String
     Dim message As String
 
     Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
@@ -231,28 +260,17 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
                               modUtil.SafeFileName(item.MonthTab))
     stem = modUtil.EvidenceStem(item.Idx, item.PayDate, item.Amount)
 
-    ' 1. the statement list itself, as the auditor's period evidence
-    exported = modExport.ExportAlvGrid(item.Idx, folder, stem & "_FEBAN_statement.txt")
-    If Len(exported) > 0 Then filesTotal = filesTotal + 1
-
-    ' 2. statement item -> FI document -> clearing document -> cleared items
-    '    with supplier names -> the invoice for the largest of them
+    ' statement item -> FI document -> clearing document -> cleared items with
+    ' supplier names -> the invoice for the largest of them. The period's
+    ' statement list was already exported once, back in RunExtract.
     chain = modChain.Walk(item.Idx, match, folder, stem)
 
-    If Len(chain.ClearedItemsFile) > 0 Then filesTotal = filesTotal + 1
-    If Len(chain.InvoiceFile) > 0 Then filesTotal = filesTotal + 1
-
-    message = chain.Notes
-    If Len(chain.LargestSupplier) > 0 Then
-        message = "Largest cleared item: " & chain.LargestSupplier & " " & _
-                  Format$(chain.LargestAmount, "#,##0.00") & ". " & message
-    End If
+    filesTotal = filesTotal + CountFiles(chain)
 
     WriteResult sheet, item.Row, chain.Status, _
                 match.StatementDate & " row " & match.GridRow, _
-                chain.FiDocument, _
-                Trim$(chain.ClearingDocument & " / " & chain.LargestDocument), _
-                CountFiles(chain), message
+                chain.FiDocument, InvoiceTrail(chain), _
+                CountFiles(chain), chain.Notes
 
     ' Return to the statement list for the next sample in this month. A
     ' drill-down can leave the session several screens deep, so this is not
@@ -281,7 +299,29 @@ End Function
 
 Private Function CountFiles(ByRef chain As ChainResult) As Long
     If Len(chain.ClearedItemsFile) > 0 Then CountFiles = CountFiles + 1
+    If Len(chain.ScfInvoiceListFile) > 0 Then CountFiles = CountFiles + 1
     If Len(chain.InvoiceFile) > 0 Then CountFiles = CountFiles + 1
+End Function
+
+' The document trail, so the Samples sheet shows how the invoice was reached
+' rather than only which one it landed on.
+Private Function InvoiceTrail(ByRef chain As ChainResult) As String
+    Dim trail As String
+
+    If Len(chain.ClearingDocument) > 0 Then
+        trail = "clearing " & chain.ClearingDocument
+    End If
+
+    If Len(chain.LargestDocument) > 0 Then
+        trail = trail & IIf(Len(trail) > 0, " > ", "") & chain.LargestDocument
+    End If
+
+    ' Level 2 adds one more hop: the invoice behind the SCF payment.
+    If Len(chain.ScfInvoiceNumber) > 0 Then
+        trail = trail & " > SCF invoice " & chain.ScfInvoiceNumber
+    End If
+
+    InvoiceTrail = trail
 End Function
 
 Private Sub WriteResult(ByVal sheet As Worksheet, ByVal row As Long, ByVal status As String, _

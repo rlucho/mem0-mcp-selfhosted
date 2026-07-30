@@ -16,26 +16,52 @@ Attribute VB_Name = "modExport"
 Option Explicit
 
 '-----------------------------------------------------------------------
-' ALV grid export via the toolbar's export button.
+' ALV grid export via the grid's own toolbar export button.
 ' Returns the full path written, or "" if nothing was written.
+'
+' recordings/Audit.vbs never exported the FEBAN result grid -- it only
+' exported the classic cleared-items list -- so these three keys are not
+' recorded. That makes this whole step optional: when they are blank it
+' logs and returns rather than raising, because a missing nice-to-have
+' export must not take down the sample it belongs to.
 '-----------------------------------------------------------------------
 Public Function ExportAlvGrid(ByVal sampleIdx As Long, ByVal folder As String, _
                               ByVal fileName As String) As String
     Dim grid As Object
     Dim target As String
+    Dim toolbarButton As String, menuItem As String
+
+    toolbarButton = modConfig.ElementIdOrBlank("Export.AlvToolbarButton")
+    menuItem = modConfig.ElementIdOrBlank("Export.AlvMenuItem")
+
+    If Len(toolbarButton) = 0 Or Len(menuItem) = 0 Then
+        modLog.LogAction sampleIdx, "Export statement list", _
+                     "Skipped -- Export.AlvToolbarButton / Export.AlvMenuItem are blank " & _
+                     "on the Screen Map. This export is the FEBAN period view, which is " & _
+                     "useful context but not part of the evidence chain, so the run " & _
+                     "carries on without it.", "SKIPPED", vbNullString
+        Exit Function
+    End If
 
     target = modUtil.JoinPath(folder, fileName)
-
-    If modSafety.BlockedByDryRun("Would export ALV grid to " & target) Then Exit Function
+    If modSafety.BlockedByDryRun("Would export the statement list to " & target) Then Exit Function
 
     modUtil.EnsureFolder folder
     Set grid = modSapConnect.Element(modConfig.ElementId("FEBAN.ResultGrid"))
 
     On Error Resume Next
-    grid.pressToolbarContextButton modConfig.ElementId("Export.ToolbarButton")
-    grid.selectContextMenuItem modConfig.ElementId("Export.MenuItem")
+    grid.pressToolbarContextButton toolbarButton
+    grid.selectContextMenuItem menuItem
     On Error GoTo 0
     modSapConnect.WaitForSap
+
+    If Not modSapConnect.ModalWindowOpen() Then
+        modLog.LogAction sampleIdx, "Export statement list", _
+                     "The export menu produced no dialog. Check Export.AlvToolbarButton " & _
+                     "and Export.AlvMenuItem against a recording of that right-click.", _
+                     "SKIPPED", vbNullString
+        Exit Function
+    End If
 
     ConfirmFormatPopupIfPresent
     ExportAlvGrid = CompleteSaveDialog(sampleIdx, folder, fileName)
@@ -93,7 +119,7 @@ Private Sub ConfirmFormatPopupIfPresent()
 
     modSafety.AssertPopupKnown
 
-    radioId = modConfig.ElementIdOrBlank("Export.FormatRadio")
+    radioId = modConfig.ElementIdOrBlank("Export.AlvFormatRadio")
     If Len(radioId) > 0 Then
         If modSapConnect.Exists(radioId) Then
             On Error Resume Next
