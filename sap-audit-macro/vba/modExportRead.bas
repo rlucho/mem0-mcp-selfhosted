@@ -617,7 +617,7 @@ Public Function LargestRowOfType(ByVal path As String, ByVal sampleIdx As Long, 
     ' finding the column that actually holds the code.
     If Len(wantedType) > 0 Then
         typeCol = MatchColumn(mHeaderRow, CaptionSetting(vbNullString, DEFAULT_DOCTYPE_CAPTIONS))
-        If typeCol = 0 Then typeCol = ColumnContaining(mHeaderRow + 1, wantedType)
+        If typeCol = 0 Then typeCol = ColumnContaining(mHeaderRow + 1, FirstType(wantedType))
 
         If typeCol = 0 Then
             modLog.LogAction sampleIdx, "Read export", _
@@ -634,7 +634,7 @@ Public Function LargestRowOfType(ByVal path As String, ByVal sampleIdx As Long, 
 
     For r = mHeaderRow + 1 To mRowCount
         If typeCol > 0 Then
-            If Normalise(mCells(r, typeCol)) <> Normalise(wantedType) Then
+            If Not TypeWanted(Normalise(mCells(r, typeCol)), wantedType) Then
                 skipped = skipped + 1
                 GoTo NextRow
             End If
@@ -723,8 +723,9 @@ Public Function DocumentNumbersOfType(ByVal path As String, ByVal sampleIdx As L
     Dim documentCol As Long, typeCol As Long
     Dim r As Long
     Dim seen As Object
+    Dim rejectedTypes As Object
     Dim number As String, rowType As String
-    Dim results As String
+    Dim results As String, typesSeen As String
 
     If Not LoadExport(path, sampleIdx) Then Exit Function
 
@@ -745,7 +746,7 @@ Public Function DocumentNumbersOfType(ByVal path As String, ByVal sampleIdx As L
     ' code itself -- 'ZP' is 'ZP' in every language -- and the document-number
     ' column by its shape. This is what makes the step language-independent.
     If typeCol = 0 Then
-        typeCol = ColumnContaining(2, wantedType)
+        typeCol = ColumnContaining(2, FirstType(wantedType))
         If typeCol > 0 Then
             mHeaderRow = 1
             modLog.LogAction sampleIdx, "ZP numbers", _
@@ -786,14 +787,20 @@ Public Function DocumentNumbersOfType(ByVal path As String, ByVal sampleIdx As L
     Set seen = CreateObject("Scripting.Dictionary")
     seen.CompareMode = vbTextCompare
 
+    Set rejectedTypes = CreateObject("Scripting.Dictionary")
+    rejectedTypes.CompareMode = vbTextCompare
+
     For r = mHeaderRow + 1 To mRowCount
         number = OnlyDigits(mCells(r, documentCol))
 
         If Len(number) > 0 Then
             If typeCol > 0 Then
                 rowType = Normalise(mCells(r, typeCol))
-                If rowType <> Normalise(wantedType) Then
+                If Not TypeWanted(rowType, wantedType) Then
                     rejected = rejected + 1
+                    If Len(rowType) > 0 Then
+                        If Not rejectedTypes.Exists(rowType) Then rejectedTypes.Add rowType, True
+                    End If
                     GoTo NextRow
                 End If
             End If
@@ -807,13 +814,52 @@ Public Function DocumentNumbersOfType(ByVal path As String, ByVal sampleIdx As L
 NextRow:
     Next r
 
+    ' When nothing matched, the useful thing to say is what the file DID hold.
+    ' Two samples came back '0 ZP documents, 2 rows rejected' with no way to
+    ' tell whether the column was wrong or the batch simply is not a ZP run.
+    If matched = 0 And rejectedTypes.Count > 0 Then
+        typesSeen = " The types actually in the file: " & _
+                    Join(rejectedTypes.Keys, ", ") & ". If one of those is the " & _
+                    "payment document here, add it to 'Payment document type' on the " & _
+                    "Control sheet -- it takes a comma-separated list."
+    End If
+
     modLog.LogAction sampleIdx, "ZP numbers", _
                  matched & " distinct " & wantedType & " document number(s) taken from " & _
                  path & IIf(rejected > 0, ", " & rejected & " row(s) rejected as a " & _
-                 "different document type", "") & ".", _
+                 "different document type", "") & "." & typesSeen, _
                  IIf(matched > 0, "OK", "ERROR"), path
 
     DocumentNumbersOfType = results
+End Function
+
+' The first code of the list, for the content probe that looks for a column
+' actually holding it. Probing for the literal string "ZP, ZV" would match
+' nothing.
+Private Function FirstType(ByVal wantedList As String) As String
+    Dim parts() As String
+
+    parts = Split(Replace(Replace(wantedList, ";", ","), "|", ","), ",")
+    FirstType = Trim$(parts(LBound(parts)))
+End Function
+
+' 'Payment document type' takes one code or several -- 'ZP' or 'ZP, ZV, KZ'.
+' A batch paid outside the normal payment run carries a different code, and
+' the operator should be able to add it without a code change.
+Private Function TypeWanted(ByVal rowType As String, ByVal wantedList As String) As Boolean
+    Dim wanted() As String
+    Dim i As Long
+
+    wanted = Split(Replace(Replace(wantedList, ";", ","), "|", ","), ",")
+
+    For i = LBound(wanted) To UBound(wanted)
+        If Len(Trim$(wanted(i))) > 0 Then
+            If StrComp(rowType, Normalise(wanted(i)), vbTextCompare) = 0 Then
+                TypeWanted = True
+                Exit Function
+            End If
+        End If
+    Next i
 End Function
 
 ' SAP prints document numbers with leading zeros and sometimes a company-code

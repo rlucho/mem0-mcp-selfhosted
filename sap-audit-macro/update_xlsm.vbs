@@ -78,6 +78,20 @@ addedRows = addedRows + AddId(book, "FB03.CompanyCode", "wnd[0]/usr/ctxtRF05L-BU
 addedRows = addedRows + AddId(book, "FB03.FiscalYear", "wnd[0]/usr/txtRF05L-GJAHR", _
                               "Fiscal year on that screen. VERIFY")
 
+' F2 on the FBL1N list lands on the line item; Environment > Payment usage
+' lives on the document. N1.vbs bridged that with tbar[1]/btn[9].
+addedRows = addedRows + AddId(book, "Doc.OverviewButton", "wnd[0]/tbar[1]/btn[9]", _
+                              "Document-overview button. Only used when the payment-usage " & _
+                              "menu is missing, so clearing it just skips the attempt")
+
+' 'Payment document type' now takes a list, which is how a batch paid outside
+' the normal payment run gets picked up.
+SetNote book, "Payment document type", _
+        "Only documents of these types are taken from the Payment Usage list and fed to " & _
+        "FBL1N. ZP is the SAP standard for a payment document. Takes a comma-separated " & _
+        "list -- 'ZP, ZV, KZ' -- for batches paid outside the normal payment run. When " & _
+        "nothing matches, the Log names the types the file actually held."
+
 ' --- 2. modules -------------------------------------------------------------
 vbaOk = False
 removed = 0
@@ -184,6 +198,19 @@ Function AddId(wb, key, value, note)
     sheet.Cells(lastKey + 1, 6).Value = value
     AddId = 1
 End Function
+
+' Replace the Notes cell of a Control setting, leaving its VALUE alone -- the
+' operator's own settings must survive an update.
+Sub SetNote(wb, settingName, note)
+    Dim sheet, r
+    Set sheet = wb.Worksheets("Control")
+    For r = 1 To 200
+        If Trim(CStr(sheet.Cells(r, 2).Value)) = settingName Then
+            sheet.Cells(r, 4).Value = note
+            Exit Sub
+        End If
+    Next
+End Sub
 
 Function IIfStr(cond, a, b)
     If cond Then IIfStr = a Else IIfStr = b

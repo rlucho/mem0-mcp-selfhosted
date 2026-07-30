@@ -110,8 +110,10 @@ CONTROL_SETTINGS = [
      "supported: DMY = 31.12.2025, DMY/ = 31/12/2025, MDY = 12/31/2025, "
      "YMD = 2025-12-31. Get this wrong and FEBAN silently searches the wrong period."),
     ("Payment document type", "ZP",
-     "Only documents of this type are taken from the Payment Usage list and fed to "
-     "FBL1N. ZP is the SAP standard for a payment document."),
+     "Only documents of these types are taken from the Payment Usage list and fed to "
+     "FBL1N. ZP is the SAP standard for a payment document. Takes a comma-separated "
+     "list -- 'ZP, ZV, KZ' -- for batches paid outside the normal payment run. When "
+     "nothing matches, the Log names the types the file actually held."),
     ("Clearing line posting key", "40",
      "Step 4 opens the first line-item row with this posting key that also carries a "
      "clearing document. Blank means 'any row with a clearing document'."),
@@ -358,6 +360,10 @@ SCREEN_MAP_ROWS = [
     ("--- Step 5: line-item detail ---", "", "", ""),
     ("Doc.ClearingDocField", "Clearing-document field. F2 from here opens the clearing "
      "document", "wnd[0]/usr/txtBSEG-AUGBL", "Yes"),
+    ("Doc.OverviewButton", "Document-overview button. F2 on the FBL1N list lands on the "
+     "LINE ITEM, and Environment > Payment usage lives on the document -- this is the hop "
+     "between them, pressed in N1.vbs. Only used when the usage menu is missing, so "
+     "clearing it just skips the attempt", "wnd[0]/tbar[1]/btn[9]", "No"),
     ("--- Step 6: Environment > Payment Usage ---", "", "", ""),
     ("PaymentUsage.Menu", "Menu path to the batch's payment documents. Confirmed in all "
      "four recordings", "wnd[0]/mbar/menu[5]/menu[3]", "Yes"),

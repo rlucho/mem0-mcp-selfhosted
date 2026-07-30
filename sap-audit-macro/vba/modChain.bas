@@ -214,6 +214,32 @@ Failed:
     Walk = result
 End Function
 
+' The document-overview button, when the Screen Map carries one. Optional and
+' never fatal: on a screen that is already the document it does nothing
+' useful, and on one that is not it is the hop that makes Environment >
+' Payment usage exist.
+Private Sub ShowDocumentOverview(ByVal sampleIdx As Long)
+    Dim buttonId As String
+    Dim before As String
+
+    buttonId = modConfig.ElementIdOrBlank("Doc.OverviewButton")
+    If Len(buttonId) = 0 Then Exit Sub
+    If Not modSapConnect.Exists(buttonId) Then Exit Sub
+
+    before = modSapConnect.ScreenSignature()
+
+    On Error Resume Next
+    modSafety.GuardedPress buttonId
+    On Error GoTo 0
+
+    If modSapConnect.ScreenSignature() <> before Then
+        modLog.LogAction sampleIdx, "Step 10", _
+                     "Pressed the document-overview button to get from the line item to " & _
+                     "the document, so Environment > Payment usage exists.", _
+                     "OK", vbNullString
+    End If
+End Sub
+
 ' Every exit goes through here, so no path can leave Status unset -- the
 ' failure mode that let a sample with an unreadable list still report DONE.
 Private Sub Finish(ByRef result As ChainResult, ByVal status As String, ByVal notes As String)
@@ -234,6 +260,7 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
                             ByVal folder As String, ByVal fileStem As String)
     Dim summary As String
     Dim usageMenuId As String
+    Dim beforeMenu As String
     Dim largest As ListRow
 
     summary = "Largest of " & result.ZpPaymentCount & " ZP payments in the batch: " & _
@@ -263,6 +290,11 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
 
     On Error GoTo Failed
 
+    ' F2 on a vendor line-item list lands on the LINE ITEM, and Environment >
+    ' Payment usage lives on the document. N1.vbs bridged that with the
+    ' document-overview button, so do the same before giving up.
+    If Not modSapConnect.Exists(usageMenuId) Then ShowDocumentOverview sampleIdx
+
     If Not modSapConnect.Exists(usageMenuId) Then
         Finish result, "BLOCKED_INVOICE", _
                summary & " Payment.UsageMenu (" & usageMenuId & ") is not on this screen. " & _
@@ -272,9 +304,27 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
         Exit Sub
     End If
 
+    beforeMenu = modSapConnect.ScreenSignature()
+
     modSapConnect.Element(usageMenuId).Select
     modSapConnect.WaitForSap
     modSafety.AssertPopupKnown
+
+    ' If the menu did nothing, whatever list is still on screen is the one we
+    ' came from -- and exporting it would produce a second copy of the ZP
+    ' payment list under the invoices name, which is exactly what happened:
+    ' same size, same 166 rows, then 'no KR row found in it'.
+    If modSapConnect.ScreenSignature() = beforeMenu Then
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " " & usageMenuId & " left the screen unchanged, so the " & _
+               "invoices behind the payment were never listed and nothing was " & _
+               "exported. Payment.UsageMenu is a menu INDEX -- menu[4]/menu[3] is " & _
+               "Environment > Payment usage on some screens and something else on " & _
+               "others. Record that menu from inside the payment document and correct " & _
+               "the Screen Map row."
+        modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
+        Exit Sub
+    End If
 
     result.InvoiceListFile = modExport.ExportClassicList( _
         sampleIdx, folder, fileStem & "_invoices.xlsx")
@@ -526,6 +576,7 @@ Private Function OpenClearingLine(ByVal sampleIdx As Long) As Boolean
     Dim rows As Long, r As Long
     Dim clearingColumn As String, keyColumn As String, wantedKey As String
     Dim clearingValue As String, keyValue As String
+    Dim seenValues As String
     Dim chosen As Long
 
     Set grid = modSapConnect.Element(modConfig.ElementId("Doc.BsegGrid"))
@@ -572,7 +623,23 @@ Private Function OpenClearingLine(ByVal sampleIdx As Long) As Boolean
         Next r
     End If
 
-    If chosen < 0 Then Exit Function
+    ' Nothing at all carries a clearing document. That is a fact about the
+    ' document, not a mapping problem -- but only if the column really is the
+    ' clearing-document one, so say what was read rather than just 'none'.
+    If chosen < 0 Then
+        For r = 0 To rows - 1
+            seenValues = seenValues & IIf(Len(seenValues) > 0, ", ", "") & _
+                         "[" & Trim$(GridCell(grid, r, clearingColumn)) & "]"
+        Next r
+
+        modLog.LogAction sampleIdx, "Step 4", _
+                     "No line carries a clearing document. Column " & clearingColumn & _
+                     " over " & rows & " line(s) held: " & seenValues & _
+                     ". If those are not clearing documents, correct Doc.Col.ClearingDoc " & _
+                     "on the Screen Map; if they are blank, the document is not cleared.", _
+                     "ERROR", vbNullString
+        Exit Function
+    End If
 
     grid.setCurrentCell chosen, clearingColumn
     modSapConnect.WaitForSap

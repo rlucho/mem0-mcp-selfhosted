@@ -156,6 +156,41 @@ Public Function ModalWindowTitle() As String
     On Error GoTo 0
 End Function
 
+'-----------------------------------------------------------------------
+' A cheap fingerprint of the screen, so a navigation step can prove it
+' actually navigated.
+'
+' F2 on a classic list only drills in when the cursor sits on a hotspot.
+' When it does not, SAP does nothing at all -- no popup, no status message,
+' no error to catch -- and the run carries on believing it has moved. That
+' is how one sample exported the FBL1N list twice and then reported it had
+' found no invoices in it.
+'
+' Title plus user-area shape plus the first line of text is enough to tell
+' 'a different screen' from 'the same screen'. It says nothing about WHICH
+' screen, which is the point: no wording, no language.
+'-----------------------------------------------------------------------
+Public Function ScreenSignature() As String
+    Dim area As Object, child As Object
+    Dim children As Long
+    Dim firstText As String
+
+    On Error Resume Next
+    ScreenSignature = gSession.findById("wnd[0]").Text
+
+    Set area = gSession.findById("wnd[0]/usr")
+    If Not area Is Nothing Then
+        children = area.Children.Count
+        For Each child In area.Children
+            firstText = child.Text
+            If Len(Trim$(firstText)) > 0 Then Exit For
+        Next child
+    End If
+    On Error GoTo 0
+
+    ScreenSignature = ScreenSignature & "|" & children & "|" & Left$(firstText, 60)
+End Function
+
 ' Does an element exist on the current screen?
 Public Function Exists(ByVal elementId As String) As Boolean
     Dim probe As Object

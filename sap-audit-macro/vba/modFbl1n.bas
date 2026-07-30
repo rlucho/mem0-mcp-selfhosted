@@ -29,6 +29,11 @@ Attribute VB_Name = "modFbl1n"
 '=======================================================================
 Option Explicit
 
+' How many screenfuls to scroll through when hunting for a document number
+' on the list. A month's batch runs to a few hundred rows, so this is a
+' runaway guard rather than a real limit.
+Private Const MAX_LIST_PAGES As Long = 400
+
 Public Type ZpPayment
     Found As Boolean
     GridRow As Long
@@ -440,6 +445,7 @@ End Function
 Public Function OpenPaymentOnList(ByVal sampleIdx As Long, _
                                   ByVal documentNumber As String) As Boolean
     Dim labelId As String
+    Dim before As String
 
     If Len(documentNumber) = 0 Then Exit Function
 
@@ -447,16 +453,32 @@ Public Function OpenPaymentOnList(ByVal sampleIdx As Long, _
     If Len(labelId) = 0 Then
         modLog.LogAction sampleIdx, "Open payment", _
                      "Document " & documentNumber & " is not among the labels on the " & _
-                     "FBL1N list -- the list may have scrolled past it. Falling back to " & _
-                     "opening it in FB03.", "MANUAL", vbNullString
+                     "FBL1N list, on any page of it. Falling back to opening it in FB03.", _
+                     "MANUAL", vbNullString
         Exit Function
     End If
 
     On Error GoTo Failed
 
+    before = modSapConnect.ScreenSignature()
+
     modSapConnect.Element(labelId).SetFocus
     modSafety.GuardedSendVKey "wnd[0]", 2
     modSafety.AssertPopupKnown
+
+    ' F2 is silent when the cursor is not on a hotspot: no popup, no status
+    ' message, nothing to catch. Without this check the run happily exported
+    ' the same list a second time and called it the invoice list.
+    If modSapConnect.ScreenSignature() = before Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "Pressed F2 on " & labelId & " for document " & documentNumber & _
+                     " but the screen did not change, so the list was never left. " & _
+                     "Falling back to opening it in FB03." & _
+                     IIf(Len(modSapConnect.StatusBarText()) > 0, _
+                         " SAP said: " & modSapConnect.StatusBarText(), ""), _
+                     "MANUAL", vbNullString
+        Exit Function
+    End If
 
     modLog.LogAction sampleIdx, "Open payment", _
                  "Opened payment " & documentNumber & " from the FBL1N list via " & _
@@ -471,15 +493,58 @@ Failed:
                  "ERROR", vbNullString
 End Function
 
-' The id of the label on the current screen whose text is this document
-' number. SAP pads document numbers with leading zeros in some columns and
-' not others, so compare on digits.
+'-----------------------------------------------------------------------
+' The id of the label whose text is this document number, anywhere in the
+' list -- not just on the page that happens to be showing.
+'
+' A classic list only renders its visible window, so the labels for row 120
+' of a 164-row batch simply do not exist until the list is scrolled there.
+' Two samples died on exactly that: the largest payment of the batch was
+' real and correct, and 'not among the labels' only meant 'not on screen'.
+'
+' Document numbers are padded with leading zeros in some columns and not
+' others, so the comparison is on digits.
+'-----------------------------------------------------------------------
 Private Function LabelShowing(ByVal documentNumber As String) As String
-    Dim area As Object, child As Object
     Dim wanted As String
+    Dim found As String
+    Dim startPos As Long, pageSize As Long, maxPos As Long
+    Dim pos As Long, pages As Long
 
     wanted = OnlyDigits(documentNumber)
     If Len(wanted) = 0 Then Exit Function
+    If Not modSapConnect.Exists("wnd[0]/usr") Then Exit Function
+
+    found = LabelOnThisPage(wanted)
+    If Len(found) > 0 Then
+        LabelShowing = found
+        Exit Function
+    End If
+
+    ReadScrollbar startPos, pageSize, maxPos
+    If maxPos <= 0 Then Exit Function
+
+    For pos = 0 To maxPos Step pageSize
+        pages = pages + 1
+        If pages > MAX_LIST_PAGES Then Exit For
+
+        If Not ScrollListTo(pos) Then Exit For
+
+        found = LabelOnThisPage(wanted)
+        If Len(found) > 0 Then
+            LabelShowing = found
+            Exit Function
+        End If
+    Next pos
+
+    ' Nothing found -- put the list back where it was, so whatever the caller
+    ' does next sees the list it started with.
+    ScrollListTo startPos
+End Function
+
+' The labels of the page currently rendered.
+Private Function LabelOnThisPage(ByVal wantedDigits As String) As String
+    Dim area As Object, child As Object
 
     If Not modSapConnect.Exists("wnd[0]/usr") Then Exit Function
     Set area = modSapConnect.Element("wnd[0]/usr")
@@ -487,13 +552,45 @@ Private Function LabelShowing(ByVal documentNumber As String) As String
     On Error Resume Next
     For Each child In area.Children
         If child.Type = "GuiLabel" Then
-            If OnlyDigits(child.Text) = wanted Then
-                LabelShowing = child.Id
+            If OnlyDigits(child.Text) = wantedDigits Then
+                LabelOnThisPage = child.Id
                 Exit For
             End If
         End If
     Next child
     On Error GoTo 0
+End Function
+
+Private Sub ReadScrollbar(ByRef position As Long, ByRef pageSize As Long, _
+                          ByRef maximum As Long)
+    Dim bar As Object
+
+    On Error Resume Next
+    Set bar = modSapConnect.Element("wnd[0]/usr").verticalScrollbar
+    If Not bar Is Nothing Then
+        position = bar.position
+        pageSize = bar.pageSize
+        maximum = bar.maximum
+    End If
+    On Error GoTo 0
+
+    ' A list with no scrollbar reports nothing; a page of at least one row
+    ' keeps the caller's loop from spinning.
+    If pageSize < 1 Then pageSize = 20
+End Sub
+
+' Scrolling a classic list is a server round trip, so the user area object
+' is stale afterwards and has to be looked up again -- which is why this
+' takes a position rather than a scrollbar.
+Private Function ScrollListTo(ByVal position As Long) As Boolean
+    On Error Resume Next
+    Err.Clear
+    modSapConnect.Element("wnd[0]/usr").verticalScrollbar.position = position
+    ScrollListTo = (Err.Number = 0)
+    Err.Clear
+    On Error GoTo 0
+
+    modSapConnect.WaitForSap
 End Function
 
 Private Function OnlyDigits(ByVal text As String) As String
@@ -513,6 +610,7 @@ Public Function OpenPaymentByDocument(ByVal sampleIdx As Long, _
                                       ByVal documentNumber As String, _
                                       ByVal fiscalYear As String) As Boolean
     Dim docId As String, bukrsId As String, yearId As String
+    Dim baseYear As Long, tryYear As Long, attempt As Long
 
     If Len(documentNumber) = 0 Then
         modLog.LogAction sampleIdx, "Open payment", _
@@ -533,6 +631,49 @@ Public Function OpenPaymentByDocument(ByVal sampleIdx As Long, _
 
     On Error GoTo Failed
 
+    bukrsId = modConfig.ElementIdOrBlank("FB03.CompanyCode")
+    yearId = modConfig.ElementIdOrBlank("FB03.FiscalYear")
+
+    ' GBKM's fiscal year does not line up with the calendar: a September 2025
+    ' posting date came back as 'document does not exist in fiscal year 2025'.
+    ' Rather than hardcode a variant, try the calendar year and then the years
+    ' either side of it, which covers both conventions.
+    baseYear = Val(fiscalYear)
+    If baseYear = 0 Then baseYear = Year(Date)
+
+    For attempt = 0 To 2
+        Select Case attempt
+            Case 0: tryYear = baseYear
+            Case 1: tryYear = baseYear + 1
+            Case 2: tryYear = baseYear - 1
+        End Select
+
+        If TryFb03(sampleIdx, docId, bukrsId, yearId, documentNumber, CStr(tryYear)) Then
+            modLog.LogAction sampleIdx, "Open payment", _
+                         "Opened payment document " & documentNumber & " in FB03, " & _
+                         "fiscal year " & tryYear & _
+                         IIf(attempt > 0, " (" & baseYear & " was rejected, so the " & _
+                             "fiscal year is not the calendar year here)", ""), _
+                         "OK", vbNullString
+            OpenPaymentByDocument = True
+            Exit Function
+        End If
+    Next attempt
+
+    modLog.LogAction sampleIdx, "Open payment", _
+                 "FB03 could not display " & documentNumber & " in fiscal year " & _
+                 baseYear & ", " & (baseYear + 1) & " or " & (baseYear - 1) & ". Last " & _
+                 "message: " & modSapConnect.StatusBarText(), "ERROR", vbNullString
+    Exit Function
+
+Failed:
+    modLog.LogAction sampleIdx, "Open payment", Err.Description, "ERROR", vbNullString
+End Function
+
+' One FB03 attempt. True when the document came up.
+Private Function TryFb03(ByVal sampleIdx As Long, ByVal docId As String, _
+                         ByVal bukrsId As String, ByVal yearId As String, _
+                         ByVal documentNumber As String, ByVal fiscalYear As String) As Boolean
     modSafety.StartTransaction "FB03"
 
     If Not modSapConnect.Exists(docId) Then
@@ -543,14 +684,12 @@ Public Function OpenPaymentByDocument(ByVal sampleIdx As Long, _
 
     modSapConnect.Element(docId).Text = documentNumber
 
-    bukrsId = modConfig.ElementIdOrBlank("FB03.CompanyCode")
     If Len(bukrsId) > 0 Then
         If modSapConnect.Exists(bukrsId) Then
             modSapConnect.Element(bukrsId).Text = modConfig.Setting("Company code")
         End If
     End If
 
-    yearId = modConfig.ElementIdOrBlank("FB03.FiscalYear")
     If Len(yearId) > 0 And Len(fiscalYear) > 0 Then
         If modSapConnect.Exists(yearId) Then
             modSapConnect.Element(yearId).Text = fiscalYear
@@ -560,22 +699,8 @@ Public Function OpenPaymentByDocument(ByVal sampleIdx As Long, _
     modSafety.GuardedSendVKey "wnd[0]", 0
     modSafety.AssertPopupKnown
 
-    If modSapConnect.StatusBarType() = "E" Then
-        modLog.LogAction sampleIdx, "Open payment", _
-                     "FB03 could not display " & documentNumber & ": " & _
-                     modSapConnect.StatusBarText(), "ERROR", vbNullString
-        Exit Function
-    End If
-
-    modLog.LogAction sampleIdx, "Open payment", _
-                 "Opened payment document " & documentNumber & " in FB03", _
-                 "OK", vbNullString
-
-    OpenPaymentByDocument = True
-    Exit Function
-
-Failed:
-    modLog.LogAction sampleIdx, "Open payment", Err.Description, "ERROR", vbNullString
+    TryFb03 = (modSapConnect.StatusBarType() <> "E" And _
+               modSapConnect.StatusBarType() <> "A")
 End Function
 
 '-----------------------------------------------------------------------
