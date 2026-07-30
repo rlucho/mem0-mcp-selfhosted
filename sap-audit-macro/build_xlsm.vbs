@@ -1,4 +1,10 @@
-' Builds FEBAN_Audit_Control.xlsm from the .xlsx and the .bas modules beside it.
+' Builds FEBAN_Audit_Control.xlsm from the .xlsx and the .bas modules beside it,
+' then puts the buttons on the Control sheet.
+'
+' This REPLACES any existing .xlsm, so anything already filled in on its sheets
+' is lost. To keep a workbook you have been using, run update_xlsm.vbs instead:
+' it refreshes the modules and the Screen Map in place and leaves your Control
+' settings, buttons, Probe sheet and Log alone.
 '
 ' Needs Excel's "Trust access to the VBA project object model" to be enabled
 ' (File > Options > Trust Center > Trust Center Settings > Macro Settings).
@@ -66,11 +72,27 @@ For Each file In folder.Files
 Next
 On Error GoTo 0
 
+' Put the buttons on the Control sheet too. Trust access is already proven
+' by the imports above, so this cannot fail for that reason -- and it saves
+' rebuilding them by hand every time the modules are refreshed.
+Dim buttonsAdded
+buttonsAdded = False
+On Error Resume Next
+excel.Run "modSetup.AddButtonsQuiet"
+buttonsAdded = (Err.Number = 0)
+Err.Clear
+On Error GoTo 0
+
 book.Save
 book.Close False
 excel.Quit
 
 MsgBox "Built:" & vbCrLf & xlsm & vbCrLf & vbCrLf & _
-       imported & " modules imported." & vbCrLf & vbCrLf & _
-       "Open it, log on to SAP, then run modMain.CheckSetup (Alt+F11, click inside " & _
-       "the Sub, F5).", 64, "Build"
+       imported & " modules imported." & vbCrLf & _
+       IIfStr(buttonsAdded, "Buttons added to the Control sheet.", _
+              "Buttons NOT added -- run modSetup.AddButtons yourself.") & vbCrLf & vbCrLf & _
+       "Open it, log on to SAP, then press '1. Check setup'.", 64, "Build"
+
+Function IIfStr(cond, a, b)
+    If cond Then IIfStr = a Else IIfStr = b
+End Function

@@ -20,7 +20,19 @@ Private Const BUTTON_GAP As Double = 6
 Private Const TAG_PREFIX As String = "sapaudit_"
 
 '-----------------------------------------------------------------------
+' Parameterless, so it still appears in Excel's Macro dialog -- a Sub that
+' takes arguments does not.
 Public Sub AddButtons()
+    Build False
+End Sub
+
+' Same, without the confirmation dialog. build_xlsm.vbs calls this, because an
+' unattended build must not stop on a message box.
+Public Sub AddButtonsQuiet()
+    Build True
+End Sub
+
+Private Sub Build(ByVal quiet As Boolean)
     Dim sheet As Worksheet
     Dim top As Double
     Dim built As Long
@@ -42,13 +54,17 @@ Public Sub AddButtons()
     AddOne sheet, top, "     Clear the log", "modLog.ClearLog", built
 
     sheet.Activate
-    MsgBox built & " buttons added to the '" & modConfig.SHEET_CONTROL & "' sheet." & _
-           vbCrLf & vbCrLf & "Save the workbook so they persist.", _
-           vbInformation, "Add buttons"
+    If Not quiet Then
+        MsgBox built & " buttons added to the '" & modConfig.SHEET_CONTROL & "' sheet." & _
+               vbCrLf & vbCrLf & "Save the workbook so they persist.", _
+               vbInformation, "Add buttons"
+    End If
     Exit Sub
 
 Failed:
-    MsgBox "Could not add the buttons: " & Err.Description, vbExclamation, "Add buttons"
+    If Not quiet Then
+        MsgBox "Could not add the buttons: " & Err.Description, vbExclamation, "Add buttons"
+    End If
 End Sub
 
 Private Sub AddOne(ByVal sheet As Worksheet, ByRef top As Double, ByVal caption As String, _

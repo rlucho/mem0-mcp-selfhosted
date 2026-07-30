@@ -1,32 +1,29 @@
 # Getting to a first test
 
-Excel will not keep macros in a `.xlsx`, and a `.bas` file is just text until it is
-imported — so there are two short steps before anything runs.
+## Fastest path: `build_xlsm.vbs`
 
-## 1. Make the workbook macro-enabled
+Unzip everything to one folder and double-click **`build_xlsm.vbs`**. It makes
+`FEBAN_Audit_Control.xlsm` from the `.xlsx`, imports all thirteen modules, and puts the
+buttons on the Control sheet. Then open it, log on to SAP, and press **1. Check setup**.
 
-Open `FEBAN_Audit_Control.xlsx` → **File ▸ Save As** → set the type to
-**Excel Macro-Enabled Workbook (*.xlsm)** → save it as `FEBAN_Audit_Control.xlsm`.
+It needs Excel's **Trust access to the VBA project object model**
+(File ▸ Options ▸ Trust Center ▸ Trust Center Settings ▸ Macro Settings). That is off by
+default on many managed laptops. If the script says so, do it by hand — it takes two minutes:
 
-## 2. Import the modules
+1. Open `FEBAN_Audit_Control.xlsx` → **Save As** → **Excel Macro-Enabled Workbook (.xlsm)**
+2. `Alt`+`F11` → **File ▸ Import File…** → every `.bas` in `vba` (thirteen of them)
+3. Run `modSetup.AddButtons` once, then save
 
-`Alt`+`F11` to open the VBA editor, then **File ▸ Import File…** and pick each `.bas`
-in the `vba` folder. There are twelve. Import all of them.
+If `Scripting.Dictionary` will not resolve, add **Tools ▸ References ▸ Microsoft Scripting
+Runtime**.
 
-If `Scripting.Dictionary` fails to resolve when you run something, add the reference:
-**Tools ▸ References ▸ Microsoft Scripting Runtime**.
+## Updating a workbook you have already been using
 
-*Shortcut:* `build_xlsm.vbs` in this folder does both steps for you — double-click it.
-It only works if **File ▸ Options ▸ Trust Center ▸ Trust Center Settings ▸ Macro Settings
-▸ Trust access to the VBA project object model** is ticked, which it often is not on a
-managed laptop. If it errors, just do steps 1 and 2 by hand; it takes about two minutes.
-
-## 2b. Optional: buttons on the Control sheet
-
-Run `modSetup.AddButtons` once. It puts a labelled button on the `Control` sheet for each
-macro below, in the order you need them, and saves you hunting through the Macro dialog.
-Save the workbook afterwards so they persist. `modSetup.RemoveButtons` takes them away
-again, and only touches buttons it made itself.
+`build_xlsm.vbs` **replaces** the .xlsm, so anything filled in on its sheets is lost. Once you
+have a workbook you are actually working in, use **`update_xlsm.vbs`** instead. It refreshes
+the modules and applies any Screen Map corrections in place, and leaves your Control settings,
+buttons, Probe sheet and Log alone. The Screen Map half of it works even when trust access is
+switched off.
 
 ## 3. Run CheckSetup
 
