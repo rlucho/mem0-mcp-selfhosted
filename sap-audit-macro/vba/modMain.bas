@@ -55,7 +55,8 @@ Public Sub CheckSetup()
              "SAP system   : " & modSapConnect.gSystemId & _
                               "  client " & modSapConnect.gClient & vbCrLf & _
              "SAP user     : " & modSapConnect.gSapUser & vbCrLf & _
-             "SAP release  : " & modSapConnect.gSapRelease & vbCrLf & _
+             "SAP release  : " & IIf(Len(modSapConnect.gSapRelease) > 0, _
+                                     modSapConnect.gSapRelease, "(not reported)") & vbCrLf & _
              "Transaction  : " & modSapConnect.CurrentTransaction() & vbCrLf & _
              "Company code : " & modConfig.Setting("Company code") & vbCrLf & _
              "Statement tx : " & modConfig.Setting("Transaction for statement search") & vbCrLf & _

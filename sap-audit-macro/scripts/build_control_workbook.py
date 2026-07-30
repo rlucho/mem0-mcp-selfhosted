@@ -326,10 +326,13 @@ SCREEN_MAP_ROWS = [
     ("FEBAN.Col.Amount", "Amount column", "KWBTR", "Yes"),
     ("FEBAN.Col.ValueDate", "Statement date column. Audit2.vbs double-clicked this by "
      "name, so it is a captured value", "AZDAT", "Yes"),
-    ("FEBAN.Col.Status", "Posting status column. VERIFY", "ESTAT", "No"),
+    ("FEBAN.Col.Status", "Update-status column. The grid dump on PP2 shows no ESTAT -- "
+     "VB1OK 'Update 1 OK' and VB2OK '2nd update OK' are what this release carries",
+     "VB1OK", "No"),
     ("FEBAN.Col.DocNumber", "FI document column. VERIFY", "BELNR", "No"),
-    ("FEBAN.Col.Reference", "Bank reference / note-to-payee, logged as context. VERIFY",
-     "SGTXT", "No"),
+    ("FEBAN.Col.Reference", "Note-to-payee, logged beside each match as context. The grid "
+     "dump shows no SGTXT; VWEZW is 'Payment Notes' and VGREF is 'Bank reference'",
+     "VWEZW", "No"),
     ("--- ALV export (confirmed in Audit2.vbs) ---", "", "", ""),
     ("Export.AlvToolbarButton", "Grid toolbar export function code",
      "&MB_EXPORT", "No"),
@@ -395,6 +398,15 @@ SCREEN_MAP_ROWS = [
     ("Fbl1n.ResultAnchor", "Confirms the FBL1N result came up. NOTE: FBL1N renders as a "
      "CLASSIC LIST here (lbl[x,y]), not an ALV grid, so there is no grid to read -- the "
      "list is exported and read back instead. VERIFY", "wnd[0]/usr/lbl[164,8]", "No"),
+    ("--- Opening a document by number (FB03) ---", "", "", ""),
+    ("FB03.DocNumber", "Document number field on the FB03 entry screen. This is how the "
+     "largest payment is opened -- by number, not by clicking a row. Standard SAP; run "
+     "modProbe.ProbeCurrentScreen on FB03 to confirm. VERIFY",
+     "wnd[0]/usr/txtRF05L-BELNR", "No"),
+    ("FB03.CompanyCode", "Company code field on that screen. VERIFY",
+     "wnd[0]/usr/ctxtRF05L-BUKRS", "No"),
+    ("FB03.FiscalYear", "Fiscal year field on that screen. VERIFY",
+     "wnd[0]/usr/txtRF05L-GJAHR", "No"),
     ("--- Step 10: the largest payment's invoices, and the PDF ---", "", "", ""),
     ("Payment.UsageMenu", "Environment > Payment usage from inside the payment document. "
      "menu[4] here, not the menu[5] used from the clearing document -- menu indices differ "

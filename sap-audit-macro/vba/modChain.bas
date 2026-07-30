@@ -178,7 +178,17 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
     result.IsConfirmingPayment = NamesMatch(result.ZpPaymentVendor, _
                                             modConfig.Setting("Confirming party name"))
 
-    modFbl1n.OpenPayment payment.GridRow
+    If Not modFbl1n.OpenPaymentByDocument(sampleIdx, payment.DocumentNumber, _
+                                          Format$(dateFrom, "yyyy")) Then
+        Finish result, "BLOCKED_INVOICE", _
+               "Largest payment of the batch is " & _
+               Format$(result.ZpPaymentAmount, "#,##0.00") & _
+               IIf(Len(result.ZpPaymentDocument) > 0, _
+                   " (document " & result.ZpPaymentDocument & ")", "") & _
+               ", but it could not be opened, so its invoices were not reached."
+        Walk = result
+        Exit Function
+    End If
 
     ' --- step 10: the largest invoice inside it, and its PDF -------------
     FetchInvoicePdf sampleIdx, result, folder, fileStem

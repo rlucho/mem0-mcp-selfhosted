@@ -35,7 +35,7 @@ Public Sub AddButtons()
     AddOne sheet, top, "1.  Check setup", "modMain.CheckSetup", built
     AddOne sheet, top, "2.  Probe this SAP screen", "modProbe.ProbeCurrentScreen", built
     AddOne sheet, top, "3.  Dump FEBAN grid columns", "modFeban.DumpGridColumns", built
-    AddOne sheet, top, "3b. Dump FBL1N columns", "modFbl1n.DumpFbl1nColumns", built
+    AddOne sheet, top, "3b. FBL1N columns (see note)", "modFbl1n.DumpFbl1nColumns", built
     AddOne sheet, top, "4.  Run one month", "modMain.RunSingleMonth", built
     AddOne sheet, top, "5.  Run all samples", "modMain.RunExtract", built
     AddOne sheet, top, "     Dump this SAP screen", "modProbe.DumpScreen", built

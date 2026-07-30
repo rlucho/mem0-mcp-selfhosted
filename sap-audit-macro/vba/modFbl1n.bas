@@ -315,131 +315,98 @@ Private Function CountNumbers(ByVal zpNumbers As String) As Long
 End Function
 
 '-----------------------------------------------------------------------
-' Step 7 -- sort descending on the amount column
+' Open the largest payment of the batch.
+'
+' NOT by clicking it on the list. FBL1N renders as a classic list here, and
+' the recordings reach a row with lbl[164,10] -- a fixed screen coordinate
+' that lands on whatever happens to be the tenth line. The document number
+' is already known from the export, so open it directly in FB03 instead:
+' deterministic, and FB03 is display-only.
 '-----------------------------------------------------------------------
-Private Sub SortByAmountDescending()
-    Dim grid As Object
-    Dim amountColumn As String
+Public Function OpenPaymentByDocument(ByVal sampleIdx As Long, _
+                                      ByVal documentNumber As String, _
+                                      ByVal fiscalYear As String) As Boolean
+    Dim docId As String, bukrsId As String, yearId As String
 
-    Set grid = modSapConnect.Element(modConfig.ElementId("Fbl1n.ResultGrid"))
-    amountColumn = modConfig.ElementIdOrBlank("Fbl1n.Col.Amount")
-    If Len(amountColumn) = 0 Then Exit Sub
-
-    ' Best effort: the export reads better sorted, but nothing downstream
-    ' depends on the order.
-    On Error Resume Next
-    grid.setCurrentCell -1, amountColumn
-    grid.selectColumn amountColumn
-    grid.pressToolbarButton "&SORT_DSC"
-    On Error GoTo 0
-
-    modSapConnect.WaitForSap
-End Sub
-
-'-----------------------------------------------------------------------
-' Step 8 -- the largest payment, by reading the grid
-'-----------------------------------------------------------------------
-Private Function FindLargest(ByVal sampleIdx As Long, ByRef partial As ZpPayment) As ZpPayment
-    Dim result As ZpPayment
-    Dim grid As Object
-    Dim rows As Long, r As Long
-    Dim amountColumn As String
-    Dim value As Double, best As Double
-    Dim ties As Long
-
-    result = partial
-
-    Set grid = modSapConnect.Element(modConfig.ElementId("Fbl1n.ResultGrid"))
-    amountColumn = modConfig.ElementId("Fbl1n.Col.Amount")
-
-    On Error Resume Next
-    rows = grid.RowCount
-    On Error GoTo 0
-
-    For r = 0 To rows - 1
-        value = Abs(modUtil.ParseSapAmount(GridCell(grid, r, amountColumn)))
-        If value > 0 Then result.RowsConsidered = result.RowsConsidered + 1
-
-        If value > best Then
-            best = value
-            ties = 1
-            result.Found = True
-            result.GridRow = r
-            result.Amount = value
-            result.DocumentNumber = GridCellIfMapped(grid, r, "Fbl1n.Col.DocNumber")
-            result.Vendor = GridCellIfMapped(grid, r, "Fbl1n.Col.Vendor")
-            result.VendorName = GridCellIfMapped(grid, r, "Fbl1n.Col.VendorName")
-        ElseIf value = best And value > 0 Then
-            ties = ties + 1
-        End If
-    Next r
-
-    If Not result.Found Then
-        result.Notes = "FBL1N returned " & rows & " row(s) but no readable amount in " & _
-                       "column " & amountColumn & ". Check Fbl1n.Col.Amount."
-        modLog.LogAction sampleIdx, "FBL1N", result.Notes, "ERROR", vbNullString
-        FindLargest = result
+    If Len(documentNumber) = 0 Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "The largest payment carries no document number, so it could not be " & _
+                     "opened. Check the document-number column of the exported list.", _
+                     "ERROR", vbNullString
         Exit Function
     End If
 
-    If ties > 1 Then
-        result.Notes = ties & " ZP payments in the batch share the largest amount " & _
-                       Format$(best, "#,##0.00") & ". The first was taken; check by hand " & _
-                       "whether that is the one the auditor means."
-        modLog.LogAction sampleIdx, "FBL1N", result.Notes, "MANUAL", vbNullString
+    docId = modConfig.ElementIdOrBlank("FB03.DocNumber")
+    If Len(docId) = 0 Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "FB03.DocNumber is blank on the Screen Map, so payment " & _
+                     documentNumber & " could not be opened. Run modProbe on the FB03 " & _
+                     "entry screen and fill the FB03.* rows in.", "MANUAL", vbNullString
+        Exit Function
     End If
 
-    modLog.LogAction sampleIdx, "FBL1N", _
-                 "Largest of " & result.RowsConsidered & " ZP payments in the batch: " & _
-                 Format$(result.Amount, "#,##0.00") & _
-                 IIf(Len(result.DocumentNumber) > 0, ", document " & result.DocumentNumber, "") & _
-                 IIf(Len(result.VendorName) > 0, ", vendor " & result.VendorName, _
-                     IIf(Len(result.Vendor) > 0, ", vendor " & result.Vendor, "")), _
+    On Error GoTo Failed
+
+    modSafety.StartTransaction "FB03"
+
+    If Not modSapConnect.Exists(docId) Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "FB03 opened but " & docId & " is not on it.", "ERROR", vbNullString
+        Exit Function
+    End If
+
+    modSapConnect.Element(docId).Text = documentNumber
+
+    bukrsId = modConfig.ElementIdOrBlank("FB03.CompanyCode")
+    If Len(bukrsId) > 0 Then
+        If modSapConnect.Exists(bukrsId) Then
+            modSapConnect.Element(bukrsId).Text = modConfig.Setting("Company code")
+        End If
+    End If
+
+    yearId = modConfig.ElementIdOrBlank("FB03.FiscalYear")
+    If Len(yearId) > 0 And Len(fiscalYear) > 0 Then
+        If modSapConnect.Exists(yearId) Then
+            modSapConnect.Element(yearId).Text = fiscalYear
+        End If
+    End If
+
+    modSafety.GuardedSendVKey "wnd[0]", 0
+    modSafety.AssertPopupKnown
+
+    If modSapConnect.StatusBarType() = "E" Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "FB03 could not display " & documentNumber & ": " & _
+                     modSapConnect.StatusBarText(), "ERROR", vbNullString
+        Exit Function
+    End If
+
+    modLog.LogAction sampleIdx, "Open payment", _
+                 "Opened payment document " & documentNumber & " in FB03", _
                  "OK", vbNullString
 
-    FindLargest = result
+    OpenPaymentByDocument = True
+    Exit Function
+
+Failed:
+    modLog.LogAction sampleIdx, "Open payment", Err.Description, "ERROR", vbNullString
 End Function
 
-' Open the largest ZP payment, so the invoice route can start from it.
-Public Sub OpenPayment(ByVal gridRow As Long)
-    Dim grid As Object
-    Dim amountColumn As String
-
-    Set grid = modSapConnect.Element(modConfig.ElementId("Fbl1n.ResultGrid"))
-    amountColumn = modConfig.ElementId("Fbl1n.Col.Amount")
-
-    grid.setCurrentCell gridRow, amountColumn
-    modSapConnect.WaitForSap
-
-    grid.doubleClickCurrentCell
-    modSapConnect.WaitForSap
-    modSafety.AssertPopupKnown
-End Sub
-
-Private Function GridCell(ByVal grid As Object, ByVal row As Long, _
-                          ByVal columnName As String) As String
-    On Error Resume Next
-    GridCell = grid.GetCellValue(row, columnName)
-    On Error GoTo 0
-End Function
-
-Private Function GridCellIfMapped(ByVal grid As Object, ByVal row As Long, _
-                                  ByVal mapKey As String) As String
-    Dim columnName As String
-
-    columnName = modConfig.ElementIdOrBlank(mapKey)
-    If Len(columnName) = 0 Then Exit Function
-
-    GridCellIfMapped = Trim$(GridCell(grid, row, columnName))
-End Function
-
-' Column names as FBL1N actually reports them on this release. Run it once
-' with an FBL1N result on screen and paste what it prints into the Screen Map.
+'-----------------------------------------------------------------------
+' There is no FBL1N grid to dump on this system.
 '
-' Named for its transaction rather than 'DumpGridColumns', which collided
-' with modFeban's and left both showing ambiguously in the Macro dialog.
+' FBL1N returns a classic list here -- lbl[x,y] cells, not an ALV control --
+' so it has no queryable column set. The column names that matter are the
+' headings of the exported file, which is what the macro actually reads.
+'-----------------------------------------------------------------------
 Public Sub DumpFbl1nColumns()
-    modConfig.LoadScreenMap
-    modSapConnect.SapAttach
-    modFeban.DumpColumnsOf modConfig.ElementId("Fbl1n.ResultGrid"), "FBL1N result grid"
+    MsgBox "FBL1N returns a classic list on this system, not an ALV grid, so there " & _
+           "are no grid columns to read." & vbCrLf & vbCrLf & _
+           "The macro does not read that screen at all -- it exports the list and reads " & _
+           "the file. To check the column names, open the exported " & _
+           "*_ZP_payments.xlsx and look at its headings, then put them in the " & _
+           "'ZP list ...' settings on the Control sheet if the Log says it picked " & _
+           "the wrong ones." & vbCrLf & vbCrLf & _
+           "modFeban.DumpGridColumns still works, because FEBAN does use an ALV grid.", _
+           vbInformation, "FBL1N columns"
 End Sub
