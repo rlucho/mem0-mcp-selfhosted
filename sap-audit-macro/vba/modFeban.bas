@@ -26,6 +26,26 @@ Public Type FebanMatch
     CandidateCount As Long
 End Type
 
+' Cached copy of the whole result grid for the month now open.
+'
+' WHY THIS EXISTS. A SAP ALV grid only holds the VISIBLE window of rows on
+' the client. RowCount reports the true total, but GetCellValue for a row
+' outside that window returns nothing -- silently. Walking 0 to RowCount-1
+' therefore reads about twenty real rows and then several hundred blanks,
+' and every sample past the first screenful comes back NOT FOUND with no
+' error to explain it.
+'
+' The fix is to page through with firstVisibleRow. Doing that once per
+' month and caching the result, rather than once per sample, turns roughly
+' 25 round trips per sample into 25 per month.
+Private mRowDate() As String
+Private mRowAmount() As Double
+Private mRowStatus() As String
+Private mRowDoc() As String
+Private mRowRef() As String
+Private mRowsLoaded As Long
+Private mGridBlanks As Long
+
 '-----------------------------------------------------------------------
 ' Open FEBAN for one month and execute the selection.
 '-----------------------------------------------------------------------
@@ -127,33 +147,6 @@ Private Sub SetOptionalField(ByVal mapKey As String, ByVal value As String)
 End Sub
 
 '-----------------------------------------------------------------------
-' Find the statement row for one sample, by value date and amount.
-'
-' Matching on date + amount alone is deliberately conservative: where two
-' rows tie, the match is reported Ambiguous rather than resolved by
-' picking the first. Two of the samples are for identical round amounts
-' (2,450,000.00) on month-end dates, so ties are a real prospect.
-'-----------------------------------------------------------------------
-' Cached copy of the whole result grid for the month now open.
-'
-' WHY THIS EXISTS. A SAP ALV grid only holds the VISIBLE window of rows on
-' the client. RowCount reports the true total, but GetCellValue for a row
-' outside that window returns nothing -- silently. Walking 0 to RowCount-1
-' therefore reads about twenty real rows and then several hundred blanks,
-' and every sample past the first screenful comes back NOT FOUND with no
-' error to explain it.
-'
-' The fix is to page through with firstVisibleRow. Doing that once per
-' month and caching the result, rather than once per sample, turns roughly
-' 25 round trips per sample into 25 per month.
-Private mRowDate() As String
-Private mRowAmount() As Double
-Private mRowStatus() As String
-Private mRowDoc() As String
-Private mRowRef() As String
-Private mRowsLoaded As Long
-Private mGridBlanks As Long
-
 Public Sub ClearGridCache()
     Erase mRowDate
     Erase mRowAmount
