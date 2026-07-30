@@ -565,16 +565,60 @@ Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long, _
                            ByVal amountSetting As String, _
                            ByVal supplierSetting As String, _
                            ByVal documentSetting As String) As ListRow
+    LargestRow = LargestRowOfType(path, sampleIdx, amountSetting, supplierSetting, _
+                                  documentSetting, vbNullString)
+End Function
+
+' Same, restricted to one document type.
+'
+' This is what picks the invoice. A Payment Usage list holds several
+' document types at once -- ZP payments, KR vendor invoices, SB statement
+' documents -- so taking the largest row without filtering can easily
+' return a payment where an invoice was wanted. The invoices are the KR
+' rows, and they carry negative amounts, which is why the comparison is on
+' magnitude throughout.
+Public Function LargestRowOfType(ByVal path As String, ByVal sampleIdx As Long, _
+                                 ByVal amountSetting As String, _
+                                 ByVal supplierSetting As String, _
+                                 ByVal documentSetting As String, _
+                                 ByVal wantedType As String) As ListRow
     Dim result As ListRow
     Dim amountCol As Long, supplierCol As Long, documentCol As Long
     Dim r As Long
     Dim value As Double, best As Double
+    Dim typeCol As Long, skipped As Long
 
     If Not LoadExport(path, sampleIdx) Then Exit Function
     If Not FindColumns(sampleIdx, amountSetting, supplierSetting, documentSetting, _
                        amountCol, supplierCol, documentCol) Then Exit Function
 
+    ' Locate the document-type column the same language-independent way: by
+    ' finding the column that actually holds the code.
+    If Len(wantedType) > 0 Then
+        typeCol = MatchColumn(mHeaderRow, CaptionSetting(vbNullString, DEFAULT_DOCTYPE_CAPTIONS))
+        If typeCol = 0 Then typeCol = ColumnContaining(mHeaderRow + 1, wantedType)
+
+        If typeCol = 0 Then
+            modLog.LogAction sampleIdx, "Read export", _
+                         "No document-type column found in " & path & ", so the largest " & _
+                         "row was taken across ALL document types rather than only " & _
+                         wantedType & ". Check the result -- a payment may have been " & _
+                         "picked where an invoice was wanted.", "MANUAL", path
+        Else
+            modLog.LogAction sampleIdx, "Read export", _
+                         "Restricting to document type " & wantedType & " using column " & _
+                         typeCol & ".", "OK", path
+        End If
+    End If
+
     For r = mHeaderRow + 1 To mRowCount
+        If typeCol > 0 Then
+            If Normalise(mCells(r, typeCol)) <> Normalise(wantedType) Then
+                skipped = skipped + 1
+                GoTo NextRow
+            End If
+        End If
+
         ' A total or subtotal line would otherwise win outright, and it is not
         ' an invoice. Skip any row whose supplier cell is empty or whose text
         ' reads like a total.
@@ -594,7 +638,16 @@ Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long, _
                 If documentCol > 0 Then result.DocumentNumber = mCells(r, documentCol)
             End If
         End If
+
+NextRow:
     Next r
+
+    If Len(wantedType) > 0 And typeCol > 0 Then
+        modLog.LogAction sampleIdx, "Read export", _
+                     result.RowsConsidered & " row(s) of type " & wantedType & " considered, " & _
+                     skipped & " of other types skipped.", _
+                     IIf(result.Found, "OK", "ERROR"), path
+    End If
 
     If result.Found And result.RowsConsidered = 1 Then
         modLog.LogAction sampleIdx, "Read export", _
@@ -603,7 +656,7 @@ Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long, _
                      "MANUAL", path
     End If
 
-    LargestRow = result
+    LargestRowOfType = result
 End Function
 
 ' Totals rows are the trap here: SAP prints them with the largest number on

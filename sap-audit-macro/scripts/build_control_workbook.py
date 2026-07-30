@@ -127,6 +127,12 @@ CONTROL_SETTINGS = [
      "Caption of the vendor-name column in that same file. Same rules."),
     ("ZP list document column", "",
      "Caption of the document-number column in that same file. Same rules."),
+    ("Invoice document type", "KR",
+     "The PDF is taken from the invoice, which is the KR document and carries a NEGATIVE "
+     "amount. The list it is picked from holds several types at once -- ZP payments, KR "
+     "invoices, SB statement documents -- so without this filter the largest row is "
+     "usually a payment, not an invoice. Comparisons are on magnitude, so the negative "
+     "sign does not matter."),
     ("Invoice list amount column", "",
      "Santander SCF route only. Caption of the amount column in the exported list of "
      "invoices behind an SCF payment. Blank falls back to a built-in list of captions."),
@@ -240,8 +246,6 @@ def build_control(workbook: Workbook) -> None:
         ("DONE -- invoice downloaded", '=COUNTIF(Samples!J5:J1000,"DONE")'),
         ("BLOCKED_FBL1N -- steps 8-9 not mapped yet",
          '=COUNTIF(Samples!J5:J1000,"BLOCKED_FBL1N")'),
-        ("BLOCKED_SCF -- Santander, needs the extra hop",
-         '=COUNTIF(Samples!J5:J1000,"BLOCKED_SCF")'),
         ("BLOCKED_INVOICE -- reached the payment, no PDF",
          '=COUNTIF(Samples!J5:J1000,"BLOCKED_INVOICE")'),
         ("PARTIAL -- traced, no invoice file", '=COUNTIF(Samples!J5:J1000,"PARTIAL")'),
@@ -254,6 +258,8 @@ def build_control(workbook: Workbook) -> None:
         ("Files downloaded", "=SUM(Samples!N5:N1000)"),
         ("Samples with no named beneficiary in the request",
          '=COUNTIF(Samples!I5:I1000,"*no_named_beneficiary*")'),
+        ("Reached a confirming (Santander SCF) payment",
+         '=COUNTIF(Samples!O5:O1000,"*confirming party*")'),
         ("Samples the request already names as SANTANDER SCF",
          '=COUNTIF(Samples!G5:G1000,"*SANTANDER*")'),
     ]
@@ -371,6 +377,12 @@ SCREEN_MAP_ROWS = [
     ("Fbl1n.DynamicSelections", "Opens the dynamic-selections block. The document number "
      "is NOT on the main selection screen -- it lives in dynamic selections, so this has "
      "to be pressed before the field below exists", "wnd[0]/tbar[1]/btn[16]", "No"),
+    ("Fbl1n.DocNumberField", "The document-number field itself, inside dynamic "
+     "selections. Used when the batch holds a single document, so the multiple-selection "
+     "dialog is not needed",
+     "wnd[0]/usr/ssub%_SUBSCREEN_%_SUB%_CONTAINER:SAPLSSEL:2001/"
+     "ssubSUBSCREEN_CONTAINER2:SAPLSSEL:2000/ssubSUBSCREEN_CONTAINER:SAPLSSEL:1106/"
+     "txt%%DYN011-LOW", "No"),
     ("Fbl1n.DocNumberMultiSelect", "Multiple-selection arrow for document number, inside "
      "the dynamic-selections subscreen",
      "wnd[0]/usr/ssub%_SUBSCREEN_%_SUB%_CONTAINER:SAPLSSEL:2001/"
@@ -387,8 +399,11 @@ SCREEN_MAP_ROWS = [
     ("Payment.UsageMenu", "Environment > Payment usage from inside the payment document. "
      "menu[4] here, not the menu[5] used from the clearing document -- menu indices differ "
      "per screen. VERIFY", "wnd[0]/mbar/menu[4]/menu[3]", "No"),
-    ("Invoice.GosToolbox", "Services-for-object toolbox. shellcont[2], not the plain "
-     "shellcont that was predicted", "wnd[0]/titl/shellcont[2]/shell", "No"),
+    ("Invoice.GosToolbox", "Services-for-object toolbox. The container index is NOT "
+     "stable -- N1.vbs found it at shellcont[2] and B2.vbs at shellcont[1] on the same "
+     "system, because it depends on what else the title bar carries. The macro tries "
+     "this value first and then probes the neighbours, so it is a hint, not a hard ID",
+     "wnd[0]/titl/shellcont[1]/shell", "No"),
     ("Invoice.AttachListGrid", "Attachment-list grid. CONTAINER_0100",
      "wnd[1]/usr/cntlCONTAINER_0100/shellcont/shell", "No"),
     ("Invoice.AttachListColumn", "Column used to select the attachment row",

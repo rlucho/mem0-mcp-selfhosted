@@ -11,22 +11,31 @@ Attribute VB_Name = "modChain"
 '   5  clearing doc field -> F2 -> clearing document             RECORDED
 '   6  Environment > Payment Usage -> the batch's ZP documents    RECORDED
 '   7  export that list, read the ZP document numbers back       RECORDED
-'   8  FBL1N filtered to those ZP numbers, sorted by amount      NOT RECORDED
-'   9  the largest ZP payment of the batch                       NOT RECORDED
-'  10  within it, the largest invoice -> export its PDF          NOT RECORDED
+'   8  FBL1N filtered to those ZP numbers                       RECORDED
+'   9  the largest ZP payment of the batch                       RECORDED
+'  10  Payment usage on it -> the largest KR invoice -> its PDF  RECORDED
 '
-' Steps 1-7 come out of Audit.vbs / Audit2.vbs / Audit3.vbs / Audit5.vbs
-' and their IDs are captured values. All four recordings stop at step 7,
-' so 8-10 are written from standard SAP rather than observed, and every
-' stage past 7 is gated on its Screen Map rows being filled in. A sample
-' whose gate is shut finishes at the last step that did work and says so,
-' carrying the document numbers a person needs to take it from there.
+' Every step is now covered by a recording in recordings/. A stage whose
+' Screen Map rows are blank still finishes at the last step that worked and
+' says so, carrying the document numbers a person needs to take it on.
 '
-' Two 'largest' decisions, both read from data rather than assumed from a
-' sort order: the largest ZP payment in the batch, then the largest
-' invoice inside it. The recordings sorted ascending and took row index 1,
-' which on a list of negative amounts is the second largest -- reading
-' values avoids inheriting that.
+' ONE ROUTE, NOT TWO. N1.vbs walked a Santander SCF payment and B2.vbs a
+' regular vendor, and they turned out to be the same shape -- Environment >
+' Payment usage on the payment, export, open the invoice, save the
+' attachment. The regular one only looked shorter because there were fewer
+' rows to sort through. IsConfirmingPayment now only colours the report.
+'
+' THE INVOICE IS THE KR DOCUMENT. The list step 10 picks from holds several
+' document types at once, and the KR rows -- the vendor invoices -- carry
+' negative amounts. Filtering to KR is what stops the largest row coming
+' back as a ZP payment; comparing on magnitude is what stops the sign
+' mattering.
+'
+' Two 'largest' decisions, both read from exported data rather than assumed
+' from a sort order: the largest ZP payment in the batch, then the largest
+' KR invoice inside it. The recordings sort the list on screen and click a
+' row by position -- lbl[164,8] -- which is a fixed screen coordinate and
+' would silently pick the wrong document on a batch of a different size.
 '=======================================================================
 Option Explicit
 
@@ -55,7 +64,7 @@ Public Type ChainResult
     InvoiceAmount As Double
     InvoicePdfFile As String
 
-    Status As String    ' DONE|BLOCKED_FBL1N|BLOCKED_SCF|BLOCKED_INVOICE|PARTIAL|ERROR
+    Status As String    ' DONE|BLOCKED_FBL1N|BLOCKED_INVOICE|PARTIAL|ERROR
     Notes As String
 End Type
 
@@ -200,118 +209,106 @@ End Sub
 Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult, _
                             ByVal folder As String, ByVal fileStem As String)
     Dim summary As String
-    Dim openId As String, listMenuId As String
+    Dim usageMenuId As String
     Dim largest As ListRow
 
     summary = "Largest of " & result.ZpPaymentCount & " ZP payments in the batch: " & _
               Format$(result.ZpPaymentAmount, "#,##0.00") & _
               IIf(Len(result.ZpPaymentDocument) > 0, _
                   " (document " & result.ZpPaymentDocument & ")", "") & _
-              IIf(Len(result.ZpPaymentVendor) > 0, ", " & result.ZpPaymentVendor, "") & "."
+              IIf(Len(result.ZpPaymentVendor) > 0, ", " & result.ZpPaymentVendor, "") & _
+              IIf(result.IsConfirmingPayment, " -- the confirming party.", ".")
 
-    If result.IsConfirmingPayment Then
-        openId = modConfig.ElementIdOrBlank("Scf.OpenInvoices")
-        listMenuId = modConfig.ElementIdOrBlank("Scf.InvoiceListMenu")
+    ' N1.vbs (Santander SCF) and B2.vbs (a regular vendor) turned out to walk
+    ' the same shape: Environment > Payment usage on the payment, export that
+    ' list, open the invoice on it, then the attachment. The regular route
+    ' only looked shorter because the operator had fewer rows to sort through.
+    ' So there is one path here, not two, and IsConfirmingPayment now only
+    ' colours the report.
+    usageMenuId = modConfig.ElementIdOrBlank("Payment.UsageMenu")
 
-        If Len(openId) = 0 And Len(listMenuId) = 0 Then
-            Finish result, "BLOCKED_SCF", _
-                   summary & " That is the confirming party, so the invoice sits one " & _
-                   "level deeper and the extra steps are not known -- Scf.OpenInvoices " & _
-                   "and Scf.InvoiceListMenu are blank on the Screen Map. To finish by " & _
-                   "hand: open payment " & result.ZpPaymentDocument & " and take the " & _
-                   "largest invoice behind it. The batch list is at " & result.ZpExportFile & "."
-            modLog.LogAction sampleIdx, "Step 10", result.Notes, "MANUAL", result.ZpExportFile
-            Exit Sub
-        End If
-
-        If Not NavigateScfInvoices(sampleIdx, result, openId, listMenuId) Then Exit Sub
-
-        result.InvoiceListFile = modExport.ExportClassicList( _
-            sampleIdx, folder, fileStem & "_SCF_invoices.xlsx")
-
-        If Len(result.InvoiceListFile) = 0 Then
-            Finish result, "PARTIAL", summary & " The SCF invoice list did not export."
-            Exit Sub
-        End If
-
-        largest = modExportRead.LargestRow(result.InvoiceListFile, sampleIdx, _
-                                           "Invoice list amount column", _
-                                           "Invoice list supplier column", _
-                                           "Invoice list document column")
-
-        If Not largest.Found Then
-            Finish result, "PARTIAL", _
-                   summary & " Exported " & result.InvoiceListFile & " but no invoice " & _
-                   "amount could be read from it. Open it and name its column headings " & _
-                   "in the 'Invoice list ...' settings on the Control sheet."
-            Exit Sub
-        End If
-
-        result.InvoiceNumber = largest.DocumentNumber
-        result.InvoiceSupplier = largest.Supplier
-        result.InvoiceAmount = largest.Amount
-
-        modLog.LogAction sampleIdx, "Step 10", _
-                     "Largest of " & largest.RowsConsidered & " invoices behind the SCF " & _
-                     "payment: " & largest.Supplier & " " & _
-                     Format$(largest.Amount, "#,##0.00") & _
-                     IIf(Len(largest.DocumentNumber) > 0, _
-                         ", invoice " & largest.DocumentNumber, ""), _
-                     "OK", result.InvoiceListFile
-    Else
-        result.InvoiceSupplier = result.ZpPaymentVendor
-        result.InvoiceAmount = result.ZpPaymentAmount
-        result.InvoiceNumber = result.ZpPaymentDocument
+    If Len(usageMenuId) = 0 Then
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " Payment.UsageMenu is blank on the Screen Map, so the invoices " & _
+               "behind that payment were not listed. To finish by hand: open payment " & _
+               result.ZpPaymentDocument & " and take the largest " & _
+               modConfig.Setting("Invoice document type") & " document behind it."
+        modLog.LogAction sampleIdx, "Step 10", result.Notes, "MANUAL", result.ZpExportFile
+        Exit Sub
     End If
+
+    On Error GoTo Failed
+
+    If Not modSapConnect.Exists(usageMenuId) Then
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " Payment.UsageMenu (" & usageMenuId & ") is not on this screen. " & _
+               "Menu indices differ per screen -- check it against a recording taken from " & _
+               "inside the payment document."
+        modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
+        Exit Sub
+    End If
+
+    modSapConnect.Element(usageMenuId).Select
+    modSapConnect.WaitForSap
+    modSafety.AssertPopupKnown
+
+    result.InvoiceListFile = modExport.ExportClassicList( _
+        sampleIdx, folder, fileStem & "_invoices.xlsx")
+
+    If Len(result.InvoiceListFile) = 0 Then
+        Finish result, IIf(modConfig.IsDryRun(), "BLOCKED_INVOICE", "PARTIAL"), _
+               summary & " The invoice list did not export."
+        Exit Sub
+    End If
+
+    ' The invoice is the KR document, and KR rows carry negative amounts,
+    ' which is why every comparison is on magnitude. Without the type filter
+    ' the largest row of this list is usually a ZP payment.
+    largest = modExportRead.LargestRowOfType(result.InvoiceListFile, sampleIdx, _
+                                             "Invoice list amount column", _
+                                             "Invoice list supplier column", _
+                                             "Invoice list document column", _
+                                             modConfig.Setting("Invoice document type"))
+
+    If Not largest.Found Then
+        Finish result, "PARTIAL", _
+               summary & " Exported " & result.InvoiceListFile & " but found no " & _
+               modConfig.Setting("Invoice document type") & " row in it to take an " & _
+               "invoice from. Open the file and check."
+        Exit Sub
+    End If
+
+    result.InvoiceNumber = largest.DocumentNumber
+    result.InvoiceSupplier = largest.Supplier
+    result.InvoiceAmount = largest.Amount
+
+    modLog.LogAction sampleIdx, "Step 10", _
+                 "Largest of " & largest.RowsConsidered & " " & _
+                 modConfig.Setting("Invoice document type") & " invoices behind the " & _
+                 "payment: " & Format$(largest.Amount, "#,##0.00") & _
+                 IIf(Len(largest.DocumentNumber) > 0, _
+                     ", document " & largest.DocumentNumber, "") & _
+                 IIf(Len(largest.Supplier) > 0, ", " & largest.Supplier, ""), _
+                 "OK", result.InvoiceListFile
 
     result.InvoicePdfFile = SaveAttachedPdf(sampleIdx, result, folder, fileStem)
 
     If Len(result.InvoicePdfFile) > 0 Then
-        Finish result, "DONE", summary & " Invoice PDF saved."
-    ElseIf Len(result.Notes) > 0 Then
-        Finish result, IIf(result.Status = "ERROR", "ERROR", "BLOCKED_INVOICE"), _
-               summary & " " & result.Notes
+        Finish result, "DONE", _
+               summary & " Invoice " & result.InvoiceNumber & " for " & _
+               Format$(result.InvoiceAmount, "#,##0.00") & ", PDF saved."
     Else
-        Finish result, "BLOCKED_INVOICE", summary & " No invoice PDF was written."
-    End If
-End Sub
-
-Private Function NavigateScfInvoices(ByVal sampleIdx As Long, ByRef result As ChainResult, _
-                                     ByVal openId As String, _
-                                     ByVal listMenuId As String) As Boolean
-    On Error GoTo Failed
-
-    If Len(openId) > 0 Then
-        If Not modSapConnect.Exists(openId) Then
-            Finish result, "BLOCKED_SCF", _
-                   "Scf.OpenInvoices (" & openId & ") is not on this screen, so the SCF " & _
-                   "payment's invoices could not be reached. Re-check that ID."
-            modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
-            Exit Function
-        End If
-        ActivateElement openId
-        modSafety.AssertPopupKnown
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " Invoice " & result.InvoiceNumber & " identified, but its PDF " & _
+               "was not written. " & result.Notes
     End If
 
-    If Len(listMenuId) > 0 Then
-        If Not modSapConnect.Exists(listMenuId) Then
-            Finish result, "BLOCKED_SCF", _
-                   "Scf.InvoiceListMenu (" & listMenuId & ") is not available here."
-            modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
-            Exit Function
-        End If
-        modSapConnect.Element(listMenuId).Select
-        modSapConnect.WaitForSap
-        modSafety.AssertPopupKnown
-    End If
-
-    NavigateScfInvoices = True
-    Exit Function
+    Exit Sub
 
 Failed:
-    Finish result, "PARTIAL", "The SCF navigation stopped: " & Err.Description
-    modLog.LogAction sampleIdx, "Step 10", Err.Description, "ERROR", vbNullString
-End Function
+    Finish result, "PARTIAL", summary & " Step 10 stopped: " & Err.Description
+    modLog.LogAction sampleIdx, "Step 10 failed", Err.Description, "ERROR", vbNullString
+End Sub
 
 '-----------------------------------------------------------------------
 ' The attachment list, and the PDF off it.
@@ -328,7 +325,7 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
     Dim toolbox As Object, grid As Object
     Dim target As String
 
-    toolboxId = modConfig.ElementIdOrBlank("Invoice.GosToolbox")
+    toolboxId = FindGosToolbox()
     gridId = modConfig.ElementIdOrBlank("Invoice.AttachListGrid")
     exportItem = modConfig.ElementIdOrBlank("Invoice.ExportMenuItem")
     saveWindow = modConfig.ElementIdOrBlank("Invoice.SaveWindow")
@@ -349,7 +346,7 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
     target = modUtil.JoinPath(folder, fileStem & "_invoice.pdf")
     If modSafety.BlockedByDryRun("Would save the invoice PDF to " & target) Then Exit Function
 
-    If Not modSapConnect.Exists(toolboxId) Then
+    If Len(toolboxId) = 0 Then
         result.Notes = "The services-for-object toolbox is not on this screen, so the " & _
                        "attachment list could not be opened. The invoice may not be the " & _
                        "object the attachment hangs off."
@@ -411,6 +408,41 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
         sampleIdx, saveWindow, folder, fileStem & "_invoice.pdf")
 
     CloseAttachmentList
+End Function
+
+' Locate the services-for-object toolbox.
+'
+' Its container index is NOT stable: N1.vbs found it at titl/shellcont[2]
+' and B2.vbs at titl/shellcont[1], on the same system, because the index
+' depends on what else the title bar is carrying on that particular screen.
+' A fixed ID would work on one document and quietly fail on the next, so
+' probe the handful of possibilities instead. The Screen Map value is tried
+' first, then the neighbours.
+Private Function FindGosToolbox() As String
+    Dim configured As String
+    Dim candidate As String
+    Dim i As Long
+
+    configured = modConfig.ElementIdOrBlank("Invoice.GosToolbox")
+    If Len(configured) > 0 Then
+        If modSapConnect.Exists(configured) Then
+            FindGosToolbox = configured
+            Exit Function
+        End If
+    End If
+
+    For i = 0 To 4
+        candidate = "wnd[0]/titl/shellcont[" & i & "]/shell"
+        If modSapConnect.Exists(candidate) Then
+            FindGosToolbox = candidate
+            Exit Function
+        End If
+    Next i
+
+    ' Some screens expose it without the container index at all.
+    If modSapConnect.Exists("wnd[0]/titl/shellcont/shell") Then
+        FindGosToolbox = "wnd[0]/titl/shellcont/shell"
+    End If
 End Function
 
 Private Sub CloseAttachmentList()
