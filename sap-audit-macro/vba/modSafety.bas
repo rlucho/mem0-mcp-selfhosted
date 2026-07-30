@@ -222,6 +222,43 @@ Public Sub NoteUnknownPopup()
                  "MANUAL", vbNullString
 End Sub
 
+' Identify a popup by what it contains rather than what it is called, so a
+' window whose title carries a document number -- and therefore differs on
+' every sample -- is still recognised.
+Private Function PopupLooksKnownByStructure() As Boolean
+    Dim probe As Variant
+
+    ' The save dialog, at either depth.
+    For Each probe In Array("wnd[1]/usr/ctxtDY_PATH", "wnd[2]/usr/ctxtDY_PATH", _
+                            "wnd[1]/usr/ctxtDY_FILENAME", "wnd[2]/usr/ctxtDY_FILENAME")
+        If modSapConnect.Exists(CStr(probe)) Then
+            PopupLooksKnownByStructure = True
+            Exit Function
+        End If
+    Next probe
+
+    ' The attachment list, and the multiple-selection dialog.
+    For Each probe In Array(modConfig.ElementIdOrBlank("Invoice.AttachListGrid"), _
+                            modConfig.ElementIdOrBlank("MultiSel.PasteFromClipboard"))
+        If Len(CStr(probe)) > 0 Then
+            If modSapConnect.Exists(CStr(probe)) Then
+                PopupLooksKnownByStructure = True
+                Exit Function
+            End If
+        End If
+    Next probe
+
+    ' An operator who has met a window this does not know can widen it
+    ' without editing code, in whatever language their system speaks.
+    If TitleIsKnown(ExtraKnownTitles()) Then PopupLooksKnownByStructure = True
+End Function
+
+Private Function ExtraKnownTitles() As String
+    On Error Resume Next
+    ExtraKnownTitles = Trim$(modConfig.Setting("Extra popup titles to allow"))
+    On Error GoTo 0
+End Function
+
 Private Function TitleIsKnown(ByVal title As String) As Boolean
     Dim known() As String
     Dim i As Long
