@@ -82,6 +82,70 @@ Public Sub WriteFooterBlock(ByVal processed As Long, ByVal errored As Long, ByVa
           IIf(errored = 0, "OK", "ERROR"), vbNullString
 End Sub
 
+'-----------------------------------------------------------------------
+' What the failures of this run were, read back off the Log.
+'
+' A run summary that guesses at the reason is worse than no reason: the
+' previous wording insisted nothing got past the statement match while a
+' sample had in fact reached FBL1N and exported its batch list. This
+' counts the actual ERROR rows since the last RUN STARTED instead.
+'-----------------------------------------------------------------------
+Public Function FailureSummary() As String
+    Dim sheet As Worksheet
+    Dim lastUsed As Long, row As Long, startRow As Long
+    Dim actions() As String
+    Dim counts() As Long
+    Dim distinct As Long
+    Dim action As String
+    Dim i As Long
+    Dim summary As String
+
+    Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_LOG)
+    lastUsed = sheet.Cells(sheet.Rows.Count, COL_TIMESTAMP).End(xlUp).Row
+    If lastUsed < LOG_FIRST_ROW Then Exit Function
+
+    startRow = LOG_FIRST_ROW
+    For row = lastUsed To LOG_FIRST_ROW Step -1
+        If StrComp(CStr(sheet.Cells(row, COL_ACTION).Value), "RUN STARTED", vbTextCompare) = 0 Then
+            startRow = row
+            Exit For
+        End If
+    Next row
+
+    ReDim actions(1 To 64)
+    ReDim counts(1 To 64)
+
+    For row = startRow To lastUsed
+        If StrComp(CStr(sheet.Cells(row, COL_RESULT).Value), "ERROR", vbTextCompare) = 0 Then
+            action = Trim$(CStr(sheet.Cells(row, COL_ACTION).Value))
+            If Len(action) > 0 And StrComp(action, "RUN FINISHED", vbTextCompare) <> 0 Then
+                For i = 1 To distinct
+                    If StrComp(actions(i), action, vbTextCompare) = 0 Then Exit For
+                Next i
+
+                If i > distinct Then
+                    If distinct < UBound(actions) Then
+                        distinct = distinct + 1
+                        actions(distinct) = action
+                        counts(distinct) = 1
+                    End If
+                Else
+                    counts(i) = counts(i) + 1
+                End If
+            End If
+        End If
+    Next row
+
+    For i = 1 To distinct
+        summary = summary & IIf(Len(summary) > 0, ", ", "") & _
+                  actions(i) & " x" & counts(i)
+    Next i
+
+    If Len(summary) = 0 Then summary = "see the Log sheet"
+
+    FailureSummary = summary
+End Function
+
 Private Function NextRow(ByVal sheet As Worksheet) As Long
     Dim lastUsed As Long
     lastUsed = sheet.Cells(sheet.Rows.Count, COL_TIMESTAMP).End(xlUp).Row

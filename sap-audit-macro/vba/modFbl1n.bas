@@ -223,8 +223,14 @@ Private Sub EnterDocumentNumbers(ByVal sampleIdx As Long, ByVal zpNumbers As Str
     Dim pasteButtonId As String
     Dim confirmId As String
 
-    singleFieldId = modConfig.ElementIdOrBlank("Fbl1n.DocNumberFrom")
+    ' The document number lives in dynamic selections, which are folded away
+    ' until tbar[1]/btn[16] is pressed. Without this the recorded subscreen IDs
+    ' simply do not exist, and the stage died with 'element not found' on the
+    ' multiple-selection arrow -- which is exactly what the last run did.
+    singleFieldId = modConfig.ElementIdOrBlank("Fbl1n.DocNumberField")
     multiButtonId = modConfig.ElementIdOrBlank("Fbl1n.DocNumberMultiSelect")
+
+    OpenDynamicSelections sampleIdx, singleFieldId, multiButtonId
 
     If count = 1 And Len(singleFieldId) > 0 Then
         If modSapConnect.Exists(singleFieldId) Then
@@ -271,6 +277,105 @@ Private Sub EnterDocumentNumbers(ByVal sampleIdx As Long, ByVal zpNumbers As Str
                  count & " ZP document numbers pasted into the multiple-selection " & _
                  "dialog via the clipboard.", "OK", vbNullString
 End Sub
+
+'-----------------------------------------------------------------------
+' Unfold the dynamic-selections block, where FBL1N keeps the document
+' number. N1.vbs pressed tbar[1]/btn[16] once, from a fresh selection
+' screen, before the subscreen fields existed.
+'
+' The button is a toggle, so this checks first rather than pressing blind:
+' if the field is already there the block is already open and pressing
+' would fold it away again.
+'-----------------------------------------------------------------------
+Private Sub OpenDynamicSelections(ByVal sampleIdx As Long, _
+                                  ByVal singleFieldId As String, _
+                                  ByVal multiButtonId As String)
+    Dim toggleId As String
+    Dim attempt As Long
+
+    If DocNumberControlsPresent(singleFieldId, multiButtonId) Then Exit Sub
+
+    toggleId = modConfig.ElementIdOrBlank("Fbl1n.DynamicSelections")
+    If Len(toggleId) = 0 Then
+        Err.Raise vbObjectError + 572, "modFbl1n.OpenDynamicSelections", _
+                  "The document-number field is not on the FBL1N selection screen and " & _
+                  "Fbl1n.DynamicSelections is blank on the Screen Map, so the dynamic " & _
+                  "selections that hold it cannot be opened."
+    End If
+
+    ' Twice at most: once to open it, and once more in case it was already
+    ' open on a group that does not carry the document number.
+    For attempt = 1 To 2
+        modSafety.GuardedPress toggleId
+        modSapConnect.WaitForSap
+
+        If DocNumberControlsPresent(singleFieldId, multiButtonId) Then
+            modLog.LogAction sampleIdx, "FBL1N", _
+                         "Opened dynamic selections so the document-number filter exists.", _
+                         "OK", vbNullString
+            Exit Sub
+        End If
+    Next attempt
+
+    Err.Raise vbObjectError + 573, "modFbl1n.OpenDynamicSelections", _
+              "Pressed " & toggleId & " but the document-number filter still is not " & _
+              "there. Expected " & multiButtonId & ". " & DynamicSelectionCandidates() & _
+              " Open FBL1N by hand, press the dynamic-selections button, probe the " & _
+              "screen and correct Fbl1n.DocNumberField / Fbl1n.DocNumberMultiSelect."
+End Sub
+
+Private Function DocNumberControlsPresent(ByVal singleFieldId As String, _
+                                          ByVal multiButtonId As String) As Boolean
+    If Len(multiButtonId) > 0 Then
+        If modSapConnect.Exists(multiButtonId) Then
+            DocNumberControlsPresent = True
+            Exit Function
+        End If
+    End If
+
+    If Len(singleFieldId) > 0 Then
+        DocNumberControlsPresent = modSapConnect.Exists(singleFieldId)
+    End If
+End Function
+
+' The multiple-selection arrows that ARE on the screen, so the error above
+' names real alternatives instead of just saying 'not found'. The dynamic
+' selection slots are numbered by position (%%DYN011 and so on), and that
+' numbering shifts when the selection group changes.
+Private Function DynamicSelectionCandidates() As String
+    Dim found As String
+
+    found = ArrowsUnder("wnd[0]/usr", 0)
+
+    If Len(found) = 0 Then
+        DynamicSelectionCandidates = "No multiple-selection arrows were found on the screen at all."
+    Else
+        DynamicSelectionCandidates = "Arrows currently on the screen:" & found & "."
+    End If
+End Function
+
+Private Function ArrowsUnder(ByVal elementId As String, ByVal depth As Long) As String
+    Dim control As Object, child As Object
+    Dim collected As String
+
+    If depth > 8 Then Exit Function
+    If Not modSapConnect.Exists(elementId) Then Exit Function
+
+    If InStr(elementId, "VALU_PUSH") > 0 Then
+        ArrowsUnder = " " & elementId
+        Exit Function
+    End If
+
+    Set control = modSapConnect.Element(elementId)
+
+    On Error Resume Next
+    For Each child In control.Children
+        collected = collected & ArrowsUnder(child.Id, depth + 1)
+    Next child
+    On Error GoTo 0
+
+    ArrowsUnder = collected
+End Function
 
 ' Put newline-separated text on the clipboard without needing a reference to
 ' MSForms: write it down a column of a scratch sheet and copy the range.

@@ -341,6 +341,19 @@ Public Function ReturnToStatementList(ByVal dateFrom As Date, ByVal dateTo As Da
 
     gridId = modConfig.ElementId("FEBAN.ResultGrid")
 
+    ' Back only makes sense from inside the statement transaction. When the
+    ' previous sample ended somewhere else entirely -- FBL1N, say -- pressing
+    ' Back four times just walks out to the SAP menu, so go straight to
+    ' re-running the selection instead.
+    If StrComp(modSapConnect.CurrentTransaction(), _
+               modConfig.Setting("Transaction for statement search"), _
+               vbTextCompare) <> 0 Then
+        On Error GoTo Failed
+        OpenMonth dateFrom, dateTo
+        ReturnToStatementList = modSapConnect.Exists(gridId)
+        Exit Function
+    End If
+
     For attempt = 1 To 4
         If modSapConnect.Exists(gridId) Then
             ReturnToStatementList = True

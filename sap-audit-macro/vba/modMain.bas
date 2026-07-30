@@ -154,6 +154,7 @@ Finished:
     Application.ScreenUpdating = True
     Application.StatusBar = False
     modLog.WriteFooterBlock processed, errored, files
+    modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
     On Error GoTo 0
 
     MsgBox "Run finished." & vbCrLf & vbCrLf & _
@@ -162,6 +163,7 @@ Finished:
            "Errors            : " & errored & vbCrLf & _
            "Files written     : " & files & vbCrLf & _
            "Writes blocked    : " & modSafety.gWriteAttemptBlocked & vbCrLf & vbCrLf & _
+           IIf(errored > 0, "Where they stopped: " & modLog.FailureSummary() & vbCrLf & vbCrLf, "") & _
            "See the 'Log' sheet for the full trail.", _
            IIf(errored = 0, vbInformation, vbExclamation), "FEBAN audit extract"
     Exit Sub
@@ -228,6 +230,23 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     On Error GoTo SampleFailed
 
+    ' SAP opens each spreadsheet export in Excel once it has written it, and
+    ' it does that asynchronously -- so the previous sample's export tends to
+    ' surface during this one. Close anything sitting under the evidence
+    ' folder before starting, or they stack up all run.
+    modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+
+    ' Get back to the statement list BEFORE anything else. The previous sample
+    ' may have ended several screens deep, or in FBL1N, or on an error -- and
+    ' this used to sit after Exit Function, where it never ran at all. That is
+    ' why one failure inside FBL1N took every later sample down with it: they
+    ' looked for the FEBAN grid while the session was still in FBL1N.
+    If Not modFeban.ReturnToStatementList(item.DateFrom, item.DateTo) Then
+        Err.Raise vbObjectError + 550, "modMain.ProcessSample", _
+                  "Could not get back to the FEBAN statement list before sample " & _
+                  item.Idx & ". Stopping so that it is not read off the wrong screen."
+    End If
+
     match = modFeban.FindSample(item.PayDate, item.Amount)
 
     If Not match.Found Then
@@ -279,17 +298,6 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     ' had in fact failed.
     ProcessSample = (chain.Status = "DONE")
     Exit Function
-
-    ' Return to the statement list for the next sample in this month. A
-    ' drill-down can leave the session several screens deep, so this is not
-    ' a single Back -- and if the list cannot be restored, stop rather than
-    ' read the next sample off whatever screen happens to be showing.
-    If Not modFeban.ReturnToStatementList(item.DateFrom, item.DateTo) Then
-        Err.Raise vbObjectError + 550, "modMain.ProcessSample", _
-                  "Lost the FEBAN statement list after sample " & item.Idx & _
-                  " and could not get it back. Stopping so that later samples are " & _
-                  "not read off the wrong screen."
-    End If
 
 SampleFailed:
     message = Err.Description
@@ -482,15 +490,16 @@ Public Sub RunSingleMonth()
     End If
 
     modLog.WriteFooterBlock done, failed, files
+    modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
 
+    ' Say where they stopped, read off the Log, rather than assuming. The old
+    ' wording claimed none got past the statement match, which was wrong the
+    ' moment a sample reached FBL1N and exported its batch list.
     MsgBox "Finished " & answer & "." & vbCrLf & vbCrLf & _
            "Samples reaching the end of the chain : " & done & vbCrLf & _
            "Samples that stopped early            : " & failed & vbCrLf & _
            "Files written                         : " & files & vbCrLf & vbCrLf & _
-           IIf(done = 0 And failed > 0, _
-               "None got past the statement match, so steps 3 to 10 never ran for any " & _
-               "of them -- that is why only FEBAN appeared to happen. The Log now says " & _
-               "what the grid actually held for each one." & vbCrLf & vbCrLf, "") & _
+           IIf(failed > 0, "Where they stopped: " & modLog.FailureSummary() & vbCrLf & vbCrLf, "") & _
            "Files are under " & modConfig.DownloadRoot() & ".", _
            IIf(failed = 0, vbInformation, vbExclamation), "Run one month"
     Exit Sub

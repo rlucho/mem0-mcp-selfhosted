@@ -236,6 +236,74 @@ Public Function FileSizeBytes(ByVal path As String) As Double
     If fso.FileExists(path) Then FileSizeBytes = fso.GetFile(path).Size
 End Function
 
+'-----------------------------------------------------------------------
+' SAP's spreadsheet export writes the file and then opens it in Excel. That
+' is how the operator ended a run with the export sitting on top of the
+' workbook that produced it, and a ~$ lock file left in the evidence folder.
+'
+' Nothing here needs the file open, so close it again. Matching on the full
+' path means only the file just written is touched -- never the control
+' workbook, and never anything the operator opened themselves.
+'-----------------------------------------------------------------------
+Public Sub CloseWorkbookIfOpen(ByVal path As String)
+    Dim book As Workbook
+    Dim previousAlerts As Boolean
+
+    If Len(path) = 0 Then Exit Sub
+
+    previousAlerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+
+    On Error Resume Next
+    For Each book In Application.Workbooks
+        If StrComp(book.FullName, path, vbTextCompare) = 0 Then
+            If Not book Is ThisWorkbook Then book.Close SaveChanges:=False
+            Exit For
+        End If
+    Next book
+    On Error GoTo 0
+
+    Application.DisplayAlerts = previousAlerts
+End Sub
+
+' Same thing, for every export under the evidence folder at once. SAP opens
+' the file asynchronously, so it can land after the macro has already read
+' and closed it; sweeping between samples and once at the end catches those.
+' Returns how many were closed, so the caller can say so.
+Public Function CloseExportWorkbooksUnder(ByVal root As String) As Long
+    Dim book As Workbook
+    Dim doomed As Collection
+    Dim item As Variant
+    Dim previousAlerts As Boolean
+
+    If Len(root) = 0 Then Exit Function
+
+    Set doomed = New Collection
+
+    ' Collect first, close second: closing while iterating Workbooks skips
+    ' entries, because the collection is renumbered underneath the loop.
+    For Each book In Application.Workbooks
+        If Not book Is ThisWorkbook Then
+            If InStr(1, book.FullName, root, vbTextCompare) = 1 Then
+                doomed.Add book
+            End If
+        End If
+    Next book
+
+    previousAlerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+
+    On Error Resume Next
+    For Each item In doomed
+        item.Close SaveChanges:=False
+    Next item
+    On Error GoTo 0
+
+    Application.DisplayAlerts = previousAlerts
+
+    CloseExportWorkbooksUnder = doomed.Count
+End Function
+
 ' Stem for every file belonging to one sample, so the extract sorts in
 ' sample order and each file names the evidence it is.
 Public Function EvidenceStem(ByVal sampleIdx As Long, ByVal paymentDate As Date, _
