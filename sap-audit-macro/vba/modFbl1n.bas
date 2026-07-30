@@ -435,7 +435,10 @@ End Function
 
 ' Column names as FBL1N actually reports them on this release. Run it once
 ' with an FBL1N result on screen and paste what it prints into the Screen Map.
-Public Sub DumpGridColumns()
+'
+' Named for its transaction rather than 'DumpGridColumns', which collided
+' with modFeban's and left both showing ambiguously in the Macro dialog.
+Public Sub DumpFbl1nColumns()
     modConfig.LoadScreenMap
     modSapConnect.SapAttach
     modFeban.DumpColumnsOf modConfig.ElementId("Fbl1n.ResultGrid"), "FBL1N result grid"

@@ -69,7 +69,9 @@ Public Type ChainResult
 End Type
 
 '-----------------------------------------------------------------------
-Public Function Walk(ByVal sampleIdx As Long, ByVal match As FebanMatch, _
+' match is ByRef because VBA does not allow a user-defined type to be
+' passed ByVal. It is read, never written.
+Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                      ByVal dateFrom As Date, ByVal dateTo As Date, _
                      ByVal folder As String, ByVal fileStem As String) As ChainResult
     Dim result As ChainResult

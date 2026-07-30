@@ -18,7 +18,7 @@ Attribute VB_Name = "modProbe"
 '   2. run ProbeCurrentScreen -> tells you which Fbl1n.* predictions hold
 '   3. paste the corrections into column F of the Screen Map
 '   4. execute FBL1N by hand, then run ProbeCurrentScreen again for the
-'      result-grid rows, and modFbl1n.DumpGridColumns for its columns
+'      result-grid rows, and modFbl1n.DumpFbl1nColumns for its columns
 '=======================================================================
 Option Explicit
 

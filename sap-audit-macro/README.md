@@ -149,7 +149,7 @@ session:
 3. For any it cannot find, run **`modProbe.DumpScreen`** to list every named element there,
    and paste the right one into column F.
 4. Execute FBL1N by hand, then run `ProbeCurrentScreen` again for the result-grid rows and
-   **`modFbl1n.DumpGridColumns`** for its column names.
+   **`modFbl1n.DumpFbl1nColumns`** for its column names.
 
 One thing to expect: on standard FBL1N the **document number is not on the main selection
 screen** — it lives in dynamic selections. If the probe cannot find `Fbl1n.DocNumberFrom`,

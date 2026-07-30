@@ -21,6 +21,13 @@ It only works if **File ▸ Options ▸ Trust Center ▸ Trust Center Settings �
 ▸ Trust access to the VBA project object model** is ticked, which it often is not on a
 managed laptop. If it errors, just do steps 1 and 2 by hand; it takes about two minutes.
 
+## 2b. Optional: buttons on the Control sheet
+
+Run `modSetup.AddButtons` once. It puts a labelled button on the `Control` sheet for each
+macro below, in the order you need them, and saves you hunting through the Macro dialog.
+Save the workbook afterwards so they persist. `modSetup.RemoveButtons` takes them away
+again, and only touches buttons it made itself.
+
 ## 3. Run CheckSetup
 
 Log on to SAP first — the macro attaches to the session you are already in, it never logs
