@@ -253,14 +253,28 @@ Private Function TitleIsKnown(ByVal title As String) As Boolean
 End Function
 
 '-----------------------------------------------------------------------
-' Dry-run gate. Every routine that would write a file or leave a trace
-' calls this first, so DRY RUN is enforced in one place.
+' Dry-run gate.
+'
+' This used to block the exports, which was wrong twice over. The exports
+' are read-only on the SAP side -- they write a file on your own disk and
+' change nothing in SAP -- so blocking them protected against nothing. And
+' the chain READS those files back to find the ZP numbers and the largest
+' payment, so blocking them stopped every sample at step 6. A dry run could
+' never rehearse steps 7 to 10, which are exactly the steps worth
+' rehearsing.
+'
+' DRY RUN now means "put the exports somewhere separate", not "do not
+' export". modConfig.DownloadRoot sends them to a '_dry run' subfolder, so
+' the whole chain runs and a rehearsal cannot be mistaken for evidence.
+'
+' What actually keeps the run safe is the rest of this module -- the
+' transaction allowlist, the blocked OK-codes, the blocked Save key and the
+' popup guard -- and those apply in both modes.
 '-----------------------------------------------------------------------
 Public Function BlockedByDryRun(ByVal what As String) As Boolean
-    If modConfig.IsDryRun() Then
-        modLog.LogAction 0, "DRY RUN", what, "SKIPPED", vbNullString
-        BlockedByDryRun = True
-    End If
+    ' Deliberately never blocks. Kept as a single place to change if a
+    ' genuinely destructive step is ever added.
+    BlockedByDryRun = False
 End Function
 
 '-----------------------------------------------------------------------

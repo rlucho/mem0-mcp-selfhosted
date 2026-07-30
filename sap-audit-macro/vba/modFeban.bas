@@ -89,6 +89,13 @@ Public Sub OpenMonth(ByVal dateFrom As Date, ByVal dateTo As Date)
                   "holds no statement items, or FEBAN.ResultGrid is wrong for this " & _
                   "screen. Status bar said: " & modSapConnect.StatusBarText()
     End If
+
+    ' Read the whole grid once, here, rather than per sample.
+    If LoadGrid(0) = 0 Then
+        Err.Raise vbObjectError + 543, "modFeban.OpenMonth", _
+                  "The FEBAN result grid reported no rows for " & _
+                  modUtil.SapDate(dateFrom) & " to " & modUtil.SapDate(dateTo) & "."
+    End If
 End Sub
 
 Private Sub PressPostExecuteIfConfigured()
@@ -127,49 +134,137 @@ End Sub
 ' picking the first. Two of the samples are for identical round amounts
 ' (2,450,000.00) on month-end dates, so ties are a real prospect.
 '-----------------------------------------------------------------------
-Public Function FindSample(ByVal paymentDate As Date, ByVal amount As Double) As FebanMatch
+' Cached copy of the whole result grid for the month now open.
+'
+' WHY THIS EXISTS. A SAP ALV grid only holds the VISIBLE window of rows on
+' the client. RowCount reports the true total, but GetCellValue for a row
+' outside that window returns nothing -- silently. Walking 0 to RowCount-1
+' therefore reads about twenty real rows and then several hundred blanks,
+' and every sample past the first screenful comes back NOT FOUND with no
+' error to explain it.
+'
+' The fix is to page through with firstVisibleRow. Doing that once per
+' month and caching the result, rather than once per sample, turns roughly
+' 25 round trips per sample into 25 per month.
+Private mRowDate() As String
+Private mRowAmount() As Double
+Private mRowStatus() As String
+Private mRowDoc() As String
+Private mRowRef() As String
+Private mRowsLoaded As Long
+Private mGridBlanks As Long
+
+Public Sub ClearGridCache()
+    Erase mRowDate
+    Erase mRowAmount
+    Erase mRowStatus
+    Erase mRowDoc
+    Erase mRowRef
+    mRowsLoaded = 0
+    mGridBlanks = 0
+End Sub
+
+' Page through the result grid and keep every row.
+Public Function LoadGrid(ByVal sampleIdx As Long) As Long
     Dim grid As Object
-    Dim result As FebanMatch
-    Dim rowCount As Long, row As Long
-    Dim tolerance As Double
+    Dim total As Long, visible As Long
+    Dim top As Long, last As Long, row As Long
     Dim colDate As String, colAmount As String
-    Dim rowDate As String, rowAmount As Double
-    Dim wantedDate As String
+    Dim raw As String
+
+    ClearGridCache
 
     Set grid = modSapConnect.Element(modConfig.ElementId("FEBAN.ResultGrid"))
-    tolerance = modConfig.SettingNumber("Amount match tolerance", 0.01)
     colDate = modConfig.ElementId("FEBAN.Col.ValueDate")
     colAmount = modConfig.ElementId("FEBAN.Col.Amount")
 
-    ' Compared on digits alone. SAP accepts '01092025' typed in but renders
-    ' '01.09.2025' in the grid, so a literal string comparison would never
-    ' match -- and that failure is silent, which makes it worth avoiding.
-    wantedDate = modUtil.DateDigits(paymentDate)
+    total = GridRowCount(grid)
+    If total = 0 Then Exit Function
 
-    rowCount = GridRowCount(grid)
-    If rowCount = 0 Then
-        result.Found = False
+    visible = 0
+    On Error Resume Next
+    visible = grid.VisibleRowCount
+    On Error GoTo 0
+    If visible <= 0 Then visible = 20
+
+    ReDim mRowDate(0 To total - 1)
+    ReDim mRowAmount(0 To total - 1)
+    ReDim mRowStatus(0 To total - 1)
+    ReDim mRowDoc(0 To total - 1)
+    ReDim mRowRef(0 To total - 1)
+
+    top = 0
+    Do While top < total
+        On Error Resume Next
+        grid.firstVisibleRow = top
+        On Error GoTo 0
+        modSapConnect.WaitForSap
+
+        last = top + visible - 1
+        If last > total - 1 Then last = total - 1
+
+        For row = top To last
+            raw = GridCell(grid, row, colDate)
+            If Len(Trim$(raw)) = 0 Then mGridBlanks = mGridBlanks + 1
+
+            mRowDate(row) = modUtil.GridDateDigits(raw, modUtil.SapDatePatternPublic())
+            mRowAmount(row) = modUtil.ParseSapAmount(GridCell(grid, row, colAmount))
+            mRowStatus(row) = GridCellIfMapped(grid, row, "FEBAN.Col.Status")
+            mRowDoc(row) = GridCellIfMapped(grid, row, "FEBAN.Col.DocNumber")
+            mRowRef(row) = GridCellIfMapped(grid, row, "FEBAN.Col.Reference")
+        Next row
+
+        top = top + visible
+    Loop
+
+    ' Put the grid back to the top, so a later drill-down starts predictably.
+    On Error Resume Next
+    grid.firstVisibleRow = 0
+    On Error GoTo 0
+
+    mRowsLoaded = total
+
+    modLog.LogAction sampleIdx, "Read grid", _
+                 "Read " & total & " statement rows in pages of " & visible & _
+                 IIf(mGridBlanks > 0, ". " & mGridBlanks & " row(s) came back with no " & _
+                     "date -- if that is most of them, FEBAN.Col.ValueDate is wrong.", "."), _
+                 IIf(mGridBlanks * 2 > total, "MANUAL", "OK"), vbNullString
+
+    LoadGrid = total
+End Function
+
+'-----------------------------------------------------------------------
+Public Function FindSample(ByVal paymentDate As Date, ByVal amount As Double) As FebanMatch
+    Dim result As FebanMatch
+    Dim row As Long
+    Dim tolerance As Double
+    Dim wantedDate As String
+
+    If mRowsLoaded = 0 Then
         FindSample = result
         Exit Function
     End If
 
-    For row = 0 To rowCount - 1
-        rowDate = modUtil.GridDateDigits(GridCell(grid, row, colDate), _
-                                         modUtil.SapDatePatternPublic())
-        rowAmount = modUtil.ParseSapAmount(GridCell(grid, row, colAmount))
+    tolerance = modConfig.SettingNumber("Amount match tolerance", 0.01)
 
-        If rowDate = wantedDate Then
-            If modUtil.AmountsMatch(rowAmount, amount, tolerance) Then
+    ' Compared on digits alone. SAP accepts '01092025' typed in but renders
+    ' '01.09.2025' in the grid, so a literal comparison would never match --
+    ' and that failure is silent, which makes it worth avoiding.
+    wantedDate = modUtil.DateDigits(paymentDate)
+
+    For row = 0 To mRowsLoaded - 1
+        If mRowDate(row) = wantedDate Then
+            If modUtil.AmountsMatch(mRowAmount(row), amount, tolerance) Then
                 result.CandidateCount = result.CandidateCount + 1
 
                 If Not result.Found Then
                     result.Found = True
                     result.GridRow = row
-                    result.StatementAmount = rowAmount
-                    result.StatementDate = Trim$(GridCell(grid, row, colDate))
-                    result.PostingStatus = GridCellIfMapped(grid, row, "FEBAN.Col.Status")
-                    result.DocumentNumber = GridCellIfMapped(grid, row, "FEBAN.Col.DocNumber")
-                    result.Reference = GridCellIfMapped(grid, row, "FEBAN.Col.Reference")
+                    result.StatementAmount = mRowAmount(row)
+                    result.StatementDate = mRowDate(row)
+                    result.PostingStatus = mRowStatus(row)
+                    result.DocumentNumber = mRowDoc(row)
+                    result.Reference = mRowRef(row)
                 Else
                     result.Ambiguous = True
                 End If
@@ -180,6 +275,61 @@ Public Function FindSample(ByVal paymentDate As Date, ByVal amount As Double) As
     FindSample = result
 End Function
 
+' What the grid actually held, when a sample did not match. Turns "not
+' found" into something diagnosable without another run.
+Public Function WhyNoMatch(ByVal paymentDate As Date, ByVal amount As Double) As String
+    Dim row As Long
+    Dim wantedDate As String
+    Dim onDate As Long
+    Dim closest As Double, gap As Double, bestGap As Double
+    Dim firstDate As String, lastDate As String
+
+    If mRowsLoaded = 0 Then
+        WhyNoMatch = "The grid held no readable rows at all."
+        Exit Function
+    End If
+
+    wantedDate = modUtil.DateDigits(paymentDate)
+    bestGap = 1E+30
+
+    For row = 0 To mRowsLoaded - 1
+        If Len(mRowDate(row)) = 8 Then
+            If Len(firstDate) = 0 Or mRowDate(row) < firstDate Then firstDate = mRowDate(row)
+            If mRowDate(row) > lastDate Then lastDate = mRowDate(row)
+        End If
+
+        If mRowDate(row) = wantedDate Then
+            onDate = onDate + 1
+            gap = Abs(Abs(mRowAmount(row)) - Abs(amount))
+            If gap < bestGap Then
+                bestGap = gap
+                closest = mRowAmount(row)
+            End If
+        End If
+    Next row
+
+    If onDate = 0 Then
+        WhyNoMatch = mRowsLoaded & " rows read, none dated " & _
+                     Format$(paymentDate, "dd/mm/yyyy") & ". Dates present run from " & _
+                     Readable(firstDate) & " to " & Readable(lastDate) & _
+                     ". If that range looks right, the sample date may be the value date " & _
+                     "while the grid column is the statement date."
+    Else
+        WhyNoMatch = mRowsLoaded & " rows read, " & onDate & " dated " & _
+                     Format$(paymentDate, "dd/mm/yyyy") & ", but none for " & _
+                     Format$(amount, "#,##0.00") & ". Closest on that date was " & _
+                     Format$(closest, "#,##0.00") & "."
+    End If
+End Function
+
+Private Function Readable(ByVal yyyymmdd As String) As String
+    If Len(yyyymmdd) <> 8 Then
+        Readable = "(none)"
+    Else
+        Readable = Mid$(yyyymmdd, 7, 2) & "/" & Mid$(yyyymmdd, 5, 2) & "/" & Left$(yyyymmdd, 4)
+    End If
+End Function
+
 '-----------------------------------------------------------------------
 ' Get back to the statement list after a drill-down.
 '
@@ -188,9 +338,9 @@ End Function
 ' sub-screen. So press Back until the result grid is on screen again, and
 ' if that fails, re-execute the selection from scratch.
 '
-' Returns False when the list could not be restored, which tells the
-' caller to stop rather than run the next sample against whatever screen
-' happens to be showing.
+' Re-executing also reloads the row cache, which is the expensive case --
+' one full paged read of the month. Worth it: the alternative is matching
+' later samples against a stale cache.
 '-----------------------------------------------------------------------
 Public Function ReturnToStatementList(ByVal dateFrom As Date, ByVal dateTo As Date) As Boolean
     Dim gridId As String
@@ -198,7 +348,6 @@ Public Function ReturnToStatementList(ByVal dateFrom As Date, ByVal dateTo As Da
 
     gridId = modConfig.ElementId("FEBAN.ResultGrid")
 
-    ' Cheap route first: walk back out of wherever the drill-down landed.
     For attempt = 1 To 4
         If modSapConnect.Exists(gridId) Then
             ReturnToStatementList = True
@@ -223,9 +372,6 @@ Public Function ReturnToStatementList(ByVal dateFrom As Date, ByVal dateTo As Da
         Exit Function
     End If
 
-    ' Expensive route: re-run the month's selection. Costs one round trip
-    ' per drill-down in the worst case, which is still cheaper than a run
-    ' that silently reads the wrong screen.
     On Error GoTo Failed
     OpenMonth dateFrom, dateTo
     ReturnToStatementList = modSapConnect.Exists(gridId)

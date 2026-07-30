@@ -65,6 +65,18 @@ Public Function IsDryRun() As Boolean
     IsDryRun = (UCase$(Replace(Setting("Run mode"), " ", "")) <> "EXTRACT")
 End Function
 
+' Where exports go. A dry run still exports -- the chain reads those files
+' back, so it could not run otherwise -- but into a separate folder, so a
+' rehearsal is never mistaken for the evidence pack.
+Public Function DownloadRoot() As String
+    Dim root As String
+
+    root = Setting("Download root folder")
+    If IsDryRun() Then root = modUtil.JoinPath(root, "_dry run")
+
+    DownloadRoot = root
+End Function
+
 '-----------------------------------------------------------------------
 ' Screen map
 '-----------------------------------------------------------------------

@@ -183,7 +183,7 @@ Private Function ExportMonthStatementList(ByVal monthTab As String) As String
 
     On Error GoTo Failed
 
-    folder = modUtil.JoinPath(modConfig.Setting("Download root folder"), _
+    folder = modUtil.JoinPath(modConfig.DownloadRoot(), _
                               modUtil.SafeFileName(monthTab))
 
     ExportMonthStatementList = modExport.ExportAlvGrid( _
@@ -233,8 +233,8 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     If Not match.Found Then
         message = "No statement line in " & item.MonthTab & " matches " & _
                   Format$(item.PayDate, "dd/mm/yyyy") & " for " & _
-                  Format$(item.Amount, "#,##0.00") & ". Check the date format setting, " & _
-                  "and whether this payment sits on a different house bank or account."
+                  Format$(item.Amount, "#,##0.00") & ". " & _
+                  modFeban.WhyNoMatch(item.PayDate, item.Amount)
         WriteResult sheet, item.Row, "NOT FOUND", vbNullString, vbNullString, _
                     vbNullString, 0, message
         modLog.LogAction item.Idx, "Match", message, "ERROR", vbNullString
@@ -258,7 +258,7 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     modFeban.SelectRow match.GridRow
 
-    folder = modUtil.JoinPath(modConfig.Setting("Download root folder"), _
+    folder = modUtil.JoinPath(modConfig.DownloadRoot(), _
                               modUtil.SafeFileName(item.MonthTab))
     stem = modUtil.EvidenceStem(item.Idx, item.PayDate, item.Amount)
 
