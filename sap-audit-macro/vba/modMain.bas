@@ -443,6 +443,7 @@ Public Sub RunSingleMonth()
     Dim count As Long, i As Long
     Dim files As Long
     Dim matched As Boolean
+    Dim done As Long, failed As Long
 
     answer = InputBox("Which month tab? For example: Sep 25", "Run one month", "Sep 25")
     If Len(Trim$(answer)) = 0 Then Exit Sub
@@ -463,7 +464,11 @@ Public Sub RunSingleMonth()
                 modFeban.OpenMonth samples(i).DateFrom, samples(i).DateTo
                 matched = True
             End If
-            ProcessSample samples(i), files
+            If ProcessSample(samples(i), files) Then
+                done = done + 1
+            Else
+                failed = failed + 1
+            End If
         End If
     Next i
 
@@ -473,8 +478,18 @@ Public Sub RunSingleMonth()
         Exit Sub
     End If
 
-    modLog.WriteFooterBlock 0, 0, files
-    MsgBox "Finished " & answer & ". Files written: " & files & ".", vbInformation
+    modLog.WriteFooterBlock done, failed, files
+
+    MsgBox "Finished " & answer & "." & vbCrLf & vbCrLf & _
+           "Samples reaching the end of the chain : " & done & vbCrLf & _
+           "Samples that stopped early            : " & failed & vbCrLf & _
+           "Files written                         : " & files & vbCrLf & vbCrLf & _
+           IIf(done = 0 And failed > 0, _
+               "None got past the statement match, so steps 3 to 10 never ran for any " & _
+               "of them -- that is why only FEBAN appeared to happen. The Log now says " & _
+               "what the grid actually held for each one." & vbCrLf & vbCrLf, "") & _
+           "Files are under " & modConfig.DownloadRoot() & ".", _
+           IIf(failed = 0, vbInformation, vbExclamation), "Run one month"
     Exit Sub
 
 Failed:
