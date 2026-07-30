@@ -129,7 +129,7 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
         sampleIdx, folder, fileStem & "_ZP_batch_list.xlsx")
 
     If Len(result.ZpListFile) = 0 Then
-        Finish result, IIf(modConfig.IsDryRun(), "PARTIAL", "ERROR"), _
+        Finish result, "ERROR", _
                "The Payment Usage list did not export, so the batch's ZP document " & _
                "numbers could not be read. Clearing document is " & result.ClearingDocument & "."
         Walk = result
@@ -274,7 +274,7 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
         sampleIdx, folder, fileStem & "_invoices.xlsx")
 
     If Len(result.InvoiceListFile) = 0 Then
-        Finish result, IIf(modConfig.IsDryRun(), "BLOCKED_INVOICE", "PARTIAL"), _
+        Finish result, "PARTIAL", _
                summary & " The invoice list did not export."
         Exit Sub
     End If

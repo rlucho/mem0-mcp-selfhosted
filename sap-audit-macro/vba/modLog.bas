@@ -60,7 +60,9 @@ End Sub
 
 Public Sub WriteHeaderBlock()
     Dim mode As String
-    mode = IIf(modConfig.IsDryRun(), "DRY RUN -- nothing will be exported", "EXTRACT")
+    mode = IIf(modConfig.IsDryRun(), _
+               "DRY RUN -- full chain, exports go to the '_dry run' subfolder", _
+               "EXTRACT")
 
     LogAction 0, "RUN STARTED", _
           "Mode: " & mode & _

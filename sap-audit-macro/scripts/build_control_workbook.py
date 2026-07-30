@@ -92,8 +92,11 @@ CONTROL_SETTINGS = [
      "invoices. Matched on letters and digits, so 'SCF Santander' also matches, but "
      "'SANTANDER UK PLC' does not."),
     ("Run mode", "DRY RUN",
-     "DRY RUN walks every screen and logs what it would export, without exporting. "
-     "EXTRACT performs the exports. Always complete one clean DRY RUN first."),
+     "Both modes run the WHOLE chain and write the same files -- the exports are "
+     "read-only on the SAP side, and the chain reads them back, so it cannot run "
+     "without them. The only difference is where they land: DRY RUN puts everything "
+     "under a '_dry run' subfolder of the download root, so a rehearsal is never "
+     "mistaken for the evidence pack. Do one clean DRY RUN, read the Log, then switch."),
     ("Amount match tolerance", 0.01,
      "Absolute currency tolerance when matching a sample amount to a statement line."),
     ("Stop on first error", "YES",
