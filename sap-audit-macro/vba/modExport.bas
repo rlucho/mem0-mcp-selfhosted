@@ -27,28 +27,44 @@ Option Explicit
 '-----------------------------------------------------------------------
 Public Function ExportAlvGrid(ByVal sampleIdx As Long, ByVal folder As String, _
                               ByVal fileName As String) As String
+    ExportAlvGrid = ExportAlvGridById(sampleIdx, "FEBAN.ResultGrid", folder, fileName)
+End Function
+
+' Same, for any mapped ALV grid -- the FEBAN statement list and the FBL1N
+' payment list both come out this way.
+Public Function ExportAlvGridById(ByVal sampleIdx As Long, ByVal gridKey As String, _
+                                  ByVal folder As String, ByVal fileName As String) As String
     Dim grid As Object
     Dim target As String
+    Dim gridId As String
     Dim toolbarButton As String, menuItem As String
 
+    gridId = modConfig.ElementIdOrBlank(gridKey)
     toolbarButton = modConfig.ElementIdOrBlank("Export.AlvToolbarButton")
     menuItem = modConfig.ElementIdOrBlank("Export.AlvMenuItem")
 
-    If Len(toolbarButton) = 0 Or Len(menuItem) = 0 Then
-        modLog.LogAction sampleIdx, "Export statement list", _
-                     "Skipped -- Export.AlvToolbarButton / Export.AlvMenuItem are blank " & _
-                     "on the Screen Map. This export is the FEBAN period view, which is " & _
-                     "useful context but not part of the evidence chain, so the run " & _
-                     "carries on without it.", "SKIPPED", vbNullString
+    If Len(gridId) = 0 Or Len(toolbarButton) = 0 Or Len(menuItem) = 0 Then
+        modLog.LogAction sampleIdx, "Export list", _
+                     "Skipped -- " & gridKey & ", Export.AlvToolbarButton or " & _
+                     "Export.AlvMenuItem is blank on the Screen Map.", _
+                     "SKIPPED", vbNullString
+        Exit Function
+    End If
+
+    If Not modSapConnect.Exists(gridId) Then
+        modLog.LogAction sampleIdx, "Export list", _
+                     "Skipped -- " & gridKey & " is not on the current screen.", _
+                     "SKIPPED", vbNullString
         Exit Function
     End If
 
     target = modUtil.JoinPath(folder, fileName)
-    If modSafety.BlockedByDryRun("Would export the statement list to " & target) Then Exit Function
+    If modSafety.BlockedByDryRun("Would export " & gridKey & " to " & target) Then Exit Function
 
     modUtil.EnsureFolder folder
-    Set grid = modSapConnect.Element(modConfig.ElementId("FEBAN.ResultGrid"))
+    Set grid = modSapConnect.Element(gridId)
 
+    ' The sequence Audit2.vbs captured: &MB_EXPORT then &XXL.
     On Error Resume Next
     grid.pressToolbarContextButton toolbarButton
     grid.selectContextMenuItem menuItem
@@ -56,7 +72,7 @@ Public Function ExportAlvGrid(ByVal sampleIdx As Long, ByVal folder As String, _
     modSapConnect.WaitForSap
 
     If Not modSapConnect.ModalWindowOpen() Then
-        modLog.LogAction sampleIdx, "Export statement list", _
+        modLog.LogAction sampleIdx, "Export list", _
                      "The export menu produced no dialog. Check Export.AlvToolbarButton " & _
                      "and Export.AlvMenuItem against a recording of that right-click.", _
                      "SKIPPED", vbNullString
@@ -64,7 +80,7 @@ Public Function ExportAlvGrid(ByVal sampleIdx As Long, ByVal folder As String, _
     End If
 
     ConfirmFormatPopupIfPresent
-    ExportAlvGrid = CompleteSaveDialog(sampleIdx, folder, fileName)
+    ExportAlvGridById = CompleteSaveDialog(sampleIdx, folder, fileName)
 End Function
 
 '-----------------------------------------------------------------------

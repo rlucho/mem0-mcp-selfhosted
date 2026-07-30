@@ -300,27 +300,38 @@ End Function
 ' a live FEBAN result and paste what it prints into the Screen Map sheet
 ' -- guessing at FEBAN.Col.* is the commonest reason a run finds nothing.
 Public Sub DumpGridColumns()
+    modConfig.LoadScreenMap
+    modSapConnect.SapAttach
+    DumpColumnsOf modConfig.ElementId("FEBAN.ResultGrid"), "FEBAN result grid"
+End Sub
+
+' Shared by modFbl1n.DumpGridColumns too.
+Public Sub DumpColumnsOf(ByVal gridId As String, ByVal caption As String)
     Dim grid As Object
     Dim columns As Object
     Dim i As Long
     Dim report As String, title As String
 
-    modConfig.LoadScreenMap
-    modSapConnect.SapAttach
+    If Not modSapConnect.Exists(gridId) Then
+        MsgBox "No control at" & vbCrLf & "  " & gridId & vbCrLf & vbCrLf & _
+               "Put the " & caption & " on screen first, then run this again.", _
+               vbExclamation, caption
+        Exit Sub
+    End If
 
-    Set grid = modSapConnect.Element(modConfig.ElementId("FEBAN.ResultGrid"))
+    Set grid = modSapConnect.Element(gridId)
 
     On Error Resume Next
     Set columns = grid.ColumnOrder
     On Error GoTo 0
 
     If columns Is Nothing Then
-        MsgBox "This control did not report a column order. It may not be an ALV grid " & _
-               "-- check the FEBAN.ResultGrid ID.", vbExclamation
+        MsgBox "That control did not report a column order, so it is probably not an " & _
+               "ALV grid. Check the ID for " & caption & ".", vbExclamation, caption
         Exit Sub
     End If
 
-    report = "FEBAN result grid columns (" & columns.Length & ")" & vbCrLf & vbCrLf
+    report = caption & " -- " & columns.Length & " columns" & vbCrLf & vbCrLf
     For i = 0 To columns.Length - 1
         ' GetColumnTitles is not on every release, so the technical name is
         ' the part that matters and the readable title is a bonus.
@@ -334,5 +345,5 @@ Public Sub DumpGridColumns()
 
     Debug.Print report
     MsgBox report & vbCrLf & "Also written to the Immediate window (Ctrl+G).", _
-           vbInformation, "FEBAN grid columns"
+           vbInformation, caption
 End Sub

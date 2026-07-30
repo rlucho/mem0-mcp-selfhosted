@@ -27,6 +27,7 @@ Private Const COL_FI_DOC As Long = 12
 Private Const COL_INVOICES As Long = 13
 Private Const COL_FILES As Long = 14
 Private Const COL_MESSAGE As Long = 15
+Private Const COL_INCLUDE As Long = 16
 
 Private Type Sample
     Row As Long
@@ -185,7 +186,7 @@ Private Function ExportMonthStatementList(ByVal monthTab As String) As String
                               modUtil.SafeFileName(monthTab))
 
     ExportMonthStatementList = modExport.ExportAlvGrid( _
-        0, folder, "00_" & modUtil.SafeFileName(monthTab) & "_FEBAN_statement.txt")
+        0, folder, "00_" & modUtil.SafeFileName(monthTab) & "_FEBAN_statement.xlsx")
     Exit Function
 
 Failed:
@@ -263,7 +264,7 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     ' statement item -> FI document -> clearing document -> cleared items with
     ' supplier names -> the invoice for the largest of them. The period's
     ' statement list was already exported once, back in RunExtract.
-    chain = modChain.Walk(item.Idx, match, folder, stem)
+    chain = modChain.Walk(item.Idx, match, item.DateFrom, item.DateTo, folder, stem)
 
     filesTotal = filesTotal + CountFiles(chain)
 
@@ -298,9 +299,10 @@ SampleFailed:
 End Function
 
 Private Function CountFiles(ByRef chain As ChainResult) As Long
-    If Len(chain.ClearedItemsFile) > 0 Then CountFiles = CountFiles + 1
-    If Len(chain.ScfInvoiceListFile) > 0 Then CountFiles = CountFiles + 1
-    If Len(chain.InvoiceFile) > 0 Then CountFiles = CountFiles + 1
+    If Len(chain.ZpListFile) > 0 Then CountFiles = CountFiles + 1
+    If Len(chain.ZpExportFile) > 0 Then CountFiles = CountFiles + 1
+    If Len(chain.InvoiceListFile) > 0 Then CountFiles = CountFiles + 1
+    If Len(chain.InvoicePdfFile) > 0 Then CountFiles = CountFiles + 1
 End Function
 
 ' The document trail, so the Samples sheet shows how the invoice was reached
@@ -312,13 +314,17 @@ Private Function InvoiceTrail(ByRef chain As ChainResult) As String
         trail = "clearing " & chain.ClearingDocument
     End If
 
-    If Len(chain.LargestDocument) > 0 Then
-        trail = trail & IIf(Len(trail) > 0, " > ", "") & chain.LargestDocument
+    If chain.ZpNumberCount > 0 Then
+        trail = trail & IIf(Len(trail) > 0, " > ", "") & _
+                chain.ZpNumberCount & " ZP"
     End If
 
-    ' Level 2 adds one more hop: the invoice behind the SCF payment.
-    If Len(chain.ScfInvoiceNumber) > 0 Then
-        trail = trail & " > SCF invoice " & chain.ScfInvoiceNumber
+    If Len(chain.ZpPaymentDocument) > 0 Then
+        trail = trail & " > pmt " & chain.ZpPaymentDocument
+    End If
+
+    If Len(chain.InvoiceNumber) > 0 And chain.InvoiceNumber <> chain.ZpPaymentDocument Then
+        trail = trail & " > inv " & chain.InvoiceNumber
     End If
 
     InvoiceTrail = trail
@@ -362,7 +368,8 @@ Private Function LoadSamples(ByRef samples() As Sample) As Long
 
     For row = modConfig.SAMPLES_FIRST_ROW To lastRow
         If IsNumeric(sheet.Cells(row, COL_IDX).Value) And _
-           IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then
+           IsDate(sheet.Cells(row, COL_PAY_DATE).Value) And _
+           IsIncluded(sheet, row) Then
 
             count = count + 1
             samples(count).Row = row
@@ -394,6 +401,15 @@ Private Function LoadSamples(ByRef samples() As Sample) As Long
     Next row
 
     LoadSamples = count
+End Function
+
+' Blank counts as included, so a freshly generated sheet runs everything and
+' the operator only has to touch the rows they want left out.
+Private Function IsIncluded(ByVal sheet As Worksheet, ByVal row As Long) As Boolean
+    Dim flag As String
+
+    flag = UCase$(Trim$(CStr(sheet.Cells(row, COL_INCLUDE).Value)))
+    IsIncluded = (flag <> "NO" And flag <> "N" And flag <> "FALSE" And flag <> "0")
 End Function
 
 ' month tab -> Array(dateFrom, dateTo), in first-seen order

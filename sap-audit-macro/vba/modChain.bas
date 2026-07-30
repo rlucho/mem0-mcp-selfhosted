@@ -1,539 +1,348 @@
 Attribute VB_Name = "modChain"
 '=======================================================================
-' modChain -- the end-to-end drill-down, following recordings/Audit.vbs.
+' modChain -- the end-to-end walk for one audit sample.
 '
-' The chain, exactly as recorded:
+' Steps as the auditor described them, with what the recordings prove:
 '
-'   FEBAN result grid
-'     double-click the matched row's amount cell
-'   -> statement item detail        read txtD2201_BELNR  (the FI document)
-'     F2
-'   -> FI document overview         double-click the DMBTR line
-'   -> line item detail             read txtBSEG-AUGBL   (the clearing document)
-'     F2
-'   -> clearing document            menu[5]/menu[3]
-'   -> cleared items with supplier names
-'     menu[0]/menu[3]/menu[1]       export to a local file
+'   1  FEBAN, company code + statement dates from the audit row  RECORDED
+'   2  export the list, find the row by date+amount, open it     RECORDED
+'   3  Posting Area 1 Doc. number -> F2 -> FI document           RECORDED
+'   4  first posting-key-40 line with a clearing doc, open it    RECORDED
+'   5  clearing doc field -> F2 -> clearing document             RECORDED
+'   6  Environment > Payment Usage -> the batch's ZP documents    RECORDED
+'   7  export that list, read the ZP document numbers back       RECORDED
+'   8  FBL1N filtered to those ZP numbers, sorted by amount      NOT RECORDED
+'   9  the largest ZP payment of the batch                       NOT RECORDED
+'  10  within it, the largest invoice -> export its PDF          NOT RECORDED
 '
-' The export is then read back off disk to find the largest cleared item
-' and its supplier. That decides which of two routes fetches the invoice:
+' Steps 1-7 come out of Audit.vbs / Audit2.vbs / Audit3.vbs / Audit5.vbs
+' and their IDs are captured values. All four recordings stop at step 7,
+' so 8-10 are written from standard SAP rather than observed, and every
+' stage past 7 is gated on its Screen Map rows being filled in. A sample
+' whose gate is shut finishes at the last step that did work and says so,
+' carrying the document numbers a person needs to take it from there.
 '
-'   LEVEL 1  largest cleared item behind the statement line
-'            |
-'            +-- supplier is NOT Santander SCF
-'            |     open that payment, save its PDF.  Done.
-'            |
-'            +-- supplier IS Santander SCF  (a confirming payment)
-'                  LEVEL 2  open the SCF payment, list the invoices it
-'                           settled, and take the largest of those.
-'                           Save that invoice's PDF.
-'
-' Level 2 exists because a confirming payment goes to the finance provider,
-' not to the supplier, so the SCF payment has to be opened to find the
-' underlying supplier invoices behind it. Both levels pick their winner the
-' same way -- export the list, read it back, take the largest -- so
-' modListFile does the work twice.
-'
-' BLOCKED: the level-2 navigation is not known. Audit2.vbs captured no
-' steps, only the scripting boilerplate and a resizeWorkingPane call, so
-' the Scf.* rows on the Screen Map are empty. While they are empty those
-' samples stop after level 1 and log BLOCKED_SCF carrying everything
-' needed to finish them by hand, and the run carries on. Fill the Scf.*
-' rows in from a fresh recording and level 2 runs with no code change.
+' Two 'largest' decisions, both read from data rather than assumed from a
+' sort order: the largest ZP payment in the batch, then the largest
+' invoice inside it. The recordings sorted ascending and took row index 1,
+' which on a list of negative amounts is the second largest -- reading
+' values avoids inheriting that.
 '=======================================================================
 Option Explicit
 
 Public Type ChainResult
+    ' steps 3-5
     FiDocument As String
     ClearingDocument As String
 
-    ' Level 1 -- the cleared items behind the statement line
-    ClearedItemsFile As String
-    LargestSupplier As String
-    LargestAmount As Double
-    LargestDocument As String
-    ClearedItemCount As Long
+    ' steps 6-7: the batch
+    ZpListFile As String
+    ZpNumbers As String              ' newline separated
+    ZpNumberCount As Long
+
+    ' steps 8-9: the largest payment of the batch
+    ZpExportFile As String
+    ZpPaymentDocument As String
+    ZpPaymentVendor As String
+    ZpPaymentAmount As Double
+    ZpPaymentCount As Long
     IsConfirmingPayment As Boolean
 
-    ' Level 2 -- the invoices behind a Santander SCF confirming payment
-    ScfInvoiceListFile As String
-    ScfInvoiceNumber As String
-    ScfInvoiceSupplier As String
-    ScfInvoiceAmount As Double
-    ScfInvoiceCount As Long
+    ' step 10: the largest invoice inside that payment
+    InvoiceListFile As String
+    InvoiceNumber As String
+    InvoiceSupplier As String
+    InvoiceAmount As Double
+    InvoicePdfFile As String
 
-    InvoiceFile As String
-    Status As String              ' DONE | BLOCKED_SCF | PARTIAL | ERROR
+    Status As String    ' DONE|BLOCKED_FBL1N|BLOCKED_SCF|BLOCKED_INVOICE|PARTIAL|ERROR
     Notes As String
 End Type
 
 '-----------------------------------------------------------------------
-' Walk the whole chain for one matched statement line.
-'-----------------------------------------------------------------------
 Public Function Walk(ByVal sampleIdx As Long, ByVal match As FebanMatch, _
+                     ByVal dateFrom As Date, ByVal dateTo As Date, _
                      ByVal folder As String, ByVal fileStem As String) As ChainResult
     Dim result As ChainResult
+    Dim payment As ZpPayment
+    Dim matched As Long, rejected As Long
 
     On Error GoTo Failed
 
-    ' 1. statement item detail -> the FI document number
+    ' --- steps 2-3: open the statement item, read the FI document ---------
     modFeban.OpenStatementItem match.GridRow
-    result.FiDocument = ReadFiDocument(sampleIdx)
+    result.FiDocument = ReadMapped(sampleIdx, "Feban.Detail.DocNumber", "FI document")
 
     If Len(result.FiDocument) = 0 Then
-        result.Status = "PARTIAL"
-        result.Notes = "The statement item's detail screen shows no FI document, so it " & _
-                       "appears not to be posted. Report the line as unposted."
+        Finish result, "PARTIAL", _
+               "The statement item shows no FI document, so it is not posted. Report " & _
+               "the line as unposted rather than unmatched."
         modLog.LogAction sampleIdx, "Chain", result.Notes, "SKIPPED", vbNullString
         Walk = result
         Exit Function
     End If
 
-    ' 2. F2 into the FI document
     DrillWithF2 "Feban.Detail.DocNumber"
     modLog.LogAction sampleIdx, "Chain", _
-                 "Opened FI document " & result.FiDocument, "OK", vbNullString
+                 "Step 3: opened FI document " & result.FiDocument, "OK", vbNullString
 
-    ' 3. FI document -> line item -> the clearing document number
-    OpenAmountLine
-    result.ClearingDocument = ReadClearingDocument(sampleIdx)
+    ' --- steps 4-5: the clearing document --------------------------------
+    If Not OpenClearingLine(sampleIdx) Then
+        Finish result, "PARTIAL", _
+               "FI document " & result.FiDocument & " has no line with both posting key " & _
+               modConfig.Setting("Clearing line posting key") & " and a clearing " & _
+               "document, so the batch could not be reached. Check the document by hand."
+        Walk = result
+        Exit Function
+    End If
+
+    result.ClearingDocument = ReadMapped(sampleIdx, "Doc.ClearingDocField", "clearing document")
 
     If Len(result.ClearingDocument) = 0 Then
-        result.Status = "PARTIAL"
-        result.Notes = "FI document " & result.FiDocument & " has no clearing document " & _
-                       "on the line the macro opened, so the cleared invoices cannot be " & _
-                       "listed. Check the line-item detail by hand."
-        modLog.LogAction sampleIdx, "Chain", result.Notes, "ERROR", vbNullString
+        Finish result, "PARTIAL", _
+               "No clearing document on the line the macro opened in FI document " & _
+               result.FiDocument & "."
         Walk = result
         Exit Function
     End If
 
-    ' 4. F2 into the clearing document, then the cleared-items list
     DrillWithF2 "Doc.ClearingDocField"
     modLog.LogAction sampleIdx, "Chain", _
-                 "Opened clearing document " & result.ClearingDocument, "OK", vbNullString
+                 "Step 5: opened clearing document " & result.ClearingDocument, _
+                 "OK", vbNullString
 
-    OpenClearedItemsList sampleIdx
+    ' --- steps 6-7: Payment Usage, and the ZP numbers in the batch -------
+    OpenPaymentUsage sampleIdx
 
-    ' 5. export the cleared items, supplier names and all
-    result.ClearedItemsFile = modExport.ExportClassicList( _
-        sampleIdx, folder, fileStem & "_cleared_items.txt")
+    result.ZpListFile = modExport.ExportClassicList( _
+        sampleIdx, folder, fileStem & "_ZP_batch_list.xlsx")
 
-    If Len(result.ClearedItemsFile) = 0 Then
-        result.Status = IIf(modConfig.IsDryRun(), "PARTIAL", "ERROR")
-        result.Notes = "The cleared-items list was not exported, so the largest " & _
-                       "supplier could not be identified."
+    If Len(result.ZpListFile) = 0 Then
+        Finish result, IIf(modConfig.IsDryRun(), "PARTIAL", "ERROR"), _
+               "The Payment Usage list did not export, so the batch's ZP document " & _
+               "numbers could not be read. Clearing document is " & result.ClearingDocument & "."
         Walk = result
         Exit Function
     End If
 
-    ' 6. read the export back to decide the invoice route
-    IdentifyLargestItem sampleIdx, result
+    result.ZpNumbers = modExportRead.DocumentNumbersOfType( _
+        result.ZpListFile, sampleIdx, modConfig.Setting("Payment document type"), _
+        matched, rejected)
+    result.ZpNumberCount = matched
 
-    ' 7. fetch the invoice down whichever route the largest supplier implies
-    If result.IsConfirmingPayment Then
-        WalkScfRoute sampleIdx, result, folder, fileStem
-    Else
-        result.InvoiceFile = DownloadRegularInvoice(sampleIdx, result, folder, fileStem)
-
-        If Len(result.InvoiceFile) > 0 Then
-            result.Status = "DONE"
-            result.Notes = LargestItemSummary(result) & " Regular supplier, so its PDF " & _
-                           "was saved directly."
-        Else
-            result.Status = "PARTIAL"
-            result.Notes = LargestItemSummary(result) & " Regular supplier, but the PDF " & _
-                           "was not written. " & result.Notes
-        End If
+    If matched = 0 Then
+        Finish result, "PARTIAL", _
+               "No " & modConfig.Setting("Payment document type") & " document numbers " & _
+               "were found in " & result.ZpListFile & ". Open it and check the column " & _
+               "headings against the 'Payment usage ...' settings on the Control sheet."
+        Walk = result
+        Exit Function
     End If
+
+    ' --- steps 8-9: the largest ZP payment of the batch ------------------
+    payment = modFbl1n.LargestPaymentOfBatch(sampleIdx, result.ZpNumbers, _
+                                             dateFrom, dateTo, folder, fileStem)
+    result.ZpExportFile = payment.ExportFile
+
+    If payment.Skipped Then
+        Finish result, "BLOCKED_FBL1N", _
+               "Reached the batch: " & matched & " " & _
+               modConfig.Setting("Payment document type") & " payment(s) behind clearing " & _
+               "document " & result.ClearingDocument & ". " & payment.Notes
+        Walk = result
+        Exit Function
+    End If
+
+    If Not payment.Found Then
+        Finish result, "PARTIAL", _
+               "FBL1N ran but no largest payment could be read. " & payment.Notes
+        Walk = result
+        Exit Function
+    End If
+
+    result.ZpPaymentDocument = payment.DocumentNumber
+    result.ZpPaymentAmount = payment.Amount
+    result.ZpPaymentCount = payment.RowsConsidered
+    result.ZpPaymentVendor = FirstNonEmpty(payment.VendorName, payment.Vendor)
+    result.IsConfirmingPayment = NamesMatch(result.ZpPaymentVendor, _
+                                            modConfig.Setting("Confirming party name"))
+
+    modFbl1n.OpenPayment payment.GridRow
+
+    ' --- step 10: the largest invoice inside it, and its PDF -------------
+    FetchInvoicePdf sampleIdx, result, folder, fileStem
 
     Walk = result
     Exit Function
 
 Failed:
-    result.Status = "ERROR"
-    result.Notes = Err.Description
+    Finish result, "ERROR", Err.Description
     modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
     Walk = result
 End Function
 
-'-----------------------------------------------------------------------
-' Screen steps
-'-----------------------------------------------------------------------
-Private Function ReadFiDocument(ByVal sampleIdx As Long) As String
-    Dim fieldId As String
-
-    fieldId = modConfig.ElementId("Feban.Detail.DocNumber")
-
-    If Not modSapConnect.Exists(fieldId) Then
-        modLog.LogAction sampleIdx, "Chain", _
-                     "Feban.Detail.DocNumber is not on this screen. Either the item " & _
-                     "detail did not open, or the recorded ID belongs to a different " & _
-                     "sub-screen. Current transaction: " & _
-                     modSapConnect.CurrentTransaction(), "ERROR", vbNullString
-        Exit Function
-    End If
-
-    ReadFiDocument = Trim$(modSapConnect.Element(fieldId).Text)
-    If ReadFiDocument = "0" Then ReadFiDocument = vbNullString
-End Function
-
-' The recording drills in by putting focus on a field and pressing F2, which
-' is 'choose/display' -- a read action, and allowed by the guard.
-Private Sub DrillWithF2(ByVal mapKey As String)
-    Dim fieldId As String
-
-    fieldId = modConfig.ElementId(mapKey)
-    modSapConnect.Element(fieldId).SetFocus
-    modSafety.GuardedSendVKey "wnd[0]", 2
-    modSafety.AssertPopupKnown
-End Sub
-
-' Open the line item the payment amount sits on.
-Private Sub OpenAmountLine()
-    Dim grid As Object
-
-    Set grid = modSapConnect.Element(modConfig.ElementId("Doc.BsegGrid"))
-    grid.currentCellColumn = modConfig.ElementId("Doc.Col.Amount")
-    modSapConnect.WaitForSap
-
-    grid.doubleClickCurrentCell
-    modSapConnect.WaitForSap
-End Sub
-
-Private Function ReadClearingDocument(ByVal sampleIdx As Long) As String
-    Dim fieldId As String
-
-    fieldId = modConfig.ElementId("Doc.ClearingDocField")
-
-    If Not modSapConnect.Exists(fieldId) Then
-        modLog.LogAction sampleIdx, "Chain", _
-                     "Doc.ClearingDocField is not on this screen -- the line-item " & _
-                     "detail may not have opened.", "ERROR", vbNullString
-        Exit Function
-    End If
-
-    ReadClearingDocument = Trim$(modSapConnect.Element(fieldId).Text)
-    If ReadClearingDocument = "0" Then ReadClearingDocument = vbNullString
-End Function
-
-Private Sub OpenClearedItemsList(ByVal sampleIdx As Long)
-    Dim anchorId As String
-
-    modSapConnect.Element(modConfig.ElementId("Cleared.Menu")).Select
-    modSapConnect.WaitForSap
-    modSafety.AssertPopupKnown
-
-    ' The anchor is a label the recording touched on the cleared-items list. If
-    ' it is configured and missing, the menu produced something else.
-    anchorId = modConfig.ElementIdOrBlank("Cleared.ListAnchor")
-    If Len(anchorId) > 0 Then
-        If Not modSapConnect.Exists(anchorId) Then
-            modLog.LogAction sampleIdx, "Chain", _
-                         "Cleared.Menu did not produce the expected list -- the anchor " & _
-                         anchorId & " is not on screen. The menu path may differ here. " & _
-                         "Clear Cleared.ListAnchor on the Screen Map to skip this check.", _
-                         "ERROR", vbNullString
-        End If
-    End If
+' Every exit goes through here, so no path can leave Status unset -- the
+' failure mode that let a sample with an unreadable list still report DONE.
+Private Sub Finish(ByRef result As ChainResult, ByVal status As String, ByVal notes As String)
+    result.Status = status
+    result.Notes = Trim$(notes)
 End Sub
 
 '-----------------------------------------------------------------------
-' Read the exported cleared-items list back and find the biggest item.
-'-----------------------------------------------------------------------
-Private Sub IdentifyLargestItem(ByVal sampleIdx As Long, ByRef result As ChainResult)
-    Dim largest As ListRow
-    Dim confirmingName As String
-
-    largest = modListFile.LargestRow(result.ClearedItemsFile, sampleIdx)
-
-    If Not largest.Found Then
-        result.Notes = "Could not read a supplier and amount out of " & _
-                       result.ClearedItemsFile & ". Open it and check the column " & _
-                       "captions against the 'Cleared list ...' settings on the " & _
-                       "Control sheet."
-        modLog.LogAction sampleIdx, "Largest item", result.Notes, "ERROR", _
-                     result.ClearedItemsFile
-        Exit Sub
-    End If
-
-    result.LargestSupplier = largest.Supplier
-    result.LargestAmount = largest.Amount
-    result.LargestDocument = largest.DocumentNumber
-    result.ClearedItemCount = largest.RowsConsidered
-
-    confirmingName = modConfig.Setting("Confirming party name")
-    result.IsConfirmingPayment = NamesMatch(largest.Supplier, confirmingName)
-
-    modLog.LogAction sampleIdx, "Largest item", _
-                 "Largest of " & largest.RowsConsidered & " cleared items: " & _
-                 largest.Supplier & " " & Format$(largest.Amount, "#,##0.00") & _
-                 IIf(Len(largest.DocumentNumber) > 0, _
-                     ", document " & largest.DocumentNumber, "") & _
-                 ". Route: " & IIf(result.IsConfirmingPayment, _
-                                   "confirming (Audit2)", "regular supplier"), _
-                 "OK", result.ClearedItemsFile
-End Sub
-
-' 'SANTANDER SCF', 'SCF Santander' and 'Santander  SCF' are the same party.
-' Compared on letters and digits only, in either order.
-Public Function NamesMatch(ByVal a As String, ByVal b As String) As Boolean
-    Dim tokensB() As String
-    Dim i As Long
-    Dim normalisedA As String
-
-    If Len(Trim$(b)) = 0 Then Exit Function
-
-    normalisedA = LettersAndDigits(a)
-    tokensB = Split(modUtil.Squeeze(UCase$(b)), " ")
-
-    ' Every word of the configured name must appear in the supplier name.
-    For i = LBound(tokensB) To UBound(tokensB)
-        If Len(tokensB(i)) > 0 Then
-            If InStr(normalisedA, LettersAndDigits(tokensB(i))) = 0 Then Exit Function
-        End If
-    Next i
-
-    NamesMatch = True
-End Function
-
-Private Function LettersAndDigits(ByVal text As String) As String
-    Dim i As Long
-    Dim ch As String
-    Dim upper As String
-
-    upper = UCase$(text)
-    For i = 1 To Len(upper)
-        ch = Mid$(upper, i, 1)
-        If (ch >= "A" And ch <= "Z") Or (ch >= "0" And ch <= "9") Then
-            LettersAndDigits = LettersAndDigits & ch
-        End If
-    Next i
-End Function
-
-'-----------------------------------------------------------------------
-' LEVEL 2 -- Santander SCF confirming payment.
+' Step 10, both routes.
 '
-' A confirming payment settles the finance provider, not the supplier, so
-' the SCF payment has to be opened to reach the supplier invoices behind
-' it. The largest of those is the one the auditor wants.
-'
-' Structured as four named steps rather than an opaque Step1/2/3, so a
-' fresh recording maps onto it line by line:
-'
-'   Scf.OpenPayment       get into the SCF payment from the cleared list
-'   Scf.InvoiceListMenu   list the invoices that payment settled
-'   (export + read back)  reuses Export.ListMenu / Save.* / modListFile
-'   Invoice.*             save the largest invoice's PDF
+' Regular vendor: open the payment and save the PDF hanging off it.
+' Santander SCF:  a confirming payment settles the finance provider, so it
+'                 needs extra navigation to reach the supplier invoices,
+'                 and then the largest of those.
+' Neither is recorded, so both are gated.
 '-----------------------------------------------------------------------
-Private Sub WalkScfRoute(ByVal sampleIdx As Long, ByRef result As ChainResult, _
-                         ByVal folder As String, ByVal fileStem As String)
+Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                            ByVal folder As String, ByVal fileStem As String)
+    Dim summary As String
     Dim openId As String, listMenuId As String
     Dim largest As ListRow
-    Dim identity As String
 
-    identity = LargestItemSummary(result) & " That is the confirming party, so the " & _
-               "invoice sits one level deeper."
+    summary = "Largest of " & result.ZpPaymentCount & " ZP payments in the batch: " & _
+              Format$(result.ZpPaymentAmount, "#,##0.00") & _
+              IIf(Len(result.ZpPaymentDocument) > 0, _
+                  " (document " & result.ZpPaymentDocument & ")", "") & _
+              IIf(Len(result.ZpPaymentVendor) > 0, ", " & result.ZpPaymentVendor, "") & "."
 
-    openId = modConfig.ElementIdOrBlank("Scf.OpenPayment")
-    listMenuId = modConfig.ElementIdOrBlank("Scf.InvoiceListMenu")
+    If result.IsConfirmingPayment Then
+        openId = modConfig.ElementIdOrBlank("Scf.OpenInvoices")
+        listMenuId = modConfig.ElementIdOrBlank("Scf.InvoiceListMenu")
 
-    ' While the recording is missing, stop here and hand over everything a
-    ' person needs to finish the sample by hand.
-    If Len(openId) = 0 Or Len(listMenuId) = 0 Then
-        result.Status = "BLOCKED_SCF"
-        result.Notes = identity & " The steps into the SCF payment are not known -- " & _
-                       "Audit2.vbs recorded nothing, so Scf.OpenPayment and " & _
-                       "Scf.InvoiceListMenu are blank on the Screen Map. To finish " & _
-                       "this one by hand: open clearing document " & _
-                       result.ClearingDocument & ", find the " & result.LargestSupplier & _
-                       " item" & IIf(Len(result.LargestDocument) > 0, _
-                                     " (document " & result.LargestDocument & ")", "") & _
-                       ", open it, and take the largest invoice behind it. The cleared " & _
-                       "items are already exported to " & result.ClearedItemsFile & "."
-        modLog.LogAction sampleIdx, "SCF route", result.Notes, "MANUAL", _
-                     result.ClearedItemsFile
-        Exit Sub
+        If Len(openId) = 0 And Len(listMenuId) = 0 Then
+            Finish result, "BLOCKED_SCF", _
+                   summary & " That is the confirming party, so the invoice sits one " & _
+                   "level deeper and the extra steps are not known -- Scf.OpenInvoices " & _
+                   "and Scf.InvoiceListMenu are blank on the Screen Map. To finish by " & _
+                   "hand: open payment " & result.ZpPaymentDocument & " and take the " & _
+                   "largest invoice behind it. The batch list is at " & result.ZpExportFile & "."
+            modLog.LogAction sampleIdx, "Step 10", result.Notes, "MANUAL", result.ZpExportFile
+            Exit Sub
+        End If
+
+        If Not NavigateScfInvoices(sampleIdx, result, openId, listMenuId) Then Exit Sub
+
+        result.InvoiceListFile = modExport.ExportClassicList( _
+            sampleIdx, folder, fileStem & "_SCF_invoices.xlsx")
+
+        If Len(result.InvoiceListFile) = 0 Then
+            Finish result, "PARTIAL", summary & " The SCF invoice list did not export."
+            Exit Sub
+        End If
+
+        largest = modExportRead.LargestRow(result.InvoiceListFile, sampleIdx, _
+                                           "Invoice list amount column", _
+                                           "Invoice list supplier column", _
+                                           "Invoice list document column")
+
+        If Not largest.Found Then
+            Finish result, "PARTIAL", _
+                   summary & " Exported " & result.InvoiceListFile & " but no invoice " & _
+                   "amount could be read from it. Open it and name its column headings " & _
+                   "in the 'Invoice list ...' settings on the Control sheet."
+            Exit Sub
+        End If
+
+        result.InvoiceNumber = largest.DocumentNumber
+        result.InvoiceSupplier = largest.Supplier
+        result.InvoiceAmount = largest.Amount
+
+        modLog.LogAction sampleIdx, "Step 10", _
+                     "Largest of " & largest.RowsConsidered & " invoices behind the SCF " & _
+                     "payment: " & largest.Supplier & " " & _
+                     Format$(largest.Amount, "#,##0.00") & _
+                     IIf(Len(largest.DocumentNumber) > 0, _
+                         ", invoice " & largest.DocumentNumber, ""), _
+                     "OK", result.InvoiceListFile
+    Else
+        result.InvoiceSupplier = result.ZpPaymentVendor
+        result.InvoiceAmount = result.ZpPaymentAmount
+        result.InvoiceNumber = result.ZpPaymentDocument
     End If
 
+    result.InvoicePdfFile = SaveAttachedPdf(sampleIdx, result, folder, fileStem)
+
+    If Len(result.InvoicePdfFile) > 0 Then
+        Finish result, "DONE", summary & " Invoice PDF saved."
+    ElseIf Len(result.Notes) > 0 Then
+        Finish result, IIf(result.Status = "ERROR", "ERROR", "BLOCKED_INVOICE"), _
+               summary & " " & result.Notes
+    Else
+        Finish result, "BLOCKED_INVOICE", summary & " No invoice PDF was written."
+    End If
+End Sub
+
+Private Function NavigateScfInvoices(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                                     ByVal openId As String, _
+                                     ByVal listMenuId As String) As Boolean
     On Error GoTo Failed
 
-    ' Step 1 -- into the SCF payment
-    If Not modSapConnect.Exists(openId) Then
-        result.Status = "BLOCKED_SCF"
-        result.Notes = identity & " Scf.OpenPayment (" & openId & ") is not on this " & _
-                       "screen, so the SCF payment could not be opened. Re-check that " & _
-                       "ID against the recording."
-        modLog.LogAction sampleIdx, "SCF route", result.Notes, "ERROR", vbNullString
-        Exit Sub
+    If Len(openId) > 0 Then
+        If Not modSapConnect.Exists(openId) Then
+            Finish result, "BLOCKED_SCF", _
+                   "Scf.OpenInvoices (" & openId & ") is not on this screen, so the SCF " & _
+                   "payment's invoices could not be reached. Re-check that ID."
+            modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
+            Exit Function
+        End If
+        ActivateElement openId
+        modSafety.AssertPopupKnown
     End If
 
-    ActivateElement openId
-    modSafety.AssertPopupKnown
-
-    ' Step 2 -- its invoice list
-    modSapConnect.Element(listMenuId).Select
-    modSapConnect.WaitForSap
-    modSafety.AssertPopupKnown
-    AssertAnchorPresent sampleIdx, "Scf.InvoiceListAnchor", "Scf.InvoiceListMenu"
-
-    ' Step 3 -- export it, then read it back for the largest invoice
-    result.ScfInvoiceListFile = modExport.ExportClassicList( _
-        sampleIdx, folder, fileStem & "_scf_invoices.txt")
-
-    If Len(result.ScfInvoiceListFile) = 0 Then
-        result.Status = IIf(modConfig.IsDryRun(), "BLOCKED_SCF", "PARTIAL")
-        result.Notes = identity & " The SCF invoice list was not exported, so the " & _
-                       "largest invoice could not be identified."
-        Exit Sub
+    If Len(listMenuId) > 0 Then
+        If Not modSapConnect.Exists(listMenuId) Then
+            Finish result, "BLOCKED_SCF", _
+                   "Scf.InvoiceListMenu (" & listMenuId & ") is not available here."
+            modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
+            Exit Function
+        End If
+        modSapConnect.Element(listMenuId).Select
+        modSapConnect.WaitForSap
+        modSafety.AssertPopupKnown
     End If
 
-    largest = modListFile.LargestRowWithCaptions( _
-        result.ScfInvoiceListFile, sampleIdx, _
-        "SCF invoice list amount column", _
-        "SCF invoice list supplier column", _
-        "SCF invoice list document column")
-
-    If Not largest.Found Then
-        result.Status = "PARTIAL"
-        result.Notes = identity & " Exported " & result.ScfInvoiceListFile & " but could " & _
-                       "not read an amount and supplier out of it. Open it and name its " & _
-                       "column captions in the 'SCF invoice list ...' settings on the " & _
-                       "Control sheet."
-        Exit Sub
-    End If
-
-    result.ScfInvoiceNumber = largest.DocumentNumber
-    result.ScfInvoiceSupplier = largest.Supplier
-    result.ScfInvoiceAmount = largest.Amount
-    result.ScfInvoiceCount = largest.RowsConsidered
-
-    modLog.LogAction sampleIdx, "SCF largest invoice", _
-                 "Largest of " & largest.RowsConsidered & " invoices behind the " & _
-                 result.LargestSupplier & " payment: " & largest.Supplier & " " & _
-                 Format$(largest.Amount, "#,##0.00") & _
-                 IIf(Len(largest.DocumentNumber) > 0, _
-                     ", invoice " & largest.DocumentNumber, ""), _
-                 "OK", result.ScfInvoiceListFile
-
-    ' Step 4 -- that invoice's PDF
-    result.InvoiceFile = DownloadRegularInvoice(sampleIdx, result, folder, _
-                                               fileStem & "_scf")
-
-    If Len(result.InvoiceFile) > 0 Then
-        result.Status = "DONE"
-        result.Notes = identity & " Largest invoice behind it: " & _
-                       result.ScfInvoiceSupplier & " " & _
-                       Format$(result.ScfInvoiceAmount, "#,##0.00") & _
-                       IIf(Len(result.ScfInvoiceNumber) > 0, _
-                           ", invoice " & result.ScfInvoiceNumber, "") & "."
-    Else
-        result.Status = "PARTIAL"
-        result.Notes = identity & " Identified the largest invoice as " & _
-                       result.ScfInvoiceSupplier & " " & _
-                       Format$(result.ScfInvoiceAmount, "#,##0.00") & _
-                       IIf(Len(result.ScfInvoiceNumber) > 0, _
-                           " (invoice " & result.ScfInvoiceNumber & ")", "") & _
-                       ", but its PDF was not written. See the Log."
-    End If
-
-    Exit Sub
+    NavigateScfInvoices = True
+    Exit Function
 
 Failed:
-    result.Status = "PARTIAL"
-    result.Notes = identity & " The SCF route stopped: " & Err.Description
-    modLog.LogAction sampleIdx, "SCF route failed", Err.Description, "ERROR", vbNullString
-End Sub
-
-' One sentence naming the level-1 winner, reused by both routes so every
-' sample's message says which cleared item drove the decision.
-Private Function LargestItemSummary(ByRef result As ChainResult) As String
-    LargestItemSummary = "Largest of " & result.ClearedItemCount & " cleared items: " & _
-                         result.LargestSupplier & " " & _
-                         Format$(result.LargestAmount, "#,##0.00") & _
-                         IIf(Len(result.LargestDocument) > 0, _
-                             " (document " & result.LargestDocument & ")", "") & "."
+    Finish result, "PARTIAL", "The SCF navigation stopped: " & Err.Description
+    modLog.LogAction sampleIdx, "Step 10", Err.Description, "ERROR", vbNullString
 End Function
 
-' A recorded step is either a menu entry, a button, or a field you put the
-' cursor on and press F2. Which one is not knowable from the ID alone, so
-' try them in order of least side effect.
-Private Sub ActivateElement(ByVal elementId As String)
-    Dim control As Object
-    Dim kind As String
-
-    Set control = modSapConnect.Element(elementId)
-
-    kind = vbNullString
-    On Error Resume Next
-    kind = control.Type
-    On Error GoTo 0
-
-    Select Case kind
-        Case "GuiMenu"
-            control.Select
-        Case "GuiButton", "GuiToolbarControl"
-            modSafety.GuardedPress elementId
-            Exit Sub
-        Case Else
-            ' A text field: focus it and press F2, the way Audit.vbs drills in.
-            On Error Resume Next
-            control.SetFocus
-            On Error GoTo 0
-            modSafety.GuardedSendVKey "wnd[0]", 2
-            Exit Sub
-    End Select
-
-    modSapConnect.WaitForSap
-End Sub
-
-Private Sub AssertAnchorPresent(ByVal sampleIdx As Long, ByVal anchorKey As String, _
-                                ByVal stepKey As String)
-    Dim anchorId As String
-
-    anchorId = modConfig.ElementIdOrBlank(anchorKey)
-    If Len(anchorId) = 0 Then Exit Sub
-    If modSapConnect.Exists(anchorId) Then Exit Sub
-
-    modLog.LogAction sampleIdx, "SCF route", _
-                 stepKey & " did not produce the expected screen -- the anchor " & _
-                 anchorId & " is not there. Clear " & anchorKey & " on the Screen Map " & _
-                 "to skip this check.", "ERROR", vbNullString
-End Sub
-
 '-----------------------------------------------------------------------
-' Regular-supplier invoice route: open the payment and save its PDF.
+' The attachment list, and the PDF off it.
 '
-' The recording did not cover this either -- Audit2.vbs is empty -- so the
-' Invoice.* IDs are standard-but-unconfirmed. When they are not filled in,
-' this logs MANUAL with the document numbers already captured, which is
-' enough for someone to fetch the PDF by hand.
+' Not recorded either. Where the Invoice.* rows are blank, or where SAP
+' hands the document to the external viewer instead of offering a save
+' dialog, this reports MANUAL with the document numbers rather than
+' claiming a success that left no file behind.
 '-----------------------------------------------------------------------
-Private Function DownloadRegularInvoice(ByVal sampleIdx As Long, ByRef result As ChainResult, _
-                                        ByVal folder As String, _
-                                        ByVal fileStem As String) As String
-    Dim toolboxId As String
-    Dim listId As String
-    Dim saveId As String
+Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                                 ByVal folder As String, ByVal fileStem As String) As String
+    Dim toolboxId As String, saveId As String
     Dim toolbox As Object
 
     toolboxId = modConfig.ElementIdOrBlank("Invoice.GosToolbox")
-    listId = modConfig.ElementIdOrBlank("Invoice.AttachListGrid")
     saveId = modConfig.ElementIdOrBlank("Invoice.SaveButton")
 
     If Len(toolboxId) = 0 Or Len(saveId) = 0 Then
-        result.Notes = "Invoice.GosToolbox / Invoice.SaveButton are not filled in, so " & _
-                       "no PDF download was attempted. Everything needed to fetch it " & _
-                       "by hand is recorded: clearing document " & _
-                       result.ClearingDocument & ", supplier " & result.LargestSupplier & _
-                       IIf(Len(result.LargestDocument) > 0, _
-                           ", invoice document " & result.LargestDocument, "") & "."
+        result.Notes = "Invoice.GosToolbox / Invoice.SaveButton are blank on the Screen " & _
+                       "Map, so no PDF download was attempted. Everything needed to " & _
+                       "fetch it by hand is recorded: payment " & result.ZpPaymentDocument & _
+                       IIf(Len(result.InvoiceNumber) > 0, _
+                           ", invoice " & result.InvoiceNumber, "") & _
+                       IIf(Len(result.InvoiceSupplier) > 0, _
+                           ", supplier " & result.InvoiceSupplier, "") & "."
         modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "MANUAL", vbNullString
         Exit Function
     End If
 
-    If modSafety.BlockedByDryRun("Would download the invoice PDF for " & _
-                                 result.LargestSupplier) Then Exit Function
+    If modSafety.BlockedByDryRun("Would save the invoice PDF for payment " & _
+                                 result.ZpPaymentDocument) Then Exit Function
 
     If Not modSapConnect.Exists(toolboxId) Then
         result.Notes = "The services-for-object toolbox is not on this screen, so the " & _
@@ -560,16 +369,168 @@ Private Function DownloadRegularInvoice(ByVal sampleIdx As Long, ByRef result As
 
     If Not modSapConnect.Exists(saveId) Then
         result.Notes = "The attachment list opened but Invoice.SaveButton (" & saveId & _
-                       ") is not on it. Record this dialog and correct the Screen Map."
+                       ") is not on it. Record that dialog and correct the Screen Map."
         modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "MANUAL", vbNullString
         CloseModal
         Exit Function
     End If
 
     modSafety.GuardedPress saveId
-    DownloadRegularInvoice = modExport.CompleteSaveDialogPublic( _
+    SaveAttachedPdf = modExport.CompleteSaveDialogPublic( _
         sampleIdx, folder, fileStem & "_invoice.pdf")
 End Function
+
+'-----------------------------------------------------------------------
+' Screen steps
+'-----------------------------------------------------------------------
+Private Function ReadMapped(ByVal sampleIdx As Long, ByVal mapKey As String, _
+                            ByVal what As String) As String
+    Dim fieldId As String
+
+    fieldId = modConfig.ElementId(mapKey)
+
+    If Not modSapConnect.Exists(fieldId) Then
+        modLog.LogAction sampleIdx, "Chain", _
+                     mapKey & " is not on this screen, so the " & what & " could not be " & _
+                     "read. Current transaction: " & modSapConnect.CurrentTransaction() & _
+                     ". The previous step may not have landed where expected.", _
+                     "ERROR", vbNullString
+        Exit Function
+    End If
+
+    ReadMapped = Trim$(modSapConnect.Element(fieldId).Text)
+    If ReadMapped = "0" Then ReadMapped = vbNullString
+End Function
+
+' The recordings drill in by focusing a field and pressing F2 -- choose/
+' display, a read action, which the guard allows.
+Private Sub DrillWithF2(ByVal mapKey As String)
+    modSapConnect.Element(modConfig.ElementId(mapKey)).SetFocus
+    modSafety.GuardedSendVKey "wnd[0]", 2
+    modSafety.AssertPopupKnown
+End Sub
+
+'-----------------------------------------------------------------------
+' Step 4 -- the first line with the wanted posting key AND a clearing doc.
+'
+' The recordings just double-clicked whichever row the cursor happened to
+' be on, which is fine by hand and wrong unattended: the clearing document
+' hangs off one specific line. So scan the grid for it.
+'-----------------------------------------------------------------------
+Private Function OpenClearingLine(ByVal sampleIdx As Long) As Boolean
+    Dim grid As Object
+    Dim rows As Long, r As Long
+    Dim clearingColumn As String, keyColumn As String, wantedKey As String
+    Dim clearingValue As String, keyValue As String
+    Dim chosen As Long
+
+    Set grid = modSapConnect.Element(modConfig.ElementId("Doc.BsegGrid"))
+    clearingColumn = modConfig.ElementId("Doc.Col.ClearingDoc")
+    keyColumn = modConfig.ElementIdOrBlank("Doc.Col.PostingKey")
+    wantedKey = Trim$(modConfig.Setting("Clearing line posting key"))
+
+    On Error Resume Next
+    rows = grid.RowCount
+    On Error GoTo 0
+
+    chosen = -1
+
+    For r = 0 To rows - 1
+        clearingValue = Trim$(GridCell(grid, r, clearingColumn))
+
+        If Len(clearingValue) > 0 And clearingValue <> "0" Then
+            If Len(keyColumn) = 0 Or Len(wantedKey) = 0 Then
+                chosen = r                      ' no posting-key column mapped
+                Exit For
+            End If
+
+            keyValue = Trim$(GridCell(grid, r, keyColumn))
+            If keyValue = wantedKey Then
+                chosen = r
+                Exit For
+            End If
+        End If
+    Next r
+
+    ' Fall back to any line that carries a clearing document, and say so, so
+    ' a wrong posting-key column shows up instead of stopping the sample.
+    If chosen < 0 And Len(keyColumn) > 0 Then
+        For r = 0 To rows - 1
+            clearingValue = Trim$(GridCell(grid, r, clearingColumn))
+            If Len(clearingValue) > 0 And clearingValue <> "0" Then
+                chosen = r
+                modLog.LogAction sampleIdx, "Step 4", _
+                             "No line with posting key " & wantedKey & ", so row " & r & _
+                             " was used because it carries a clearing document. Check " & _
+                             "Doc.Col.PostingKey on the Screen Map.", "MANUAL", vbNullString
+                Exit For
+            End If
+        Next r
+    End If
+
+    If chosen < 0 Then Exit Function
+
+    grid.setCurrentCell chosen, clearingColumn
+    modSapConnect.WaitForSap
+    grid.doubleClickCurrentCell
+    modSapConnect.WaitForSap
+    modSafety.AssertPopupKnown
+
+    modLog.LogAction sampleIdx, "Step 4", _
+                 "Opened line-item row " & chosen & " of " & rows & _
+                 " (clearing document " & clearingValue & ")", "OK", vbNullString
+
+    OpenClearingLine = True
+End Function
+
+Private Sub OpenPaymentUsage(ByVal sampleIdx As Long)
+    Dim anchorId As String
+
+    modSapConnect.Element(modConfig.ElementId("PaymentUsage.Menu")).Select
+    modSapConnect.WaitForSap
+    modSafety.AssertPopupKnown
+
+    anchorId = modConfig.ElementIdOrBlank("PaymentUsage.ListAnchor")
+    If Len(anchorId) > 0 Then
+        If Not modSapConnect.Exists(anchorId) Then
+            modLog.LogAction sampleIdx, "Step 6", _
+                         "Environment > Payment Usage did not produce the expected list " & _
+                         "-- the anchor " & anchorId & " is not on screen. Clear " & _
+                         "PaymentUsage.ListAnchor to skip this check.", "ERROR", vbNullString
+            Exit Sub
+        End If
+    End If
+
+    modLog.LogAction sampleIdx, "Step 6", _
+                 "Opened Environment > Payment Usage", "OK", vbNullString
+End Sub
+
+' A recorded step is a menu entry, a button, or a field to focus and F2.
+' Which one is not knowable from the ID, so read the control's own type.
+Private Sub ActivateElement(ByVal elementId As String)
+    Dim control As Object
+    Dim kind As String
+
+    Set control = modSapConnect.Element(elementId)
+
+    kind = vbNullString
+    On Error Resume Next
+    kind = control.Type
+    On Error GoTo 0
+
+    Select Case kind
+        Case "GuiMenu"
+            control.Select
+            modSapConnect.WaitForSap
+        Case "GuiButton", "GuiToolbarControl"
+            modSafety.GuardedPress elementId
+        Case Else
+            On Error Resume Next
+            control.SetFocus
+            On Error GoTo 0
+            modSafety.GuardedSendVKey "wnd[0]", 2
+    End Select
+End Sub
 
 Private Sub CloseModal()
     On Error Resume Next
@@ -577,3 +538,53 @@ Private Sub CloseModal()
     On Error GoTo 0
     modSapConnect.WaitForSap
 End Sub
+
+Private Function GridCell(ByVal grid As Object, ByVal row As Long, _
+                          ByVal columnName As String) As String
+    On Error Resume Next
+    GridCell = grid.GetCellValue(row, columnName)
+    On Error GoTo 0
+End Function
+
+Private Function FirstNonEmpty(ByVal a As String, ByVal b As String) As String
+    FirstNonEmpty = IIf(Len(Trim$(a)) > 0, Trim$(a), Trim$(b))
+End Function
+
+'-----------------------------------------------------------------------
+' 'SANTANDER SCF', 'SCF Santander' and 'Santander  SCF' are the same party.
+' Every word of the configured name must appear in the supplier name, so
+' 'SANTANDER UK PLC' does not match.
+'-----------------------------------------------------------------------
+Public Function NamesMatch(ByVal supplier As String, ByVal configured As String) As Boolean
+    Dim tokens() As String
+    Dim i As Long
+    Dim haystack As String
+
+    If Len(Trim$(configured)) = 0 Then Exit Function
+    If Len(Trim$(supplier)) = 0 Then Exit Function
+
+    haystack = LettersAndDigits(supplier)
+    tokens = Split(modUtil.Squeeze(UCase$(configured)), " ")
+
+    For i = LBound(tokens) To UBound(tokens)
+        If Len(tokens(i)) > 0 Then
+            If InStr(haystack, LettersAndDigits(tokens(i))) = 0 Then Exit Function
+        End If
+    Next i
+
+    NamesMatch = True
+End Function
+
+Private Function LettersAndDigits(ByVal text As String) As String
+    Dim i As Long
+    Dim ch As String
+    Dim upper As String
+
+    upper = UCase$(text)
+    For i = 1 To Len(upper)
+        ch = Mid$(upper, i, 1)
+        If (ch >= "A" And ch <= "Z") Or (ch >= "0" And ch <= "9") Then
+            LettersAndDigits = LettersAndDigits & ch
+        End If
+    Next i
+End Function

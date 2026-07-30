@@ -87,9 +87,10 @@ CONTROL_SETTINGS = [
      "Taken from recordings/Audit.vbs. Created if missing. One subfolder per month tab, "
      "e.g. ...\\Audit GBKM\\Sep 25."),
     ("Confirming party name", "SANTANDER SCF",
-     "A cleared item whose supplier name matches this is treated as a confirming "
-     "(supply-chain-finance) payment and routed down the Audit2 path, which needs extra "
-     "steps. Matched case-insensitively, ignoring spaces."),
+     "If the largest ZP payment of the batch is to this party, it is a confirming "
+     "(supply-chain-finance) payment and needs the extra hop to reach the supplier "
+     "invoices. Matched on letters and digits, so 'SCF Santander' also matches, but "
+     "'SANTANDER UK PLC' does not."),
     ("Run mode", "DRY RUN",
      "DRY RUN walks every screen and logs what it would export, without exporting. "
      "EXTRACT performs the exports. Always complete one clean DRY RUN first."),
@@ -105,23 +106,25 @@ CONTROL_SETTINGS = [
      "recordings/Audit.vbs used and therefore what is known to work here. Also "
      "supported: DMY = 31.12.2025, DMY/ = 31/12/2025, MDY = 12/31/2025, "
      "YMD = 2025-12-31. Get this wrong and FEBAN silently searches the wrong period."),
-    ("Cleared list amount column", "",
-     "Caption of the amount column in the exported cleared-items list, if the macro "
-     "does not find it on its own. Open the first exported file and copy the heading "
-     "exactly. Leave blank to let the macro try its built-in list of captions."),
-    ("Cleared list supplier column", "",
-     "Caption of the supplier-name column in that same file. Same rules."),
-    ("Cleared list document column", "",
-     "Caption of the invoice document-number column in that same file. Optional -- "
-     "without it the run still identifies the supplier and amount."),
-    ("SCF invoice list amount column", "",
-     "Level 2 only. Caption of the amount column in the exported list of invoices behind "
-     "a Santander SCF payment. Leave blank to fall back to the 'Cleared list ...' "
-     "captions and then the built-in list."),
-    ("SCF invoice list supplier column", "",
-     "Level 2 only. Caption of the supplier column in that same file."),
-    ("SCF invoice list document column", "",
-     "Level 2 only. Caption of the invoice-number column in that same file."),
+    ("Payment document type", "ZP",
+     "Only documents of this type are taken from the Payment Usage list and fed to "
+     "FBL1N. ZP is the SAP standard for a payment document."),
+    ("Clearing line posting key", "40",
+     "Step 4 opens the first line-item row with this posting key that also carries a "
+     "clearing document. Blank means 'any row with a clearing document'."),
+    ("Payment usage document column", "",
+     "Caption of the document-number column in the exported Payment Usage list, if the "
+     "macro cannot find it. Open the first exported file and copy the heading exactly."),
+    ("Payment usage type column", "",
+     "Caption of the document-type column in that same file. Without it every document "
+     "is taken rather than only the ZP ones, and the Log says so."),
+    ("Invoice list amount column", "",
+     "Santander SCF route only. Caption of the amount column in the exported list of "
+     "invoices behind an SCF payment. Blank falls back to a built-in list of captions."),
+    ("Invoice list supplier column", "",
+     "Caption of the supplier column in that same file."),
+    ("Invoice list document column", "",
+     "Caption of the invoice-number column in that same file."),
     ("Operator name", "",
      "Written into the log for the audit trail."),
 ]
@@ -217,10 +220,16 @@ def build_control(workbook: Workbook) -> None:
     # One counter per status modMain can write, so the sheet reflects the run
     # rather than only its successes.
     progress = [
-        ("Samples in scope", "=COUNTA(Samples!A5:A1000)"),
+        ("Samples in the sheet", "=COUNTA(Samples!A5:A1000)"),
+        ("Included in the next run", '=COUNTIF(Samples!P5:P1000,"Yes")+COUNTBLANK(Samples!P5:P60)'),
+        ("Excluded", '=COUNTIF(Samples!P5:P1000,"No")'),
         ("DONE -- invoice downloaded", '=COUNTIF(Samples!J5:J1000,"DONE")'),
-        ("BLOCKED_SCF -- Santander, needs the Audit2 steps",
+        ("BLOCKED_FBL1N -- steps 8-9 not mapped yet",
+         '=COUNTIF(Samples!J5:J1000,"BLOCKED_FBL1N")'),
+        ("BLOCKED_SCF -- Santander, needs the extra hop",
          '=COUNTIF(Samples!J5:J1000,"BLOCKED_SCF")'),
+        ("BLOCKED_INVOICE -- reached the payment, no PDF",
+         '=COUNTIF(Samples!J5:J1000,"BLOCKED_INVOICE")'),
         ("PARTIAL -- traced, no invoice file", '=COUNTIF(Samples!J5:J1000,"PARTIAL")'),
         ("NOT FOUND -- no matching statement line",
          '=COUNTIF(Samples!J5:J1000,"NOT FOUND")'),
@@ -279,99 +288,104 @@ def build_control(workbook: Workbook) -> None:
 # 'VERIFY' marks a row the recording did not cover, where the value is a
 # standard-but-unconfirmed guess that has to be checked before an EXTRACT run.
 SCREEN_MAP_ROWS = [
-    ("--- FEBAN selection screen (a MODAL dialog on this system, wnd[1]) ---", "", "", ""),
-    ("FEBAN.SelectionWindow", "Window the selection fields sit in. wnd[1] here, "
-     "because FEBAN opens its selection as a popup rather than a full screen",
-     "wnd[1]", "Yes"),
-    ("FEBAN.CompanyCode", "Company code input field",
-     "wnd[1]/usr/ctxtSL_BUKRS-LOW", "Yes"),
-    ("FEBAN.HouseBank", "House bank filter. Not in the recording, which left it blank. "
-     "Worth setting if the EUR account turns out to be out of scope. VERIFY",
-     "wnd[1]/usr/ctxtSL_HBKID-LOW", "No"),
-    ("FEBAN.AccountId", "Account ID filter. Same. VERIFY",
-     "wnd[1]/usr/ctxtSL_HKTID-LOW", "No"),
-    ("FEBAN.StatementDateFrom", "Statement date, low value",
-     "wnd[1]/usr/ctxtSL_AZDAT-LOW", "Yes"),
-    ("FEBAN.StatementDateTo", "Statement date, high value",
-     "wnd[1]/usr/ctxtSL_AZDAT-HIGH", "Yes"),
+    ("--- Step 1: FEBAN selection (a MODAL popup on this system, wnd[1]) ---", "", "", ""),
+    ("FEBAN.SelectionWindow", "Window the selection fields sit in. wnd[1] here, because "
+     "FEBAN opens its selection as a popup rather than a full screen", "wnd[1]", "Yes"),
+    ("FEBAN.CompanyCode", "Company code", "wnd[1]/usr/ctxtSL_BUKRS-LOW", "Yes"),
+    ("FEBAN.StatementDateFrom", "Statement date, low", "wnd[1]/usr/ctxtSL_AZDAT-LOW", "Yes"),
+    ("FEBAN.StatementDateTo", "Statement date, high", "wnd[1]/usr/ctxtSL_AZDAT-HIGH", "Yes"),
     ("FEBAN.ExecuteButton", "Execute, on the popup's own toolbar",
      "wnd[1]/tbar[0]/btn[8]", "Yes"),
-    ("FEBAN.PostExecuteButton", "Toolbar button pressed straight after Execute in the "
-     "recording. Leave blank to skip it -- check what it does before relying on it",
-     "wnd[0]/tbar[1]/btn[14]", "No"),
-    ("--- FEBAN result list ---", "", "", ""),
-    ("FEBAN.ResultGrid", "ALV grid holding the statement items",
-     "wnd[0]/shellcont/shell", "Yes"),
-    ("FEBAN.Col.Amount", "Grid column holding the amount",
-     "KWBTR", "Yes"),
-    ("FEBAN.Col.ValueDate", "Grid column holding the value date. NOT in the recording "
-     "-- run modFeban.DumpGridColumns and paste the real name here",
-     "VALUT", "Yes"),
-    ("FEBAN.Col.Status", "Grid column holding the posting status. VERIFY",
-     "ESTAT", "No"),
-    ("FEBAN.Col.DocNumber", "Grid column holding the FI document number. VERIFY",
-     "BELNR", "No"),
-    ("FEBAN.Col.Reference", "Grid column holding the bank reference or note-to-payee, "
-     "logged alongside each match as context. VERIFY", "SGTXT", "No"),
-    ("--- FEBAN item detail ---", "", "", ""),
-    ("Feban.Detail.DocNumber", "FI document field on the statement-item detail screen",
+    ("FEBAN.PostExecuteButton", "Toolbar button pressed straight after Execute in all four "
+     "recordings. Clear it to skip", "wnd[0]/tbar[1]/btn[14]", "No"),
+    ("FEBAN.HouseBank", "House bank filter. Not recorded; worth setting if the EUR "
+     "account is out of scope. VERIFY", "wnd[1]/usr/ctxtSL_HBKID-LOW", "No"),
+    ("FEBAN.AccountId", "Account ID filter. VERIFY", "wnd[1]/usr/ctxtSL_HKTID-LOW", "No"),
+    ("--- Step 2: FEBAN result list ---", "", "", ""),
+    ("FEBAN.ResultGrid", "ALV grid of statement items", "wnd[0]/shellcont/shell", "Yes"),
+    ("FEBAN.Col.Amount", "Amount column", "KWBTR", "Yes"),
+    ("FEBAN.Col.ValueDate", "Statement date column. Audit2.vbs double-clicked this by "
+     "name, so it is a captured value", "AZDAT", "Yes"),
+    ("FEBAN.Col.Status", "Posting status column. VERIFY", "ESTAT", "No"),
+    ("FEBAN.Col.DocNumber", "FI document column. VERIFY", "BELNR", "No"),
+    ("FEBAN.Col.Reference", "Bank reference / note-to-payee, logged as context. VERIFY",
+     "SGTXT", "No"),
+    ("--- ALV export (confirmed in Audit2.vbs) ---", "", "", ""),
+    ("Export.AlvToolbarButton", "Grid toolbar export function code",
+     "&MB_EXPORT", "No"),
+    ("Export.AlvMenuItem", "Context-menu entry. &XXL, not &PC", "&XXL", "No"),
+    ("Export.AlvFormatRadio", "Radio for the format, if that popup appears. VERIFY",
+     "", "No"),
+    ("--- Step 3: statement item detail ---", "", "", ""),
+    ("Feban.Detail.DocNumber", "Posting Area 1 Doc. number field. F2 from here opens the "
+     "FI document",
      "wnd[0]/usr/subSUB_MAIN:SAPLNEW_FEBA:4000/subSUB_APPLICATION:SAPLNEW_FEBA:2200/"
      "subAREA1:SAPLNEW_FEBA:2201/txtD2201_BELNR", "Yes"),
-    ("--- FI document (reached with F2 from the detail screen) ---", "", "", ""),
+    ("--- Step 4: FI document line items ---", "", "", ""),
     ("Doc.BsegGrid", "Line-item grid on the document overview",
      "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", "Yes"),
-    ("Doc.Col.Amount", "Line-item grid column holding the local-currency amount",
-     "DMBTR", "Yes"),
-    ("Doc.ClearingDocField", "Clearing-document field on the line-item detail screen",
-     "wnd[0]/usr/txtBSEG-AUGBL", "Yes"),
-    ("--- Cleared items with supplier names ---", "", "", ""),
-    ("Cleared.Menu", "Menu path that produces the cleared-items list from the clearing "
-     "document. menu[5]/menu[3] in the recording",
-     "wnd[0]/mbar/menu[5]/menu[3]", "Yes"),
-    ("Cleared.ListAnchor", "A label that exists on the cleared-items list, used to "
-     "confirm the list actually came up",
-     "wnd[0]/usr/lbl[28,7]", "No"),
-    ("--- FEBAN statement-list export (optional period context) ---", "", "", ""),
-    ("Export.AlvToolbarButton", "Function code of the export button on the FEBAN grid's "
-     "own toolbar. The recording never exported this grid, so this is unrecorded and the "
-     "whole step is optional -- leave both blank to skip it. VERIFY",
-     "&MB_EXPORT", "No"),
-    ("Export.AlvMenuItem", "Context-menu entry for local file / spreadsheet. VERIFY",
-     "&PC", "No"),
-    ("Export.AlvFormatRadio", "Radio button for the file format, if that popup appears. "
-     "VERIFY", "", "No"),
-    ("--- Classic list export (List > Save/Send > File) ---", "", "", ""),
+    ("Doc.Col.ClearingDoc", "Clearing-document column. Audit3 and Audit5 both "
+     "double-clicked AUGBL; Audit.vbs used DMBTR and Audit2 PRCTR, which were just where "
+     "the cursor sat", "AUGBL", "Yes"),
+    ("Doc.Col.PostingKey", "Posting-key column, so the macro can pick the key-40 line "
+     "rather than whichever row the cursor lands on. VERIFY", "BSCHL", "No"),
+    ("--- Step 5: line-item detail ---", "", "", ""),
+    ("Doc.ClearingDocField", "Clearing-document field. F2 from here opens the clearing "
+     "document", "wnd[0]/usr/txtBSEG-AUGBL", "Yes"),
+    ("--- Step 6: Environment > Payment Usage ---", "", "", ""),
+    ("PaymentUsage.Menu", "Menu path to the batch's payment documents. Confirmed in all "
+     "four recordings", "wnd[0]/mbar/menu[5]/menu[3]", "Yes"),
+    ("PaymentUsage.ListAnchor", "An element that exists on that list, used only to confirm "
+     "the menu landed. Clear it to skip the check", "wnd[0]/usr/chk[1,6]", "No"),
+    ("--- Step 7: classic list export (List > Save/Send > File) ---", "", "", ""),
     ("Export.ListMenu", "Menu path that opens the save-list dialog",
      "wnd[0]/mbar/menu[0]/menu[3]/menu[1]", "Yes"),
-    ("Export.FormatOkButton", "Confirm the file-format popup",
-     "wnd[1]/tbar[0]/btn[0]", "Yes"),
-    ("--- Save-as dialog ---", "", "", ""),
+    ("Export.FormatOkButton", "Confirm the file-format popup", "wnd[1]/tbar[0]/btn[0]", "Yes"),
     ("Save.Path", "Directory field", "wnd[1]/usr/ctxtDY_PATH", "Yes"),
-    ("Save.FileName", "File name field. The recording left the default in place, so "
-     "this ID is standard-but-unconfirmed. VERIFY",
+    ("Save.FileName", "File name field. Confirmed in Audit2.vbs and Audit5.vbs",
      "wnd[1]/usr/ctxtDY_FILENAME", "Yes"),
-    ("Save.Encoding", "Encoding field, where present. VERIFY", "wnd[1]/usr/ctxtDY_FILE_ENCODING", "No"),
-    ("Save.GenerateButton", "Confirm the save. btn[0], not btn[11], on this dialog",
+    ("Save.Encoding", "Encoding field, where present. VERIFY",
+     "wnd[1]/usr/ctxtDY_FILE_ENCODING", "No"),
+    ("Save.GenerateButton", "Confirm the save. btn[0], not btn[11]",
      "wnd[1]/tbar[0]/btn[0]", "Yes"),
-    ("--- Invoice PDF: regular supplier route ---", "", "", ""),
-    ("Invoice.GosToolbox", "Services-for-object toolbox on the title bar. NOT in the "
-     "recording -- Audit2.vbs captured no steps. VERIFY",
+    ("--- Steps 8-9: FBL1N, the ZP payments of the batch (PREDICTED) ---", "", "", ""),
+    ("Fbl1n.CompanyCode", "Company code. PREDICTED from standard RFITEMAP -- no recording "
+     "reaches FBL1N. Run modProbe.ProbeCurrentScreen on the FBL1N selection screen to "
+     "check every Fbl1n.* row at once", "wnd[0]/usr/ctxtDD_BUKRS-LOW", "No"),
+    ("Fbl1n.AllItemsRadio", "'All items' radio. PREDICTED", "wnd[0]/usr/radX_AISEL", "No"),
+    ("Fbl1n.PostingDateFrom", "Posting date, low. PREDICTED",
+     "wnd[0]/usr/ctxtSO_BUDAT-LOW", "No"),
+    ("Fbl1n.PostingDateTo", "Posting date, high. PREDICTED",
+     "wnd[0]/usr/ctxtSO_BUDAT-HIGH", "No"),
+    ("Fbl1n.DocNumberFrom", "Document number, single value. NOTE: on standard FBL1N the "
+     "document number lives in dynamic selections, not the main screen -- if the probe "
+     "cannot find this, leave the whole Fbl1n block blank and use the fallback described "
+     "in the README. PREDICTED", "wnd[0]/usr/ctxtSO_BELNR-LOW", "No"),
+    ("Fbl1n.DocNumberMultiSelect", "The arrow button beside it that opens multiple "
+     "selection. PREDICTED", "wnd[0]/usr/btn%_SO_BELNR_%_APP_%-VALU_PUSH", "No"),
+    ("MultiSel.PasteFromClipboard", "'Upload from clipboard' on the multiple-selection "
+     "dialog. PREDICTED", "wnd[1]/tbar[0]/btn[24]", "No"),
+    ("MultiSel.Confirm", "Copy/Execute on that dialog. PREDICTED",
+     "wnd[1]/tbar[0]/btn[8]", "No"),
+    ("Fbl1n.ExecuteButton", "Execute. PREDICTED", "wnd[0]/tbar[1]/btn[8]", "No"),
+    ("Fbl1n.ResultGrid", "ALV grid of vendor line items. PREDICTED",
+     "wnd[0]/usr/cntlCONTAINER/shellcont/shell", "No"),
+    ("Fbl1n.Col.Amount", "DC amount column. PREDICTED", "DMSHB", "No"),
+    ("Fbl1n.Col.DocNumber", "Document number column. PREDICTED", "BELNR", "No"),
+    ("Fbl1n.Col.Vendor", "Vendor account column. PREDICTED", "LIFNR", "No"),
+    ("Fbl1n.Col.VendorName", "Vendor name column. PREDICTED", "NAME1", "No"),
+    ("--- Step 10: the invoice PDF (NOT RECORDED) ---", "", "", ""),
+    ("Invoice.GosToolbox", "Services-for-object toolbox on the title bar. PREDICTED",
      "wnd[0]/titl/shellcont/shell", "No"),
-    ("Invoice.AttachListGrid", "Attachment-list grid. VERIFY",
+    ("Invoice.AttachListGrid", "Attachment-list grid. PREDICTED",
      "wnd[1]/usr/cntlCONTAINER/shellcont/shell", "No"),
-    ("Invoice.SaveButton", "Save/export button on the attachment list. VERIFY",
+    ("Invoice.SaveButton", "Save/export button on the attachment list. PREDICTED",
      "wnd[1]/tbar[0]/btn[5]", "No"),
-    ("--- Level 2: Santander SCF confirming route ---", "", "", ""),
-    ("Scf.OpenPayment", "How you get from the cleared-items list into the Santander SCF "
-     "payment. A menu entry, a button, or a field to put the cursor on and press F2 -- "
-     "the macro works out which from the control type. BLOCKED: Audit2.vbs recorded "
-     "nothing, so this is unknown",
-     "", "No"),
-    ("Scf.InvoiceListMenu", "Menu path that lists the supplier invoices that SCF payment "
-     "settled. BLOCKED", "", "No"),
-    ("Scf.InvoiceListAnchor", "Optional. An element that exists on that invoice list, "
-     "used only to confirm the previous step landed where expected. BLOCKED",
-     "", "No"),
+    ("--- Step 10, Santander SCF only: the extra hop (NOT RECORDED) ---", "", "", ""),
+    ("Scf.OpenInvoices", "How you get from the SCF payment to the invoices it settled. "
+     "A menu entry, a button, or a field to focus and F2 -- the macro reads the control "
+     "type and does the right thing. BLOCKED: no recording covers it", "", "No"),
+    ("Scf.InvoiceListMenu", "Menu path that lists those invoices. BLOCKED", "", "No"),
 ]
 
 
@@ -383,12 +397,14 @@ def build_screen_map(workbook: Workbook) -> None:
     sheet["B2"] = "SAP element IDs"
     sheet["B2"].font = Font(name=FONT, size=14, bold=True, color="1F3864")
     sheet["B3"] = (
-        "Column F is what the macro reads, and it is pre-filled from "
-        "recordings/Audit.vbs. Rows marked 'recorded' in column D came straight out of "
-        "that file and should be right for this system. Rows marked VERIFY were not "
-        "covered by the recording -- check each one against a fresh Alt+F12 recording "
-        "before switching Run mode to EXTRACT. Rows marked BLOCKED are unknown because "
-        "Audit2.vbs captured no steps."
+        "Column F is what the macro reads. Column D says how much to trust it. "
+        "recorded = came straight out of a recording in recordings/, so it should be "
+        "right for this system. VERIFY = standard SAP, but no recording touched it. "
+        "PREDICTED = written from standard SAP for steps 8-10, which no recording "
+        "reaches at all -- put SAP on the screen in question and run "
+        "modProbe.ProbeCurrentScreen to find out which of these hold, then correct them "
+        "here. BLOCKED = genuinely unknown, and the run stops short of that stage and "
+        "says so."
     )
     sheet["B3"].font = NOTE_FONT
     sheet["B3"].alignment = Alignment(wrap_text=True, vertical="top")
@@ -420,6 +436,10 @@ def build_screen_map(workbook: Workbook) -> None:
         # Provenance, so nobody mistakes a standard guess for a captured value.
         if "BLOCKED" in description:
             source, colour = "BLOCKED", "C00000"
+        elif "PREDICTED" in description:
+            # Written from standard SAP, never observed on this system. Must be
+            # checked with modProbe.ProbeCurrentScreen before an EXTRACT run.
+            source, colour = "PREDICTED", "C55A11"
         elif "VERIFY" in description or "NOT in the recording" in description:
             source, colour = "VERIFY", "BF8F00"
         elif element_id:
@@ -484,6 +504,7 @@ SAMPLE_HEADERS = [
     ("M", "Vendor invoice(s)", 24),
     ("N", "Files", 7),
     ("O", "Message", 52),
+    ("P", "Include?", 10),
 ]
 MACRO_COLUMNS = ("J", "K", "L", "M", "N", "O")
 
@@ -540,8 +561,26 @@ def build_samples(workbook: Workbook, rows: list[dict]) -> None:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
         sheet[f"N{row}"].alignment = Alignment(horizontal="center")
 
+        # Operator-controlled: blank or Yes runs the row, No skips it.
+        include = sheet[f"P{row}"]
+        include.value = "Yes"
+        include.fill = INPUT_FILL
+        include.font = INPUT_FONT
+        include.alignment = Alignment(horizontal="center")
+
     last_row = header_row + len(rows)
-    sheet.auto_filter.ref = f"A{header_row}:O{last_row}"
+    sheet.auto_filter.ref = f"A{header_row}:P{last_row}"
+
+    include_validation = DataValidation(
+        type="list", formula1='"Yes,No"', allow_blank=True, showDropDown=False
+    )
+    sheet.add_data_validation(include_validation)
+    include_validation.add(f"P{header_row + 1}:P{last_row}")
+    sheet[f"P{header_row}"].comment = Comment(
+        "Set to No to leave a row out of the run. Blank counts as Yes. Use the "
+        "autofilter on this column, or modSelect.IncludeOnlyMonth, to pick a subset.",
+        "build_control_workbook.py",
+    )
 
     total_row = last_row + 1
     sheet[f"E{total_row}"] = "Total"

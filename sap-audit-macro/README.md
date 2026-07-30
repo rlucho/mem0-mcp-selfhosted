@@ -1,13 +1,18 @@
 # PP2 audit extract — FEBAN statement evidence
 
 Pulls the SAP-side evidence for the 56 payment samples in the auditor's
-`Samples_Paper_SURL260716_152455.962.xlsx`: the FEBAN bank-statement line, the FI document it
-posted to, the vendor behind it, and the attached invoice image where the configuration allows
-it to be exported.
+`Samples_Paper_SURL260716_152455.962.xlsx`: for each payment line, the FEBAN statement item,
+the FI document, the clearing document, the batch of ZP payments behind it, the largest of
+those payments, and the largest invoice inside that — ending in that invoice's PDF.
 
-The macro is driven from a workbook, not from hardcoded screen IDs. Adapting it to your SAP
-release is a paste-the-recording exercise — see [`RECORDING_GUIDE.md`](RECORDING_GUIDE.md),
-which also answers the `Alt`+`F12` question.
+The macro is driven from a workbook, not from hardcoded screen IDs: every `findById` string is
+read from the `Screen Map` sheet, so correcting one is an edit to a cell rather than to code.
+See [`RECORDING_GUIDE.md`](RECORDING_GUIDE.md), which also answers the `Alt`+`F12` question.
+
+**Choosing which rows to run:** the `Samples` sheet has an `Include?` column, set to `Yes` on
+every row. Set a row to `No` to leave it out; blank counts as included. The Control sheet
+counts what is in and out before you start. Company code is a Control-sheet setting, so
+pointing the run at another company code is one cell.
 
 ---
 
@@ -81,21 +86,25 @@ The full list of data-quality findings is on the `Data Issues` sheet of the gene
 sap-audit-macro/
 ├── FEBAN_Audit_Control.xlsx    the workbook you run from
 ├── samples.csv                 the 56 samples, extracted and normalised
-├── RECORDING_GUIDE.md          Alt+F12, what the recordings gave us, what is still missing
-├── recordings/
-│   ├── Audit.vbs               38 captured steps -- the main chain
-│   └── Audit2.vbs              boilerplate only; captured no steps
+├── RECORDING_GUIDE.md          Alt+F12, what each recording gave us, what is still missing
+├── recordings/                 all four, decoded from UTF-16 to plain text
+│   ├── Audit.vbs               steps 1-7, first pass
+│   ├── Audit2.vbs              steps 1-7 incl. the ALV export and the ZP list export
+│   ├── Audit3.vbs              steps 1-6, stops at the Payment Usage list
+│   └── Audit5.vbs              steps 1-7, second-largest row, ZP list exported
 ├── scripts/
 │   ├── extract_samples.py      auditor's xlsx  -> samples.csv
 │   ├── build_control_workbook.py   samples.csv -> FEBAN_Audit_Control.xlsx
-│   └── test_list_parser.py     tests for the list-parsing logic in modListFile.bas
+│   └── test_list_parser.py     tests for the parsing logic in modExportRead.bas
 └── vba/
     ├── modConfig.bas           reads every setting and element ID from the workbook
     ├── modSafety.bas           the read-only guard
     ├── modSapConnect.bas       attaches to your running session; verifies the SID
-    ├── modFeban.bas            per-month statement search and per-sample matching
-    ├── modChain.bas            statement item -> FI doc -> clearing doc -> invoice
-    ├── modListFile.bas         reads an exported list back to find the largest item
+    ├── modProbe.bas            checks predicted IDs against the live screen
+    ├── modFeban.bas            steps 1-2: per-month search, per-sample matching
+    ├── modChain.bas            steps 2-7 and 10: the walk for one sample
+    ├── modFbl1n.bas            steps 8-9: the ZP payments of one batch
+    ├── modExportRead.bas       reads an export back (workbook or text)
     ├── modExport.bas           ALV and classic list export to local files
     ├── modLog.bas              the audit trail
     ├── modUtil.bas             date, amount, filename helpers
@@ -104,43 +113,49 @@ sap-audit-macro/
 
 ## The chain, per sample
 
-Following `recordings/Audit.vbs`:
-
-1. **FEBAN** for the sample's month — company code GBKM, statement date first to last day.
-   Ten executions cover all 56 samples, because FEBAN selects a period rather than a payment.
-2. **Match the statement line** on value date plus amount. Dates are compared on digits alone,
-   because SAP accepts `01092025` typed in but renders `01.09.2025` in the grid.
-3. **Drill to the FI document** — `txtD2201_BELNR` on the item detail, then F2.
-4. **Drill to the clearing document** — double-click the `DMBTR` line, read `txtBSEG-AUGBL`,
-   then F2.
-5. **Export the cleared items with supplier names** — the `menu[5]/menu[3]` list, saved via
-   *List → Save/Send → File*.
-6. **Read that export back off disk** to find the largest cleared item and its supplier. Done
-   by parsing the file rather than scraping the screen: the export happens anyway, and a
-   classic SAP list on screen is a grid of `lbl[x,y]` elements that has to be reassembled by
-   pixel position.
-7. **Fetch the invoice**, by the route the level-1 supplier implies:
-
 ```
-LEVEL 1   largest cleared item behind the statement line
-          |
-          +-- supplier is NOT Santander SCF
-          |     open that payment, save its PDF.  Done.
-          |
-          +-- supplier IS Santander SCF  (a confirming payment)
-                LEVEL 2   open the SCF payment, list the invoices it settled,
-                          take the largest of THOSE, save that invoice's PDF.
+ 1  FEBAN            company code + statement dates from the audit row     RECORDED
+ 2  result list      export it; find the row by date+amount; open it       RECORDED
+ 3  item detail      Posting Area 1 Doc. number -> F2 -> FI document       RECORDED
+ 4  FI document      first posting-key-40 line with a clearing doc         RECORDED
+ 5  line detail      clearing doc field -> F2 -> clearing document         RECORDED
+ 6  Environment > Payment Usage -> the batch's ZP documents                RECORDED
+ 7  export it, read the ZP document numbers back off disk                  RECORDED
+ 8  FBL1N            company code, all items, month, those ZP numbers      PREDICTED
+ 9  sort by amount, export, take the LARGEST ZP payment of the batch       PREDICTED
+10  inside it, the LARGEST invoice -> export that invoice's PDF            NOT RECORDED
+      largest payment is Santander SCF -> extra hop first (BLOCKED)
+      any other vendor                -> the PDF on the payment
 ```
 
-Level 2 exists because a confirming payment settles the finance provider, not the supplier —
-so the SCF payment has to be opened to reach the underlying supplier invoices. Both levels
-pick their winner the same way (export the list, read it back, take the largest), so
-`modListFile` does the work twice with its own column captions each time. **Level 2 is
-BLOCKED** — see below.
+Steps 1–7 come out of the four files in [`recordings/`](recordings/) and their IDs are
+captured values. **All four recordings stop at step 7**, so 8–10 are written from standard
+SAP rather than observed. Every stage past 7 is gated: a sample whose gate is shut finishes
+at the last step that worked and records the document numbers a person needs to carry on.
 
-Step 6 logs which column it took as the amount and which as the supplier, so a wrong guess
-shows up on the first sample instead of quietly skewing all 56. If it picks wrong, name the
-column captions on the Control sheet.
+Two "largest" decisions, both read from the data rather than assumed from a sort order — the
+largest ZP payment, then the largest invoice inside it. Worth knowing why: the recordings
+sorted *ascending* and took row index 1, which on a list of negative amounts is the **second**
+largest. Reading values avoids inheriting that.
+
+## Verifying the predicted steps without recording
+
+Steps 8–10 are predictions, and there is a faster way to check them than another Alt+F12
+session:
+
+1. Enter `FBL1N` by hand and stop on the selection screen.
+2. Run **`modProbe.ProbeCurrentScreen`**. It reports which of the mapped IDs are actually on
+   that screen, and what type of control each one is. It only reads — it presses nothing.
+3. For any it cannot find, run **`modProbe.DumpScreen`** to list every named element there,
+   and paste the right one into column F.
+4. Execute FBL1N by hand, then run `ProbeCurrentScreen` again for the result-grid rows and
+   **`modFbl1n.DumpGridColumns`** for its column names.
+
+One thing to expect: on standard FBL1N the **document number is not on the main selection
+screen** — it lives in dynamic selections. If the probe cannot find `Fbl1n.DocNumberFrom`,
+leave the whole `Fbl1n.*` block blank. The run then stops at step 7 having exported the
+Payment Usage list and logged the ZP numbers, which is still the bulk of the work, and steps
+8–10 can be done from that list by hand.
 
 ## Setting it up
 
@@ -187,9 +202,17 @@ inside it — 10 FEBAN executions for 56 samples, not 56.
 ```
 <download root>/
   Sep 25/
-    01_2025-09-03_8072447_FEBAN_statement.txt
+    00_Sep 25_FEBAN_statement.xlsx      once per month
+    01_2025-09-03_8072447_ZP_batch_list.xlsx
+    01_2025-09-03_8072447_ZP_payments.xlsx
+    01_2025-09-03_8072447_invoice.pdf
     ...
 ```
+
+The recordings name every export `.XLSX`, so these come back as real workbooks rather than
+delimited text. `modExportRead` sniffs the first two bytes — a ZIP signature means a workbook
+and it is opened with `Workbooks.Open`; anything else is parsed as text. Trusting the
+extension would not work, because SAP writes plain text into a `.XLSX` name often enough.
 
 and, in the workbook itself:
 
