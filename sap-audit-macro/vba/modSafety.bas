@@ -58,7 +58,8 @@ Private Const KNOWN_POPUP_TITLES As String = _
     "Information|Attachment list|Service: Attachment list|" & _
     "Business Document Navigator|Save As|Directory Browse|" & _
     "Postprocess|Post-process|Bank Statement|Electronic Account Statement|" & _
-    "Select File|Save in file|Restrictions"
+    "Select File|Save in file|Restrictions|" & _
+    "Cleared Line Items|Payment Usage|Payment usage|Document Overview|List of Documents"
 
 Public gWriteAttemptBlocked As Long     ' counted, and surfaced in the summary
 

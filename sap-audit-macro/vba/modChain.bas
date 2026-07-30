@@ -39,6 +39,11 @@ Attribute VB_Name = "modChain"
 '=======================================================================
 Option Explicit
 
+' Which window the Payment Usage list came up in. Set by OpenPaymentUsage and
+' read by the export, because it is wnd[1] on this system and wnd[0] in the
+' recordings -- neither can be assumed.
+Private mListWindow As String
+
 Public Type ChainResult
     ' steps 3-5
     FiDocument As String
@@ -103,6 +108,7 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                "FI document " & result.FiDocument & " has no line with both posting key " & _
                modConfig.Setting("Clearing line posting key") & " and a clearing " & _
                "document, so the batch could not be reached. Check the document by hand."
+        modLog.LogAction sampleIdx, "Step 4", result.Notes, "ERROR", vbNullString
         Walk = result
         Exit Function
     End If
@@ -125,8 +131,8 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
     ' --- steps 6-7: Payment Usage, and the ZP numbers in the batch -------
     OpenPaymentUsage sampleIdx
 
-    result.ZpListFile = modExport.ExportClassicList( _
-        sampleIdx, folder, fileStem & "_ZP_batch_list.xlsx")
+    result.ZpListFile = modExport.ExportListFrom( _
+        sampleIdx, mListWindow, vbNullString, folder, fileStem & "_ZP_batch_list.xlsx")
 
     If Len(result.ZpListFile) = 0 Then
         Finish result, "ERROR", _
@@ -588,19 +594,80 @@ Private Sub OpenPaymentUsage(ByVal sampleIdx As Long)
     modSapConnect.WaitForSap
     modSafety.AssertPopupKnown
 
-    anchorId = modConfig.ElementIdOrBlank("PaymentUsage.ListAnchor")
-    If Len(anchorId) > 0 Then
-        If Not modSapConnect.Exists(anchorId) Then
-            modLog.LogAction sampleIdx, "Step 6", _
-                         "Environment > Payment Usage did not produce the expected list " & _
-                         "-- the anchor " & anchorId & " is not on screen. Clear " & _
-                         "PaymentUsage.ListAnchor to skip this check.", "ERROR", vbNullString
-            Exit Sub
+    ' On this system the cleared-items list opens in a modal window, titled
+    ' "Cleared Line Items for Document ...". The recordings had it in wnd[0],
+    ' so nothing downstream can assume which window holds it.
+    mListWindow = "wnd[0]"
+    If modSapConnect.ModalWindowOpen() Then
+        mListWindow = "wnd[1]"
+        modLog.LogAction sampleIdx, "Step 6", _
+                     "Payment Usage opened as a modal window: """ & _
+                     modSapConnect.ModalWindowTitle() & """. " & DescribeWindow("wnd[1]"), _
+                     "OK", vbNullString
+    Else
+        anchorId = modConfig.ElementIdOrBlank("PaymentUsage.ListAnchor")
+        If Len(anchorId) > 0 Then
+            If Not modSapConnect.Exists(anchorId) Then
+                modLog.LogAction sampleIdx, "Step 6", _
+                             "Payment Usage produced no modal and the anchor " & _
+                             anchorId & " is not on wnd[0] either. " & _
+                             DescribeWindow("wnd[0]"), "ERROR", vbNullString
+                Exit Sub
+            End If
         End If
-    End If
 
-    modLog.LogAction sampleIdx, "Step 6", _
-                 "Opened Environment > Payment Usage", "OK", vbNullString
+        modLog.LogAction sampleIdx, "Step 6", _
+                     "Opened Environment > Payment Usage in the main window", _
+                     "OK", vbNullString
+    End If
+End Sub
+
+' A one-line inventory of what a window holds, so an unexpected screen is
+' diagnosable from the Log instead of needing another run with the prober.
+Private Function DescribeWindow(ByVal windowId As String) As String
+    Dim grids As Long, labels As Long, fields As Long, buttons As Long
+    Dim firstGrid As String
+
+    CountControls windowId, 0, grids, labels, fields, buttons, firstGrid
+
+    DescribeWindow = "It holds " & grids & " grid/shell, " & labels & " label, " & _
+                     fields & " field and " & buttons & " button controls" & _
+                     IIf(Len(firstGrid) > 0, ". First grid: " & firstGrid, "") & "."
+End Function
+
+Private Sub CountControls(ByVal elementId As String, ByVal depth As Long, _
+                          ByRef grids As Long, ByRef labels As Long, _
+                          ByRef fields As Long, ByRef buttons As Long, _
+                          ByRef firstGrid As String)
+    Dim control As Object, child As Object
+    Dim kind As String
+
+    If depth > 10 Then Exit Sub
+    If Not modSapConnect.Exists(elementId) Then Exit Sub
+
+    Set control = modSapConnect.Element(elementId)
+
+    On Error Resume Next
+    kind = control.Type
+    On Error GoTo 0
+
+    Select Case kind
+        Case "GuiShell", "GuiGridView", "GuiTableControl"
+            grids = grids + 1
+            If Len(firstGrid) = 0 Then firstGrid = control.Id
+        Case "GuiLabel"
+            labels = labels + 1
+        Case "GuiTextField", "GuiCTextField", "GuiComboBox"
+            fields = fields + 1
+        Case "GuiButton"
+            buttons = buttons + 1
+    End Select
+
+    On Error Resume Next
+    For Each child In control.Children
+        CountControls child.Id, depth + 1, grids, labels, fields, buttons, firstGrid
+    Next child
+    On Error GoTo 0
 End Sub
 
 ' A recorded step is a menu entry, a button, or a field to focus and F2.

@@ -93,6 +93,19 @@ End Function
 '-----------------------------------------------------------------------
 Public Function ExportClassicList(ByVal sampleIdx As Long, ByVal folder As String, _
                                   ByVal fileName As String) As String
+    ExportClassicList = ExportListFrom(sampleIdx, "wnd[0]", vbNullString, folder, fileName)
+End Function
+
+' Export whichever list is showing, from whichever window holds it.
+'
+' The Payment Usage list is in wnd[0] in the recordings and in a modal on
+' this system, and the two need different routes: a modal has no menu bar,
+' so List > Save/Send > File does not exist there, but the list inside it is
+' an ALV grid and exports through the grid's own toolbar. Work out which
+' shape is in front of us rather than assuming either.
+Public Function ExportListFrom(ByVal sampleIdx As Long, ByVal windowId As String, _
+                               ByVal gridId As String, ByVal folder As String, _
+                               ByVal fileName As String) As String
     Dim target As String
     Dim menuId As String
 
@@ -102,17 +115,91 @@ Public Function ExportClassicList(ByVal sampleIdx As Long, ByVal folder As Strin
 
     modUtil.EnsureFolder folder
 
-    menuId = modConfig.ElementIdOrBlank("Export.ListMenu")
-    If Len(menuId) > 0 And modSapConnect.Exists(menuId) Then
-        modSapConnect.Element(menuId).Select
+    ' A grid in the window takes the ALV route, which works inside a modal.
+    If Len(gridId) = 0 Then gridId = FirstGridIn(windowId)
+
+    If Len(gridId) > 0 Then
+        modLog.LogAction sampleIdx, "Export list", _
+                     "Exporting the grid " & gridId & " in " & windowId & _
+                     " through the ALV toolbar.", "OK", vbNullString
+
+        On Error Resume Next
+        modSapConnect.Element(gridId).pressToolbarContextButton _
+            modConfig.ElementIdOrBlank("Export.AlvToolbarButton")
+        modSapConnect.Element(gridId).selectContextMenuItem _
+            modConfig.ElementIdOrBlank("Export.AlvMenuItem")
+        On Error GoTo 0
         modSapConnect.WaitForSap
     Else
-        ' Fallback for a list that does offer the OK-code.
-        modSafety.GuardedOkCode "%pc"
+        menuId = modConfig.ElementIdOrBlank("Export.ListMenu")
+        If windowId <> "wnd[0]" Then menuId = vbNullString   ' a modal has no menu bar
+
+        If Len(menuId) > 0 And modSapConnect.Exists(menuId) Then
+            modSapConnect.Element(menuId).Select
+            modSapConnect.WaitForSap
+        Else
+            modLog.LogAction sampleIdx, "Export list", _
+                         "No grid found in " & windowId & " and no usable list menu, so " & _
+                         "the list could not be exported. Falling back to the %pc " & _
+                         "OK-code.", "MANUAL", vbNullString
+            modSafety.GuardedOkCode "%pc"
+        End If
     End If
 
     ConfirmFormatPopupIfPresent
-    ExportClassicList = CompleteSaveDialog(sampleIdx, folder, fileName)
+    ExportListFrom = CompleteSaveDialogAnyWindow(sampleIdx, folder, fileName)
+End Function
+
+' The first grid-like control in a window, or "" when there is none.
+Public Function FirstGridIn(ByVal windowId As String) As String
+    FirstGridIn = SearchForGrid(windowId, 0)
+End Function
+
+Private Function SearchForGrid(ByVal elementId As String, ByVal depth As Long) As String
+    Dim control As Object, child As Object
+    Dim kind As String, found As String
+
+    If depth > 10 Then Exit Function
+    If Not modSapConnect.Exists(elementId) Then Exit Function
+
+    Set control = modSapConnect.Element(elementId)
+
+    On Error Resume Next
+    kind = control.Type
+    On Error GoTo 0
+
+    If kind = "GuiGridView" Or kind = "GuiShell" Then
+        ' A shell that answers RowCount is a grid; a toolbar shell is not.
+        On Error Resume Next
+        If control.RowCount >= 0 Then SearchForGrid = control.Id
+        On Error GoTo 0
+        If Len(SearchForGrid) > 0 Then Exit Function
+    End If
+
+    On Error Resume Next
+    For Each child In control.Children
+        found = SearchForGrid(child.Id, depth + 1)
+        If Len(found) > 0 Then
+            SearchForGrid = found
+            Exit For
+        End If
+    Next child
+    On Error GoTo 0
+End Function
+
+' The save dialog can come up in wnd[1] or, when the list itself is already
+' modal, in wnd[2]. Take whichever one is carrying the path field.
+Private Function CompleteSaveDialogAnyWindow(ByVal sampleIdx As Long, ByVal folder As String, _
+                                             ByVal fileName As String) As String
+    If modSapConnect.Exists("wnd[2]/usr/ctxtDY_PATH") Then
+        CompleteSaveDialogAnyWindow = CompleteSaveDialogIn(sampleIdx, "wnd[2]", folder, fileName)
+    ElseIf modSapConnect.Exists("wnd[1]/usr/ctxtDY_PATH") Then
+        CompleteSaveDialogAnyWindow = CompleteSaveDialogIn(sampleIdx, "wnd[1]", folder, fileName)
+    Else
+        modLog.LogAction sampleIdx, "Export list", _
+                     "No save dialog appeared in wnd[1] or wnd[2] after the export " & _
+                     "command, so nothing was written.", "ERROR", vbNullString
+    End If
 End Function
 
 ' Same save dialog, for callers that opened it themselves -- the invoice

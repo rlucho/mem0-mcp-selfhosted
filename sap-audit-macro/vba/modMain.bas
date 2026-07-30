@@ -274,6 +274,12 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
                 chain.FiDocument, InvoiceTrail(chain), _
                 CountFiles(chain), chain.Notes
 
+    ' Only DONE counts as reaching the end. Anything else stopped somewhere,
+    ' and reporting it as processed made "Errors: 0" true while seven chains
+    ' had in fact failed.
+    ProcessSample = (chain.Status = "DONE")
+    Exit Function
+
     ' Return to the statement list for the next sample in this month. A
     ' drill-down can leave the session several screens deep, so this is not
     ' a single Back -- and if the list cannot be restored, stop rather than
@@ -284,9 +290,6 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
                   " and could not get it back. Stopping so that later samples are " & _
                   "not read off the wrong screen."
     End If
-
-    ProcessSample = True
-    Exit Function
 
 SampleFailed:
     message = Err.Description
