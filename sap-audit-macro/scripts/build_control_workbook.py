@@ -398,10 +398,12 @@ SCREEN_MAP_ROWS = [
     ("Fbl1n.ResultAnchor", "Confirms the FBL1N result came up. NOTE: FBL1N renders as a "
      "CLASSIC LIST here (lbl[x,y]), not an ALV grid, so there is no grid to read -- the "
      "list is exported and read back instead. VERIFY", "wnd[0]/usr/lbl[164,8]", "No"),
-    ("--- Opening a document by number (FB03) ---", "", "", ""),
-    ("FB03.DocNumber", "Document number field on the FB03 entry screen. This is how the "
-     "largest payment is opened -- by number, not by clicking a row. Standard SAP; run "
-     "modProbe.ProbeCurrentScreen on FB03 to confirm. VERIFY",
+    ("--- FB03: fallback only, not the normal path ---", "", "", ""),
+    ("FB03.DocNumber", "The largest payment is normally opened from the FBL1N list "
+     "itself, by finding the label whose text is its document number -- the same F2 "
+     "drill the recordings use, aimed by content instead of by screen position. FB03 is "
+     "only used if that number is not on screen, e.g. a long list that has scrolled. "
+     "Leave these blank to disable the fallback entirely. VERIFY",
      "wnd[0]/usr/txtRF05L-BELNR", "No"),
     ("FB03.CompanyCode", "Company code field on that screen. VERIFY",
      "wnd[0]/usr/ctxtRF05L-BUKRS", "No"),

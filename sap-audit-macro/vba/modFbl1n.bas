@@ -315,13 +315,94 @@ Private Function CountNumbers(ByVal zpNumbers As String) As Long
 End Function
 
 '-----------------------------------------------------------------------
-' Open the largest payment of the batch.
+' Open the largest payment of the batch, staying on the FBL1N list.
 '
-' NOT by clicking it on the list. FBL1N renders as a classic list here, and
-' the recordings reach a row with lbl[164,10] -- a fixed screen coordinate
-' that lands on whatever happens to be the tenth line. The document number
-' is already known from the export, so open it directly in FB03 instead:
-' deterministic, and FB03 is display-only.
+' The recordings reach a row with lbl[164,10] -- a fixed screen coordinate,
+' which lands on whatever happens to be the tenth line and so picks the
+' wrong document on a batch of a different size. But the fix is not to
+' leave FBL1N: it is to find the row by its CONTENT rather than its
+' position. The document number is already known from the export, so walk
+' the labels on screen and focus the one whose text is that number, then
+' F2 -- exactly the drill the recordings use, just aimed properly.
+'
+' Same principle as finding a column by what it holds rather than by its
+' translated caption. Position and language are both accidents of display.
+'
+' FB03 is only the fallback, for when the number is not on screen at all --
+' a long list that has scrolled, most likely. It is display-only and needs
+' no extra rights, but it is not the normal path.
+'-----------------------------------------------------------------------
+Public Function OpenPaymentOnList(ByVal sampleIdx As Long, _
+                                  ByVal documentNumber As String) As Boolean
+    Dim labelId As String
+
+    If Len(documentNumber) = 0 Then Exit Function
+
+    labelId = LabelShowing(documentNumber)
+    If Len(labelId) = 0 Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "Document " & documentNumber & " is not among the labels on the " & _
+                     "FBL1N list -- the list may have scrolled past it. Falling back to " & _
+                     "opening it in FB03.", "MANUAL", vbNullString
+        Exit Function
+    End If
+
+    On Error GoTo Failed
+
+    modSapConnect.Element(labelId).SetFocus
+    modSafety.GuardedSendVKey "wnd[0]", 2
+    modSafety.AssertPopupKnown
+
+    modLog.LogAction sampleIdx, "Open payment", _
+                 "Opened payment " & documentNumber & " from the FBL1N list via " & _
+                 labelId & " (found by its text, not by position)", "OK", vbNullString
+
+    OpenPaymentOnList = True
+    Exit Function
+
+Failed:
+    modLog.LogAction sampleIdx, "Open payment", _
+                 "Could not open " & documentNumber & " from the list: " & Err.Description, _
+                 "ERROR", vbNullString
+End Function
+
+' The id of the label on the current screen whose text is this document
+' number. SAP pads document numbers with leading zeros in some columns and
+' not others, so compare on digits.
+Private Function LabelShowing(ByVal documentNumber As String) As String
+    Dim area As Object, child As Object
+    Dim wanted As String
+
+    wanted = OnlyDigits(documentNumber)
+    If Len(wanted) = 0 Then Exit Function
+
+    If Not modSapConnect.Exists("wnd[0]/usr") Then Exit Function
+    Set area = modSapConnect.Element("wnd[0]/usr")
+
+    On Error Resume Next
+    For Each child In area.Children
+        If child.Type = "GuiLabel" Then
+            If OnlyDigits(child.Text) = wanted Then
+                LabelShowing = child.Id
+                Exit For
+            End If
+        End If
+    Next child
+    On Error GoTo 0
+End Function
+
+Private Function OnlyDigits(ByVal text As String) As String
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch >= "0" And ch <= "9" Then OnlyDigits = OnlyDigits & ch
+    Next i
+End Function
+
+'-----------------------------------------------------------------------
+' Fallback: open it in FB03 by number. Display-only.
 '-----------------------------------------------------------------------
 Public Function OpenPaymentByDocument(ByVal sampleIdx As Long, _
                                       ByVal documentNumber As String, _
