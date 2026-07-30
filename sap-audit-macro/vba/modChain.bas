@@ -594,14 +594,15 @@ Private Sub OpenPaymentUsage(ByVal sampleIdx As Long)
     modSapConnect.WaitForSap
     modSafety.AssertPopupKnown
 
-    ' On this system the cleared-items list opens in a modal window, titled
-    ' "Cleared Line Items for Document ...". The recordings had it in wnd[0],
-    ' so nothing downstream can assume which window holds it.
+    ' SAP announces this step with an informational window titled after the
+    ' document -- "Cleared Line Items for Document GBKM 0900722750 2026" --
+    ' and then loads the list behind it. That window is not an obstacle and
+    ' is not latched: which window holds the list is decided at export time,
+    ' because the announcement may be gone by then.
     mListWindow = "wnd[0]"
     If modSapConnect.ModalWindowOpen() Then
-        mListWindow = "wnd[1]"
         modLog.LogAction sampleIdx, "Step 6", _
-                     "Payment Usage opened as a modal window: """ & _
+                     "Payment Usage announced itself with """ & _
                      modSapConnect.ModalWindowTitle() & """. " & DescribeWindow("wnd[1]"), _
                      "OK", vbNullString
     Else

@@ -115,33 +115,37 @@ Public Function ExportListFrom(ByVal sampleIdx As Long, ByVal windowId As String
 
     modUtil.EnsureFolder folder
 
-    ' A grid in the window takes the ALV route, which works inside a modal.
-    If Len(gridId) = 0 Then gridId = FirstGridIn(windowId)
+    ' Order matters. List > Save/Send > File is what the recordings do and
+    ' what works by hand, so try that first and only fall back to the grid's
+    ' own toolbar when the menu is genuinely not there -- which is the case
+    ' when the list sits inside a modal, since a modal has no menu bar.
+    menuId = modConfig.ElementIdOrBlank("Export.ListMenu")
 
-    If Len(gridId) > 0 Then
+    If Len(menuId) > 0 And modSapConnect.Exists(menuId) Then
         modLog.LogAction sampleIdx, "Export list", _
-                     "Exporting the grid " & gridId & " in " & windowId & _
-                     " through the ALV toolbar.", "OK", vbNullString
-
-        On Error Resume Next
-        modSapConnect.Element(gridId).pressToolbarContextButton _
-            modConfig.ElementIdOrBlank("Export.AlvToolbarButton")
-        modSapConnect.Element(gridId).selectContextMenuItem _
-            modConfig.ElementIdOrBlank("Export.AlvMenuItem")
-        On Error GoTo 0
+                     "Exporting through List > Save/Send > File.", "OK", vbNullString
+        modSapConnect.Element(menuId).Select
         modSapConnect.WaitForSap
     Else
-        menuId = modConfig.ElementIdOrBlank("Export.ListMenu")
-        If windowId <> "wnd[0]" Then menuId = vbNullString   ' a modal has no menu bar
+        If Len(gridId) = 0 Then gridId = FirstGridIn(windowId)
 
-        If Len(menuId) > 0 And modSapConnect.Exists(menuId) Then
-            modSapConnect.Element(menuId).Select
+        If Len(gridId) > 0 Then
+            modLog.LogAction sampleIdx, "Export list", _
+                         "No list menu available, so exporting the grid " & gridId & _
+                         " in " & windowId & " through the ALV toolbar instead.", _
+                         "OK", vbNullString
+
+            On Error Resume Next
+            modSapConnect.Element(gridId).pressToolbarContextButton _
+                modConfig.ElementIdOrBlank("Export.AlvToolbarButton")
+            modSapConnect.Element(gridId).selectContextMenuItem _
+                modConfig.ElementIdOrBlank("Export.AlvMenuItem")
+            On Error GoTo 0
             modSapConnect.WaitForSap
         Else
             modLog.LogAction sampleIdx, "Export list", _
-                         "No grid found in " & windowId & " and no usable list menu, so " & _
-                         "the list could not be exported. Falling back to the %pc " & _
-                         "OK-code.", "MANUAL", vbNullString
+                         "Neither a list menu nor a grid was found in " & windowId & _
+                         ". Falling back to the %pc OK-code.", "MANUAL", vbNullString
             modSafety.GuardedOkCode "%pc"
         End If
     End If

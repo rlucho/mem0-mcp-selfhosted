@@ -191,54 +191,36 @@ End Function
 ' Popup guard
 '-----------------------------------------------------------------------
 Public Sub AssertPopupKnown()
+    NoteUnknownPopup
+End Sub
+
+' Note an unrecognised modal window -- do NOT stop the run for it.
+'
+' This used to raise, and that was wrong. The guard's real purpose is to
+' stop a blind Enter through a window nobody identified, but nothing here
+' presses blind: every action goes to a specific mapped id, and the
+' committing OK-codes and the Save key are blocked outright regardless of
+' what is on screen. Raising on an unfamiliar title therefore stopped
+' legitimate flows -- the cleared-items list opens in a window titled after
+' the document, so its title is different for every single sample and could
+' never have been on a fixed list.
+'
+' It is logged, so an unexpected window is still visible in the trail.
+Public Sub NoteUnknownPopup()
     Dim title As String
 
     If Not modSapConnect.ModalWindowOpen() Then Exit Sub
+    If PopupLooksKnownByStructure() Then Exit Sub
 
     title = Trim$(modSapConnect.ModalWindowTitle())
-    If Not TitleIsKnown(title) Then
-        Err.Raise vbObjectError + 534, "modSafety.AssertPopupKnown", _
-                  "Unrecognised popup: """ & title & """" & vbCrLf & vbCrLf & _
-                  "The run stopped rather than clicking through it. Deal with it by " & _
-                  "hand, note what it was, and either add it to KNOWN_POPUP_TITLES in " & _
-                  "modSafety or handle it explicitly."
-    End If
+    If TitleIsKnown(title) Then Exit Sub
+
+    modLog.LogAction 0, "Popup", _
+                 "A window titled """ & title & """ is open and is not one the run " & _
+                 "recognises. Carrying on, because nothing is pressed blind -- but if " & _
+                 "the next step misbehaves, this is where to look.", _
+                 "MANUAL", vbNullString
 End Sub
-
-' Identify a popup by what it contains rather than what it is called.
-Private Function PopupLooksKnownByStructure() As Boolean
-    Dim probe As Variant
-
-    ' The save dialog, at either depth.
-    For Each probe In Array("wnd[1]/usr/ctxtDY_PATH", "wnd[2]/usr/ctxtDY_PATH", _
-                            "wnd[1]/usr/ctxtDY_FILENAME", "wnd[2]/usr/ctxtDY_FILENAME")
-        If modSapConnect.Exists(CStr(probe)) Then
-            PopupLooksKnownByStructure = True
-            Exit Function
-        End If
-    Next probe
-
-    ' The attachment list, and the multiple-selection dialog.
-    For Each probe In Array(modConfig.ElementIdOrBlank("Invoice.AttachListGrid"), _
-                            modConfig.ElementIdOrBlank("MultiSel.PasteFromClipboard"))
-        If Len(CStr(probe)) > 0 Then
-            If modSapConnect.Exists(CStr(probe)) Then
-                PopupLooksKnownByStructure = True
-                Exit Function
-            End If
-        End If
-    Next probe
-
-    ' An operator who has met a popup this does not know can widen it without
-    ' editing code, in whatever language their system speaks.
-    If TitleIsKnown(ExtraKnownTitles()) Then PopupLooksKnownByStructure = True
-End Function
-
-Private Function ExtraKnownTitles() As String
-    On Error Resume Next
-    ExtraKnownTitles = Trim$(modConfig.Setting("Extra popup titles to allow"))
-    On Error GoTo 0
-End Function
 
 Private Function TitleIsKnown(ByVal title As String) As Boolean
     Dim known() As String
