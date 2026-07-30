@@ -1,0 +1,57 @@
+idx,source_row,month_tab,statement_date_from,statement_date_to,payment_date,amount,party,payment_reference,flags
+1,5,Sep 25,2025-09-01,2025-09-30,2025-09-03,8072447.42,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+2,6,Sep 25,2025-09-01,2025-09-30,2025-09-12,2161788.23,DS SMITH LTD,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned
+3,7,Sep 25,2025-09-01,2025-09-30,2025-09-15,5988033.60,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+4,8,Sep 25,2025-09-01,2025-09-30,2025-09-22,2942842.52,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+5,9,Sep 25,2025-09-01,2025-09-30,2025-09-24,8617262.93,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+6,10,Sep 25,2025-09-01,2025-09-30,2025-09-25,2968313.21,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+7,11,Sep 25,2025-09-01,2025-09-30,2025-09-30,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+8,12,Oct 25,2025-10-01,2025-10-31,2025-10-01,4483676.08,SANTANDER SCF,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+9,13,Oct 25,2025-10-01,2025-10-31,2025-10-03,3412038.97,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+10,14,Oct 25,2025-10-01,2025-10-31,2025-10-13,3385329.45,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+11,15,Oct 25,2025-10-01,2025-10-31,2025-10-20,4898587.92,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+12,16,Oct 25,2025-10-01,2025-10-31,2025-10-24,3480924.53,DS SMITH LTD,ISSUE CHAPS PAYMENT,date_stored_as_text; party_whitespace_cleaned
+13,17,Oct 25,2025-10-01,2025-10-31,2025-10-27,2614260.03,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+14,18,Oct 25,2025-10-01,2025-10-31,2025-10-31,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+15,19,Oct 25,2025-10-01,2025-10-31,2025-10-31,3317511.83,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+16,20,Nov 25,2025-11-01,2025-11-30,2025-11-03,3724798.28,SANTANDER SCF,ISSUE CHAPS PAYMENT,
+17,21,Nov 25,2025-11-01,2025-11-30,2025-11-05,5044035.13,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+18,22,Nov 25,2025-11-01,2025-11-30,2025-11-17,5245536.51,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+19,23,Nov 25,2025-11-01,2025-11-30,2025-11-28,4173936.71,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+20,24,Nov 25,2025-11-01,2025-11-30,2025-11-28,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,date_stored_as_text; ref_whitespace_cleaned; party_whitespace_cleaned
+21,25,Dec 25,2025-12-01,2025-12-31,2025-12-29,2828677.68,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+22,26,Dec 25,2025-12-01,2025-12-31,2025-12-31,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+23,27,Dec 25,2025-12-01,2025-12-31,2025-12-31,2233241.99,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+24,28,Jan 26,2026-01-01,2026-01-31,2026-01-02,3489077.98,SANTANDER SCF,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned
+25,29,Jan 26,2026-01-01,2026-01-31,2026-01-06,4395299.21,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+26,30,Jan 26,2026-01-01,2026-01-31,2026-01-09,8800991.40,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+27,31,Jan 26,2026-01-01,2026-01-31,2026-01-16,6502110.67,DS SMITH LTD,ISSUE CHAPS PAYMENT,date_stored_as_text; ref_whitespace_cleaned; party_whitespace_cleaned
+28,32,Jan 26,2026-01-01,2026-01-31,2026-01-29,3463573.21,DS SMITH LTD,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+29,33,Jan 26,2026-01-01,2026-01-31,2026-01-30,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+30,34,Feb 26,2026-02-01,2026-02-28,2026-02-02,3679179.76,SANTANDER SCF,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned
+31,35,Feb 26,2026-02-01,2026-02-28,2026-02-04,3674499.52,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+32,36,Feb 26,2026-02-01,2026-02-28,2026-02-27,6558159.12,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+33,37,Feb 26,2026-02-01,2026-02-28,2026-02-27,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+34,38,Mar 26,2026-03-01,2026-03-31,2026-03-02,3562528.89,SANTANDER SCF,ISSUE CHAPS PAYMENT,ref_whitespace_cleaned; party_whitespace_cleaned
+35,39,Mar 26,2026-03-01,2026-03-31,2026-03-04,8557737.25,,ACH PYMTS - LCL BULK FNDG,no_named_beneficiary
+36,40,Mar 26,2026-03-01,2026-03-31,2026-03-12,2301959.84,,ACH PYMTS - LCL BULK FNDG,no_named_beneficiary
+37,41,Mar 26,2026-03-01,2026-03-31,2026-03-27,5989486.48,DS Smith Paper Limited,DS Smith Paper Limited,ref_holds_a_party_name_not_a_transaction_description; party_whitespace_cleaned
+38,42,Mar 26,2026-03-01,2026-03-31,2026-03-31,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,
+39,43,Apr 26,2026-04-01,2026-04-30,2026-04-01,3316944.84,SANTANDER SCF,ISSUE CHAPS PAYMENT,
+40,44,Apr 26,2026-04-01,2026-04-30,2026-04-16,2611670.69,DS SMITH LTD,ISSUE CHAPS PAYMENT,
+41,45,Apr 26,2026-04-01,2026-04-30,2026-04-17,4996002.96,,ACH PYMTS - LCL BULK FNDG,no_named_beneficiary
+42,46,Apr 26,2026-04-01,2026-04-30,2026-04-23,2334786.77,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+43,47,Apr 26,2026-04-01,2026-04-30,2026-04-27,2598639.67,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+44,48,Apr 26,2026-04-01,2026-04-30,2026-04-30,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,
+45,49,Apr 26,2026-04-01,2026-04-30,2026-04-30,3232025.51,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+46,50,May 26,2026-05-01,2026-05-31,2026-05-05,3723586.74,SANTANDER SCF,ISSUE CHAPS PAYMENT,
+47,51,May 26,2026-05-01,2026-05-31,2026-05-08,5009315.83,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+48,52,May 26,2026-05-01,2026-05-31,2026-05-15,4340970.40,,ACH PYMTS - LCL BULK FNDG,ref_whitespace_cleaned; no_named_beneficiary
+49,53,May 26,2026-05-01,2026-05-31,2026-05-28,2400509.91,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+50,54,May 26,2026-05-01,2026-05-31,2026-05-29,3444449.93,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+51,55,May 26,2026-05-01,2026-05-31,2026-05-29,2450000.00,DS SMITH LTD,ISSUE CHAPS PAYMENT,
+52,56,Jun 26,2026-06-01,2026-06-30,2026-06-03,5210470.59,,ACH PYMTS - LCL BULK FNDG,ref_typo_corrected_from:ACH PYMTS - LCL BULK FNG; no_named_beneficiary
+53,57,Jun 26,2026-06-01,2026-06-30,2026-06-04,4006482.03,SANTANDER SCF,ISSUE CHAPS PAYMENT,
+54,58,Jun 26,2026-06-01,2026-06-30,2026-06-11,6226088.99,,ACH PYMTS - LCL BULK FNDG,no_named_beneficiary
+55,59,Jun 26,2026-06-01,2026-06-30,2026-06-12,2292348.71,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
+56,60,Jun 26,2026-06-01,2026-06-30,2026-06-29,2782960.69,DS Smith Paper Limited,ISSUE CHAPS PAYMENT,party_whitespace_cleaned
