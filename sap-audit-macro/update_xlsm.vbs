@@ -92,6 +92,19 @@ SetNote book, "Payment document type", _
         "list -- 'ZP, ZV, KZ' -- for batches paid outside the normal payment run. When " & _
         "nothing matches, the Log names the types the file actually held."
 
+' The first invoice this system exported came back as document type RN, not
+' the KR the setting shipped with, so the KR filter matched nothing. Widen it
+' -- but only if the operator has not already put their own value there.
+fixedCells = fixedCells + SetValueIfDefault(book, "Invoice document type", "KR", "KR, RN")
+SetNote book, "Invoice document type", _
+        "The PDF is taken from the invoice, which carries a NEGATIVE amount. The list it " & _
+        "is picked from holds several types at once -- ZP payments, invoices, SB statement " & _
+        "documents -- so without this filter the largest row is usually a payment, not an " & _
+        "invoice. Comparisons are on magnitude, so the negative sign does not matter. " & _
+        "Takes a comma-separated list: KR is the SAP standard, and the first invoice " & _
+        "exported from this system came back as RN, so both are here. When nothing " & _
+        "matches, the Log names the types the file actually held."
+
 ' --- 2. modules -------------------------------------------------------------
 vbaOk = False
 removed = 0
@@ -197,6 +210,23 @@ Function AddId(wb, key, value, note)
     sheet.Cells(lastKey + 1, 5).Value = "No"
     sheet.Cells(lastKey + 1, 6).Value = value
     AddId = 1
+End Function
+
+' Change a Control VALUE, but only when it is still the value this project
+' shipped. Anything the operator has typed themselves is left alone.
+Function SetValueIfDefault(wb, settingName, oldDefault, newDefault)
+    Dim sheet, r
+    SetValueIfDefault = 0
+    Set sheet = wb.Worksheets("Control")
+    For r = 1 To 200
+        If Trim(CStr(sheet.Cells(r, 2).Value)) = settingName Then
+            If Trim(CStr(sheet.Cells(r, 3).Value)) = oldDefault Then
+                sheet.Cells(r, 3).Value = newDefault
+                SetValueIfDefault = 1
+            End If
+            Exit Function
+        End If
+    Next
 End Function
 
 ' Replace the Notes cell of a Control setting, leaving its VALUE alone -- the

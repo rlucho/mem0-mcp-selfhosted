@@ -44,6 +44,11 @@ Option Explicit
 ' recordings -- neither can be assumed.
 Private mListWindow As String
 
+' What 'Environment > Payment usage' is called on this system, captured from
+' the menu step 6 uses. Step 10 needs the same command from a screen where it
+' sits at a different menu index.
+Private mUsageMenuText As String
+
 Public Type ChainResult
     ' steps 3-5
     FiDocument As String
@@ -148,10 +153,28 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
     result.ZpNumberCount = matched
 
     If matched = 0 Then
-        Finish result, "PARTIAL", _
-               "No " & modConfig.Setting("Payment document type") & " document numbers " & _
-               "were found in " & result.ZpListFile & ". Open it and check the column " & _
-               "headings against the 'Payment usage ...' settings on the Control sheet."
+        ' Two very different things look the same here. A batch of 100+ rows
+        ' with no ZP among them means the type column was read wrongly. A
+        ' batch of two rows -- the SB statement line and the AB clearing that
+        ' offsets it -- means this is not a vendor payment run at all, but a
+        ' treasury or FX settlement, and there are no supplier invoices behind
+        ' it to download. Say which one it is.
+        If rejected <= 2 Then
+            Finish result, "PARTIAL", _
+                   "Clearing document " & result.ClearingDocument & " settles directly " & _
+                   "against the bank statement -- the Payment Usage list holds only the " & _
+                   "statement line and its offsetting entry, no vendor payments. This is " & _
+                   "a treasury or FX settlement rather than a payment run, so there is no " & _
+                   "supplier invoice behind it. See " & result.ZpListFile & "; the Log " & _
+                   "names the document types it held."
+        Else
+            Finish result, "PARTIAL", _
+                   "No " & modConfig.Setting("Payment document type") & " document " & _
+                   "numbers were found among " & rejected & " rows in " & result.ZpListFile & _
+                   ". That many rows is a payment run, so the document-type column was " & _
+                   "probably read wrongly -- check the headings against the 'Payment " & _
+                   "usage ...' settings on the Control sheet. The Log names the types it saw."
+        End If
         Walk = result
         Exit Function
     End If
@@ -212,6 +235,69 @@ Failed:
     Finish result, "ERROR", Err.Description
     modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
     Walk = result
+End Function
+
+'-----------------------------------------------------------------------
+' Where 'Environment > Payment usage' is on THIS screen.
+'
+' The menu index is not a property of the command, it is a property of the
+' screen: menu[5]/menu[3] from the clearing document, menu[4]/menu[3] in the
+' recordings, and something else again on the FB03 overview. Two mapped
+' guesses first, then a search of the menu bar for the caption step 6 read
+' off this very system -- which is why the search needs no translation
+' table and works on any logon language.
+'-----------------------------------------------------------------------
+Private Function FindUsageMenu() As String
+    Dim mapped As String
+
+    ' Caption first, indices second. A mapped index that happens to EXIST on
+    ' this screen is not evidence it is the right command -- menu[4]/menu[3]
+    ' is something different on every screen that has four menus. The caption
+    ' was read off this system minutes earlier and is exact.
+    If Len(mUsageMenuText) > 0 Then
+        FindUsageMenu = MenuWithCaption("wnd[0]/mbar", mUsageMenuText, 0)
+        If Len(FindUsageMenu) > 0 Then Exit Function
+    End If
+
+    mapped = modConfig.ElementIdOrBlank("Payment.UsageMenu")
+    If Len(mapped) > 0 Then
+        If modSapConnect.Exists(mapped) Then
+            FindUsageMenu = mapped
+            Exit Function
+        End If
+    End If
+
+    mapped = modConfig.ElementIdOrBlank("PaymentUsage.Menu")
+    If Len(mapped) > 0 Then
+        If modSapConnect.Exists(mapped) Then FindUsageMenu = mapped
+    End If
+End Function
+
+' Depth-first walk of the menu bar for an entry with this caption.
+Private Function MenuWithCaption(ByVal elementId As String, ByVal caption As String, _
+                                 ByVal depth As Long) As String
+    Dim control As Object, child As Object
+    Dim found As String
+
+    If depth > 4 Then Exit Function
+    If Not modSapConnect.Exists(elementId) Then Exit Function
+
+    Set control = modSapConnect.Element(elementId)
+
+    On Error Resume Next
+    For Each child In control.Children
+        If StrComp(Trim$(child.Text), Trim$(caption), vbTextCompare) = 0 Then
+            MenuWithCaption = child.Id
+            Exit Function
+        End If
+
+        found = MenuWithCaption(child.Id, caption, depth + 1)
+        If Len(found) > 0 Then
+            MenuWithCaption = found
+            Exit Function
+        End If
+    Next child
+    On Error GoTo 0
 End Function
 
 ' The document-overview button, when the Screen Map carries one. Optional and
@@ -276,33 +362,34 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
     ' only looked shorter because the operator had fewer rows to sort through.
     ' So there is one path here, not two, and IsConfirmingPayment now only
     ' colours the report.
-    usageMenuId = modConfig.ElementIdOrBlank("Payment.UsageMenu")
-
-    If Len(usageMenuId) = 0 Then
-        Finish result, "BLOCKED_INVOICE", _
-               summary & " Payment.UsageMenu is blank on the Screen Map, so the invoices " & _
-               "behind that payment were not listed. To finish by hand: open payment " & _
-               result.ZpPaymentDocument & " and take the largest " & _
-               modConfig.Setting("Invoice document type") & " document behind it."
-        modLog.LogAction sampleIdx, "Step 10", result.Notes, "MANUAL", result.ZpExportFile
-        Exit Sub
-    End If
-
     On Error GoTo Failed
+
+    usageMenuId = FindUsageMenu()
 
     ' F2 on a vendor line-item list lands on the LINE ITEM, and Environment >
     ' Payment usage lives on the document. N1.vbs bridged that with the
     ' document-overview button, so do the same before giving up.
-    If Not modSapConnect.Exists(usageMenuId) Then ShowDocumentOverview sampleIdx
+    If Len(usageMenuId) = 0 Then
+        ShowDocumentOverview sampleIdx
+        usageMenuId = FindUsageMenu()
+    End If
 
-    If Not modSapConnect.Exists(usageMenuId) Then
+    If Len(usageMenuId) = 0 Then
         Finish result, "BLOCKED_INVOICE", _
-               summary & " Payment.UsageMenu (" & usageMenuId & ") is not on this screen. " & _
-               "Menu indices differ per screen -- check it against a recording taken from " & _
-               "inside the payment document."
+               summary & " Could not find Environment > Payment usage on the payment's " & _
+               "screen. Tried " & modConfig.ElementIdOrBlank("Payment.UsageMenu") & ", " & _
+               modConfig.ElementIdOrBlank("PaymentUsage.Menu") & " and a search of the " & _
+               "whole menu bar for """ & mUsageMenuText & """. To finish by hand: open " & _
+               "payment " & result.ZpPaymentDocument & " and take the largest " & _
+               modConfig.Setting("Invoice document type") & " document behind it."
         modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
         Exit Sub
     End If
+
+    modLog.LogAction sampleIdx, "Step 10", _
+                 "Opening the invoices behind payment " & result.ZpPaymentDocument & _
+                 " through " & usageMenuId & " (""" & mUsageMenuText & """).", _
+                 "OK", vbNullString
 
     beforeMenu = modSapConnect.ScreenSignature()
 
@@ -316,12 +403,11 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
     ' same size, same 166 rows, then 'no KR row found in it'.
     If modSapConnect.ScreenSignature() = beforeMenu Then
         Finish result, "BLOCKED_INVOICE", _
-               summary & " " & usageMenuId & " left the screen unchanged, so the " & _
-               "invoices behind the payment were never listed and nothing was " & _
-               "exported. Payment.UsageMenu is a menu INDEX -- menu[4]/menu[3] is " & _
-               "Environment > Payment usage on some screens and something else on " & _
-               "others. Record that menu from inside the payment document and correct " & _
-               "the Screen Map row."
+               summary & " " & usageMenuId & " (""" & mUsageMenuText & """) left the " & _
+               "screen unchanged, so the invoices behind the payment were never listed " & _
+               "and nothing was exported. The command is there but did nothing from this " & _
+               "screen -- record Environment > Payment usage from inside a payment " & _
+               "document and correct Payment.UsageMenu on the Screen Map."
         modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
         Exit Sub
     End If
@@ -628,15 +714,19 @@ Private Function OpenClearingLine(ByVal sampleIdx As Long) As Boolean
     ' clearing-document one, so say what was read rather than just 'none'.
     If chosen < 0 Then
         For r = 0 To rows - 1
-            seenValues = seenValues & IIf(Len(seenValues) > 0, ", ", "") & _
-                         "[" & Trim$(GridCell(grid, r, clearingColumn)) & "]"
+            seenValues = seenValues & IIf(Len(seenValues) > 0, "; ", "") & _
+                         "row " & r & " key=" & _
+                         IIf(Len(keyColumn) > 0, Trim$(GridCell(grid, r, keyColumn)), "?") & _
+                         " clearing=[" & Trim$(GridCell(grid, r, clearingColumn)) & "]"
         Next r
 
         modLog.LogAction sampleIdx, "Step 4", _
-                     "No line carries a clearing document. Column " & clearingColumn & _
-                     " over " & rows & " line(s) held: " & seenValues & _
-                     ". If those are not clearing documents, correct Doc.Col.ClearingDoc " & _
-                     "on the Screen Map; if they are blank, the document is not cleared.", _
+                     "No line carries a clearing document. Over " & rows & " line(s), " & _
+                     "column " & clearingColumn & " held: " & seenValues & _
+                     ". If those cells are blank the document is genuinely not cleared -- " & _
+                     "the payment may hang off Posting Area 2 of the statement item " & _
+                     "rather than Posting Area 1, which is the field this macro reads. " & _
+                     "Open the statement line by hand and check both areas.", _
                      "ERROR", vbNullString
         Exit Function
     End If
@@ -656,8 +746,20 @@ End Function
 
 Private Sub OpenPaymentUsage(ByVal sampleIdx As Long)
     Dim anchorId As String
+    Dim menuId As String
 
-    modSapConnect.Element(modConfig.ElementId("PaymentUsage.Menu")).Select
+    menuId = modConfig.ElementId("PaymentUsage.Menu")
+
+    ' Remember what this menu entry is CALLED on this system, before selecting
+    ' it. Step 10 needs the same command from a different screen, where the
+    ' menu sits at a different index -- menu[5]/menu[3] here, menu[4]/menu[3]
+    ' in the recordings. Matching on the caption read from this system at run
+    ' time finds it wherever it moved to, without hardcoding a translation.
+    On Error Resume Next
+    mUsageMenuText = modSapConnect.Element(menuId).Text
+    On Error GoTo 0
+
+    modSapConnect.Element(menuId).Select
     modSapConnect.WaitForSap
     modSafety.AssertPopupKnown
 

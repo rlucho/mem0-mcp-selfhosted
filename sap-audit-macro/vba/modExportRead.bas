@@ -608,6 +608,8 @@ Public Function LargestRowOfType(ByVal path As String, ByVal sampleIdx As Long, 
     Dim r As Long
     Dim value As Double, best As Double
     Dim typeCol As Long, skipped As Long
+    Dim skippedTypes As Object
+    Dim typesSeen As String
 
     If Not LoadExport(path, sampleIdx) Then Exit Function
     If Not FindColumns(sampleIdx, amountSetting, supplierSetting, documentSetting, _
@@ -632,10 +634,18 @@ Public Function LargestRowOfType(ByVal path As String, ByVal sampleIdx As Long, 
         End If
     End If
 
+    Set skippedTypes = CreateObject("Scripting.Dictionary")
+    skippedTypes.CompareMode = vbTextCompare
+
     For r = mHeaderRow + 1 To mRowCount
         If typeCol > 0 Then
             If Not TypeWanted(Normalise(mCells(r, typeCol)), wantedType) Then
                 skipped = skipped + 1
+                If Len(Normalise(mCells(r, typeCol))) > 0 Then
+                    If Not skippedTypes.Exists(Normalise(mCells(r, typeCol))) Then
+                        skippedTypes.Add Normalise(mCells(r, typeCol)), True
+                    End If
+                End If
                 GoTo NextRow
             End If
         End If
@@ -664,9 +674,18 @@ NextRow:
     Next r
 
     If Len(wantedType) > 0 And typeCol > 0 Then
+        ' Naming the types that WERE there is the difference between 'no
+        ' invoice found' and 'the invoices on this system are type RN, not
+        ' KR' -- which is what column 6 of the first invoice export held.
+        If Not result.Found And skippedTypes.Count > 0 Then
+            typesSeen = " The types in the file: " & Join(skippedTypes.Keys, ", ") & _
+                        ". If the invoice is one of those, add it to 'Invoice document " & _
+                        "type' on the Control sheet -- it takes a comma-separated list."
+        End If
+
         modLog.LogAction sampleIdx, "Read export", _
                      result.RowsConsidered & " row(s) of type " & wantedType & " considered, " & _
-                     skipped & " of other types skipped.", _
+                     skipped & " of other types skipped." & typesSeen, _
                      IIf(result.Found, "OK", "ERROR"), path
     End If
 

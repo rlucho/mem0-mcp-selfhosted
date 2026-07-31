@@ -462,7 +462,17 @@ Public Function OpenPaymentOnList(ByVal sampleIdx As Long, _
 
     before = modSapConnect.ScreenSignature()
 
+    ' SetFocus alone does NOT move SAP's cursor on a classic list -- every
+    ' recording follows it with caretPosition, and that is what registers.
+    ' Without it F2 acted on wherever the cursor already was, which is the top
+    ' of the list: a run that had correctly picked payment 1100053275 opened
+    ' 1100053056, the first row, and exported its invoices instead. SAP said
+    ' 'Place the cursor on an item' on the samples where it did nothing at all.
     modSapConnect.Element(labelId).SetFocus
+    On Error Resume Next
+    modSapConnect.Element(labelId).caretPosition = 1
+    On Error GoTo Failed
+
     modSafety.GuardedSendVKey "wnd[0]", 2
     modSafety.AssertPopupKnown
 
@@ -480,9 +490,22 @@ Public Function OpenPaymentOnList(ByVal sampleIdx As Long, _
         Exit Function
     End If
 
+    ' Changing screen is not the same as landing on the RIGHT document. The
+    ' wrong-row drill above changed screen quite happily. The document the
+    ' chain asked for has to be visible on whatever came up.
+    If Not modSapConnect.ScreenShowsNumber(documentNumber) Then
+        modLog.LogAction sampleIdx, "Open payment", _
+                     "F2 on " & labelId & " opened a screen that does not show document " & _
+                     documentNumber & ", so it drilled into the wrong row. Falling back " & _
+                     "to opening it in FB03, which takes the number directly.", _
+                     "MANUAL", vbNullString
+        Exit Function
+    End If
+
     modLog.LogAction sampleIdx, "Open payment", _
                  "Opened payment " & documentNumber & " from the FBL1N list via " & _
-                 labelId & " (found by its text, not by position)", "OK", vbNullString
+                 labelId & " (found by its text, and confirmed on the screen it opened)", _
+                 "OK", vbNullString
 
     OpenPaymentOnList = True
     Exit Function

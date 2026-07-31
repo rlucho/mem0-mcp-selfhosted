@@ -191,6 +191,58 @@ Public Function ScreenSignature() As String
     ScreenSignature = ScreenSignature & "|" & children & "|" & Left$(firstText, 60)
 End Function
 
+'-----------------------------------------------------------------------
+' Is this number written anywhere on the main window?
+'
+' Used to prove a drill-down landed on the document it was aimed at. SAP
+' pads document numbers with leading zeros in some places and not others,
+' so the comparison is on digits, and a longer string that CONTAINS the
+' number counts -- a title reading 'Document 1100053275 GBKM 2026' is the
+' confirmation we are after.
+'-----------------------------------------------------------------------
+Public Function ScreenShowsNumber(ByVal number As String) As Boolean
+    Dim wanted As String
+
+    wanted = DigitsOf(number)
+    If Len(wanted) = 0 Then Exit Function
+
+    ScreenShowsNumber = TextUnder("wnd[0]", wanted, 0)
+End Function
+
+Private Function TextUnder(ByVal elementId As String, ByVal wantedDigits As String, _
+                           ByVal depth As Long) As Boolean
+    Dim control As Object, child As Object
+
+    If depth > 8 Then Exit Function
+    If Not Exists(elementId) Then Exit Function
+
+    Set control = gSession.findById(elementId)
+
+    On Error Resume Next
+    If InStr(DigitsOf(control.Text), wantedDigits) > 0 Then
+        TextUnder = True
+        Exit Function
+    End If
+
+    For Each child In control.Children
+        If TextUnder(child.Id, wantedDigits, depth + 1) Then
+            TextUnder = True
+            Exit Function
+        End If
+    Next child
+    On Error GoTo 0
+End Function
+
+Private Function DigitsOf(ByVal text As String) As String
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch >= "0" And ch <= "9" Then DigitsOf = DigitsOf & ch
+    Next i
+End Function
+
 ' Does an element exist on the current screen?
 Public Function Exists(ByVal elementId As String) As Boolean
     Dim probe As Object
