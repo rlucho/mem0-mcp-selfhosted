@@ -168,7 +168,8 @@ Private Function Describe(ByVal book As Workbook, ByVal requestName As String, _
                        "  reference=" & ColumnLetter(map.ReferenceCol) & _
                        IIf(map.CommentCol > 0, _
                            "  comment=" & ColumnLetter(map.CommentCol), "") & vbCrLf & _
-                       FirstRows(sheet, map) & vbCrLf
+                       FirstRows(sheet, map) & _
+                       WrongShapeWarning(map) & vbCrLf
             Else
                 text = text & "'" & sheet.Name & "' -- no date-and-amount header found, " & _
                        "skipped." & vbCrLf & vbCrLf
@@ -179,6 +180,23 @@ Private Function Describe(ByVal book As Workbook, ByVal requestName As String, _
     If used = 0 Then text = text & "No usable sheets in this file." & vbCrLf
 
     Describe = text & String$(50, "-") & vbCrLf & total & " sample(s) in total."
+End Function
+
+' Say so loudly when the sheet does not look like an audit request.
+'
+' A SAP Payment Usage export has a Document Date and an Amount in local
+' currency, so the header probe accepts it and hands back rows -- but it has
+' no party and no transaction description, because it is not a list of
+' payments an auditor picked. It is the macro's OWN output. One got imported
+' as a request; 'party=(none)' in the line above was too easy to skim past.
+Private Function WrongShapeWarning(ByRef map As ColumnMap) As String
+    If map.PartyCol > 0 Then Exit Function
+
+    WrongShapeWarning = _
+        "     *** No party column on this sheet. An auditor's request names " & vbCrLf & _
+        "     *** the party for most rows. A sheet with a date and an amount " & vbCrLf & _
+        "     *** but no party is usually a SAP export rather than a request " & vbCrLf & _
+        "     *** -- check this is the file you meant before saying Yes." & vbCrLf
 End Function
 
 ' Two rows of what was read, so a wrong column is obvious before it is
