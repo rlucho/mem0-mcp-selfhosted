@@ -56,6 +56,7 @@ Private Sub Build(ByVal quiet As Boolean)
     AddOne sheet, top, "     FBL1N columns (see note)", "modFbl1n.DumpFbl1nColumns", built
     AddOne sheet, top, "     Dump this SAP screen", "modProbe.DumpScreen", built
     AddOne sheet, top, "     Clear the log", "modLog.ClearLog", built
+    AddOne sheet, top, "     Restore Excel settings", "modMain.RestoreExcelSettings", built
 
     sheet.Activate
     If Not quiet Then

@@ -103,6 +103,7 @@ Public Sub RunExtract()
     Dim monthKey As Variant
     Dim i As Long
     Dim confirmation As VbMsgBoxResult
+    Dim remoteWas As Boolean
 
     On Error GoTo Failed
 
@@ -140,6 +141,10 @@ Public Sub RunExtract()
     modSapConnect.SapAttach
     modSafety.gWriteAttemptBlocked = 0
     modLog.WriteHeaderBlock
+
+    ' SAP opens every export it writes. Refuse the request for the duration
+    ' of the run -- the macro opens the file itself when it wants to read it.
+    remoteWas = modUtil.SuppressRemoteOpen()
 
     Application.ScreenUpdating = False
 
@@ -197,6 +202,7 @@ Public Sub RunExtract()
 
 Finished:
     On Error Resume Next
+    modUtil.RestoreRemoteOpen remoteWas
     Application.ScreenUpdating = True
     Application.StatusBar = False
     modLog.WriteFooterBlock processed, errored, files
@@ -215,6 +221,7 @@ Finished:
     Exit Sub
 
 Failed:
+    modUtil.RestoreRemoteOpen remoteWas
     Application.ScreenUpdating = True
     Application.StatusBar = False
     modLog.LogAction 0, "RUN ABORTED", Err.Description, "ERROR", vbNullString
@@ -695,6 +702,32 @@ Private Function ScopeSummary() As String
 End Function
 
 '-----------------------------------------------------------------------
+' Put Excel back the way it was, if a run ended badly.
+'
+' The run switches off Excel's response to DDE open requests, so SAP cannot
+' hand it each export as it is written. That is an APPLICATION setting: it
+' survives closing the workbook, and while it is on, double-clicking a file
+' in Explorer opens Excel with a blank window. Every exit path restores it,
+' but a hard crash has no exit path -- hence a button.
+'-----------------------------------------------------------------------
+Public Sub RestoreExcelSettings()
+    modUtil.RestoreRemoteOpen False
+
+    On Error Resume Next
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.StatusBar = False
+    On Error GoTo 0
+
+    MsgBox "Excel is back to normal:" & vbCrLf & vbCrLf & _
+           "  responds to files opened from Explorer" & vbCrLf & _
+           "  screen updating on" & vbCrLf & _
+           "  alerts on" & vbCrLf & vbCrLf & _
+           "Only needed if a run stopped hard -- every normal exit does this " & _
+           "on its own.", vbInformation, "Restore Excel settings"
+End Sub
+
+'-----------------------------------------------------------------------
 ' Wipe the result columns so the sheet reads as 'not started' again.
 '
 ' A re-run does not need this -- every result column is overwritten as each
@@ -821,6 +854,7 @@ Public Sub RunSingleMonth()
     Dim files As Long
     Dim matched As Boolean
     Dim done As Long, failed As Long
+    Dim remoteWas As Boolean
 
     answer = InputBox("Which month tab? For example: Sep 25", "Run one month", "Sep 25")
     If Len(Trim$(answer)) = 0 Then Exit Sub
@@ -834,6 +868,7 @@ Public Sub RunSingleMonth()
     modSapConnect.SapAttach
     modSafety.gWriteAttemptBlocked = 0
     modLog.WriteHeaderBlock
+    remoteWas = modUtil.SuppressRemoteOpen()
 
     For i = 1 To count
         If StrComp(samples(i).MonthTab, Trim$(answer), vbTextCompare) = 0 Then
@@ -866,6 +901,7 @@ Public Sub RunSingleMonth()
     End If
 
     modLog.WriteFooterBlock done, failed, files
+    modUtil.RestoreRemoteOpen remoteWas
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
 
     ' Say where they stopped, read off the Log, rather than assuming. The old
@@ -881,6 +917,7 @@ Public Sub RunSingleMonth()
     Exit Sub
 
 Failed:
+    modUtil.RestoreRemoteOpen remoteWas
     modLog.LogAction 0, "RUN ABORTED", Err.Description, "ERROR", vbNullString
     MsgBox "Stopped: " & Err.Description, vbCritical
 End Sub

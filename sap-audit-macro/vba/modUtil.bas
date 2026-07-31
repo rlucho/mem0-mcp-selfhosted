@@ -276,6 +276,39 @@ End Function
 ' workbook, and never anything the operator opened themselves.
 '-----------------------------------------------------------------------
 '-----------------------------------------------------------------------
+' Stop SAP handing each export to Excel in the first place.
+'
+' SAP downloads the file and then asks Excel to open it, over DDE. Closing
+' the workbook afterwards is a race that cannot be won -- three separate
+' closes were in place and 'Excel can't open two workbooks with the same
+' name at the same time' still stopped a 56-sample run twice, because the
+' open lands whenever SAP gets round to it and every sample folder now uses
+' the same file names.
+'
+' IgnoreRemoteRequests is the switch behind Excel's 'Ignore other
+' applications that use DDE' option. With it on, the request is refused and
+' nothing opens -- which is what we want, since the macro opens the export
+' itself, from the path, when it is ready to read it.
+'
+' It is an APPLICATION setting, not a workbook one, so it outlives a crash.
+' Every caller restores it, the run restores it on the way out of both its
+' error paths, and RestoreExcelSettings is there for the case where none of
+' that happened.
+'-----------------------------------------------------------------------
+Public Function SuppressRemoteOpen() As Boolean
+    On Error Resume Next
+    SuppressRemoteOpen = Application.IgnoreRemoteRequests
+    Application.IgnoreRemoteRequests = True
+    On Error GoTo 0
+End Function
+
+Public Sub RestoreRemoteOpen(ByVal previous As Boolean)
+    On Error Resume Next
+    Application.IgnoreRemoteRequests = previous
+    On Error GoTo 0
+End Sub
+
+'-----------------------------------------------------------------------
 ' Close any open workbook with this file NAME, wherever it came from.
 '
 ' Excel refuses to hold two workbooks with the same name at once, whatever
