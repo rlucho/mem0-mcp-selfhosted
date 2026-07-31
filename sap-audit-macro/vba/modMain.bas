@@ -103,10 +103,19 @@ Public Sub RunExtract()
     modConfig.LoadScreenMap
     modConfig.AssertScreenMapComplete
 
-    count = LoadSamples(samples)
+    ' Scope first: every sample, or only the rows marked Include? The run
+    ' works out which FEBAN periods it needs and opens them itself -- the
+    ' operator picks samples, never months.
+    confirmation = MsgBox(ScopeSummary(), vbQuestion + vbYesNoCancel, "Run samples")
+    If confirmation = vbCancel Then Exit Sub
+
+    count = LoadSamplesWhere(samples, confirmation = vbNo)
+
     If count = 0 Then
-        MsgBox "No samples found on the '" & modConfig.SHEET_SAMPLES & "' sheet.", _
-               vbExclamation
+        MsgBox "Nothing to run." & vbCrLf & vbCrLf & _
+               "Either the '" & modConfig.SHEET_SAMPLES & "' sheet is empty -- use " & _
+               "'Import request' to add an auditor's file -- or every row is marked " & _
+               "Include? = No.", vbExclamation, "Run samples"
         Exit Sub
     End If
 
@@ -115,7 +124,7 @@ Public Sub RunExtract()
             "Run mode is EXTRACT, so files will be written to:" & vbCrLf & vbCrLf & _
             "    " & modConfig.Setting("Download root folder") & vbCrLf & vbCrLf & _
             count & " samples across " & CountDistinctMonths(samples, count) & _
-            " FEBAN periods." & vbCrLf & vbCrLf & _
+            " FEBAN period(s)." & vbCrLf & vbCrLf & _
             "The extract will contain vendor and payment data. Make sure that folder " & _
             "is somewhere approved for it." & vbCrLf & vbCrLf & "Continue?", _
             vbQuestion + vbYesNo + vbDefaultButton2, "Confirm extract")
@@ -471,6 +480,13 @@ End Sub
 ' Samples sheet -> array
 '-----------------------------------------------------------------------
 Private Function LoadSamples(ByRef samples() As Sample) As Long
+    LoadSamples = LoadSamplesWhere(samples, False)
+End Function
+
+' includeEverything ignores the Include? column, for the operator who says
+' 'run the lot' rather than marking rows one at a time.
+Private Function LoadSamplesWhere(ByRef samples() As Sample, _
+                                  ByVal includeEverything As Boolean) As Long
     Dim sheet As Worksheet
     Dim row As Long, lastRow As Long
     Dim count As Long
@@ -483,7 +499,7 @@ Private Function LoadSamples(ByRef samples() As Sample) As Long
     For row = modConfig.SAMPLES_FIRST_ROW To lastRow
         If IsNumeric(sheet.Cells(row, COL_IDX).Value) And _
            IsDate(sheet.Cells(row, COL_PAY_DATE).Value) And _
-           IsIncluded(sheet, row) Then
+           (includeEverything Or IsIncluded(sheet, row)) Then
 
             count = count + 1
             samples(count).Row = row
@@ -517,8 +533,94 @@ Private Function LoadSamples(ByRef samples() As Sample) As Long
         End If
     Next row
 
-    LoadSamples = count
+    LoadSamplesWhere = count
 End Function
+
+' What is on the sheet, per request, so the operator can see the scope
+' before answering rather than trusting a single number.
+Private Function ScopeSummary() As String
+    Dim sheet As Worksheet
+    Dim row As Long, lastUsed As Long
+    Dim keys As Object, included As Object, total As Object
+    Dim key As Variant
+    Dim text As String
+    Dim onSheet As Long, marked As Long
+
+    Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
+    lastUsed = sheet.Cells(sheet.Rows.Count, COL_PAY_DATE).End(xlUp).row
+
+    Set keys = CreateObject("Scripting.Dictionary")
+    Set included = CreateObject("Scripting.Dictionary")
+    Set total = CreateObject("Scripting.Dictionary")
+    keys.CompareMode = vbTextCompare
+    included.CompareMode = vbTextCompare
+    total.CompareMode = vbTextCompare
+
+    For row = modConfig.SAMPLES_FIRST_ROW To lastUsed
+        If IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then
+            key = Trim$(CStr(sheet.Cells(row, COL_REQUEST).Value))
+            If Len(key) = 0 Then key = "(no request name)"
+            key = key & "  [" & Trim$(CStr(sheet.Cells(row, COL_COMPANY).Value)) & "]"
+
+            If Not keys.Exists(key) Then
+                keys.Add key, True
+                total.Add key, 0
+                included.Add key, 0
+            End If
+
+            total(key) = total(key) + 1
+            onSheet = onSheet + 1
+
+            If IsIncluded(sheet, row) Then
+                included(key) = included(key) + 1
+                marked = marked + 1
+            End If
+        End If
+    Next row
+
+    For Each key In keys.Keys
+        text = text & "   " & key & "  --  " & included(key) & " of " & total(key) & vbCrLf
+    Next key
+
+    ScopeSummary = onSheet & " sample(s) on the '" & modConfig.SHEET_SAMPLES & _
+                   "' sheet, " & marked & " marked Include." & vbCrLf & vbCrLf & _
+                   text & vbCrLf & _
+                   "The run opens whichever FEBAN periods these need, on its own." & _
+                   vbCrLf & vbCrLf & _
+                   "YES     run the " & marked & " marked Include" & vbCrLf & _
+                   "NO      run all " & onSheet & ", ignoring the Include column" & vbCrLf & _
+                   "CANCEL  stop"
+End Function
+
+'-----------------------------------------------------------------------
+' Bulk-set the Include? column, so choosing what to run is not 141 edits.
+'-----------------------------------------------------------------------
+Public Sub IncludeAllSamples()
+    SetIncludeAll "Yes"
+End Sub
+
+Public Sub ExcludeAllSamples()
+    SetIncludeAll "No"
+End Sub
+
+Private Sub SetIncludeAll(ByVal value As String)
+    Dim sheet As Worksheet
+    Dim row As Long, lastUsed As Long, touched As Long
+
+    Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
+    lastUsed = sheet.Cells(sheet.Rows.Count, COL_PAY_DATE).End(xlUp).row
+
+    For row = modConfig.SAMPLES_FIRST_ROW To lastUsed
+        If IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then
+            sheet.Cells(row, COL_INCLUDE).Value = value
+            touched = touched + 1
+        End If
+    Next row
+
+    MsgBox touched & " sample(s) set to Include? = " & value & "." & vbCrLf & vbCrLf & _
+           "Change individual rows from here, then run.", _
+           vbInformation, "Include " & LCase$(value)
+End Sub
 
 ' Blank counts as included, so a freshly generated sheet runs everything and
 ' the operator only has to touch the rows they want left out.

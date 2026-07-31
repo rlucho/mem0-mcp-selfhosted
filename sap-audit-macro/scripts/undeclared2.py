@@ -64,7 +64,7 @@ vbBinaryCompare vbObjectError VbMsgBoxResult xlUp xlWhole xlSheetVeryHidden xlVa
 xlOpenXMLWorkbookMacroEnabled VBA7 Win64 SaveChanges fileName UpdateLinks ReadOnly What
 xlTop xlOpenXMLWorkbook FileFormat After Before Link DisplayAsIcon IconLabel
 IconFileName Anchor Address TextToDisplay SubAddress ScreenTip Left Top Width Height
-Destination Origin Filename fileFilter Title vbBoolean vbDate vbString vbEmpty vbNull UpdateLinks ButtonName
+Destination Origin Filename fileFilter Title vbBoolean vbDate vbString vbEmpty vbNull vbYesNoCancel vbCancel UpdateLinks ButtonName
 LookAt MatchCase Offset Find End Rows Columns Copy Paste
 """.split())
 

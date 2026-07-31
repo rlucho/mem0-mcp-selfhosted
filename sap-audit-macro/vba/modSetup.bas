@@ -44,13 +44,15 @@ Private Sub Build(ByVal quiet As Boolean)
 
     top = BUTTON_TOP
 
-    AddOne sheet, top, "0.  Import request", "modImport.ImportRequest", built
-    AddOne sheet, top, "1.  Check setup", "modMain.CheckSetup", built
-    AddOne sheet, top, "2.  Probe this SAP screen", "modProbe.ProbeCurrentScreen", built
-    AddOne sheet, top, "3.  Dump FEBAN grid columns", "modFeban.DumpGridColumns", built
-    AddOne sheet, top, "3b. FBL1N columns (see note)", "modFbl1n.DumpFbl1nColumns", built
-    AddOne sheet, top, "4.  Run one month", "modMain.RunSingleMonth", built
-    AddOne sheet, top, "5.  Run all samples", "modMain.RunExtract", built
+    AddOne sheet, top, "1.  Import request", "modImport.ImportRequest", built
+    AddOne sheet, top, "2.  Check setup", "modMain.CheckSetup", built
+    AddOne sheet, top, "3.  RUN SAMPLES", "modMain.RunExtract", built
+    AddOne sheet, top, "     Include every sample", "modMain.IncludeAllSamples", built
+    AddOne sheet, top, "     Exclude every sample", "modMain.ExcludeAllSamples", built
+    AddOne sheet, top, "     Run one month (testing)", "modMain.RunSingleMonth", built
+    AddOne sheet, top, "     Probe this SAP screen", "modProbe.ProbeCurrentScreen", built
+    AddOne sheet, top, "     Dump FEBAN grid columns", "modFeban.DumpGridColumns", built
+    AddOne sheet, top, "     FBL1N columns (see note)", "modFbl1n.DumpFbl1nColumns", built
     AddOne sheet, top, "     Dump this SAP screen", "modProbe.DumpScreen", built
     AddOne sheet, top, "     Clear the log", "modLog.ClearLog", built
 
