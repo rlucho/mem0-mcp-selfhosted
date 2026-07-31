@@ -247,6 +247,12 @@ Private Function ExportMonthStatementList(ByVal monthTab As String, _
                                   modUtil.RequestFolderName(request, companyCode)), _
                  modUtil.SafeFileName(monthTab))
 
+    ' The sample folders are cleared before each sample; this one was not,
+    ' so three runs of Sep 25 left '1 - FEBAN statement list.xlsx', '_2' and
+    ' '_3' side by side -- the export never overwrites. Only the numbered
+    ' files go; the sample subfolders below are untouched.
+    modUtil.ClearSampleFolder folder
+
     ExportMonthStatementList = modExport.ExportAlvGrid(0, folder, modUtil.FILE_FEBAN)
     mMonthStatementFile = ExportMonthStatementList
     Exit Function
