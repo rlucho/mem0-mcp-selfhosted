@@ -21,7 +21,8 @@ Option Explicit
 '         2 - Payment usage - batch.xlsx
 '         3 - FBL1N - payments in the batch.xlsx
 '         4 - Invoices behind the largest payment.xlsx
-'         5 - Largest invoice.pdf
+'         5 - Supplier invoices behind the largest SCF settlement.xlsx
+'         6 - Largest invoice.pdf
 '
 ' One folder per sample, and fixed names inside it. The sample used to be
 ' encoded in every file name because everything sat in one folder; now the
@@ -36,7 +37,7 @@ Public Const FILE_BATCH As String = "2 - Payment usage - batch of payments.xlsx"
 Public Const FILE_FIDOC As String = "2 - FI document line items (not cleared).xlsx"
 Public Const FILE_ZPLIST As String = "3 - FBL1N - payments in the batch.xlsx"
 Public Const FILE_INVOICES As String = "4 - Documents behind the largest payment.xlsx"
-Public Const FILE_SCF As String = "5 - Supplier invoices behind the SCF settlement.xlsx"
+Public Const FILE_SCF As String = "5 - Supplier invoices behind the largest SCF settlement.xlsx"
 Public Const FILE_PDF As String = "6 - Largest invoice.pdf"
 
 #If VBA7 Then

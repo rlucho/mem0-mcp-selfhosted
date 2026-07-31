@@ -1,18 +1,23 @@
 # PP2 audit extract — FEBAN statement evidence
 
-Pulls the SAP-side evidence for the 56 payment samples in the auditor's
-`Samples_Paper_SURL260716_152455.962.xlsx`: for each payment line, the FEBAN statement item,
-the FI document, the clearing document, the batch of ZP payments behind it, the largest of
-those payments, and the largest invoice inside that — ending in that invoice's PDF.
+Pulls the SAP-side evidence for an auditor's payment samples: for each payment line, the FEBAN
+statement item, the FI document, the clearing document, the batch of ZP payments behind it, the
+largest of those payments, and the largest invoice inside that — ending in that invoice's PDF.
+
+**Import request** reads any of the auditor's sample files. Seven of them have turned up in
+three layouts with the header on a different row in almost every one, so the importer finds it
+by content rather than by position and shows you what it matched before writing anything. The
+company code is asked once per file, because the requests are not all the same company.
 
 The macro is driven from a workbook, not from hardcoded screen IDs: every `findById` string is
 read from the `Screen Map` sheet, so correcting one is an edit to a cell rather than to code.
 See [`RECORDING_GUIDE.md`](RECORDING_GUIDE.md), which also answers the `Alt`+`F12` question.
 
-**Choosing which rows to run:** the `Samples` sheet has an `Include?` column, set to `Yes` on
-every row. Set a row to `No` to leave it out; blank counts as included. The Control sheet
-counts what is in and out before you start. Company code is a Control-sheet setting, so
-pointing the run at another company code is one cell.
+**Choosing which rows to run:** you pick samples, never months — the run works out which FEBAN
+periods it needs and opens them itself. **RUN SAMPLES** opens with the scope per request and
+one question: run the rows marked `Include?`, run everything regardless, or cancel. Set a row
+to `No` to leave it out; blank counts as included, and **Include/Exclude every sample** bulk-set
+the column so excluding a handful is not 141 edits.
 
 ---
 
@@ -99,7 +104,12 @@ sap-audit-macro/
 ├── scripts/
 │   ├── extract_samples.py      auditor's xlsx  -> samples.csv
 │   ├── build_control_workbook.py   samples.csv -> FEBAN_Audit_Control.xlsx
-│   └── test_list_parser.py     tests for the parsing logic in modExportRead.bas
+│   ├── test_list_parser.py     tests for the parsing logic in modExportRead.bas
+│   ├── test_import_detection.py  runs modImport's header detection over the real requests
+│   ├── vbacheck.py             cross-module refs, UDTs, blocks, GoTo labels
+│   ├── vbarules.py             VBA compile rules a structure check misses
+│   ├── undeclared2.py          every identifier resolves to something
+│   └── keycheck.py             Screen Map and Control keys the code asks for
 └── vba/
     ├── modConfig.bas           reads every setting and element ID from the workbook
     ├── modSafety.bas           the read-only guard
@@ -110,6 +120,7 @@ sap-audit-macro/
     ├── modFbl1n.bas            steps 8-9: the ZP payments of one batch
     ├── modExportRead.bas       reads an export back (workbook or text)
     ├── modExport.bas           ALV and classic list export to local files
+    ├── modImport.bas           reads an auditor's request into the Samples sheet
     ├── modReport.bas           the per-sample report workbook
     ├── modLog.bas              the audit trail
     ├── modUtil.bas             date, amount, filename helpers
@@ -128,7 +139,12 @@ sap-audit-macro/
  7  export it, read the ZP document numbers back off disk
  8  FBL1N            company code, all items, month, those ZP numbers
  9  export, take the LARGEST ZP payment of the batch
-10  Payment usage on it -> the LARGEST KR invoice -> that invoice's PDF
+10  Payment usage on it -> the most NEGATIVE row: a payment is a debit and
+    the invoice it settles is a credit, so the biggest invoice is the most
+    negative. Santander SCF pays a finance provider, so that route takes one
+    more hop -- open the settlement, its clearing line, payment usage again --
+    before the supplier invoices appear. Then open the invoice and save the
+    attachment titled 'Invoice'.
 ```
 
 Every step is covered by a recording in [`recordings/`](recordings/), so the IDs are captured
@@ -223,8 +239,9 @@ be zipped and sent to the auditor as it stands.
       1 - FEBAN statement list.xlsx         a copy, so the folder stands alone
       2 - Payment usage - batch of payments.xlsx
       3 - FBL1N - payments in the batch.xlsx
-      4 - Invoices behind the largest payment.xlsx
-      5 - Largest invoice.pdf
+      4 - Documents behind the largest payment.xlsx
+      5 - Supplier invoices behind the largest SCF settlement.xlsx   (confirming payments only)
+      6 - Largest invoice.pdf
     05 - 8617262.93/
       05 - 8617262.93 - GBKM.xlsx
       1 - FEBAN statement list.xlsx
