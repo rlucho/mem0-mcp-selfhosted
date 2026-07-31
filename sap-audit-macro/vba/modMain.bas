@@ -42,6 +42,12 @@ Private Const COL_START_AT As Long = 21
 ' The period's statement export, so each sample folder can be given a copy.
 Private mMonthStatementFile As String
 
+' Samples that finished with something less than a complete answer -- PARTIAL,
+' NOT FOUND, AMBIGUOUS, BLOCKED_*. They no longer stop the run, so the summary
+' has to say how many there were, or a run that answered half its samples reads
+' as a clean sweep.
+Private mIncomplete As Long
+
 Private Type Sample
     Row As Long
     Idx As Long
@@ -140,6 +146,7 @@ Public Sub RunExtract()
 
     modSapConnect.SapAttach
     modSafety.gWriteAttemptBlocked = 0
+    mIncomplete = 0
     modLog.WriteHeaderBlock
 
     ' SAP opens every export it writes. Refuse the request for the duration
@@ -218,6 +225,8 @@ Finished:
     MsgBox "Run finished." & vbCrLf & vbCrLf & _
            "Mode              : " & modConfig.Setting("Run mode") & vbCrLf & _
            "Samples processed : " & processed & vbCrLf & _
+           "  of those, short  : " & mIncomplete & _
+                IIf(mIncomplete > 0, "  (see the Status column)", "") & vbCrLf & _
            "Errors            : " & errored & vbCrLf & _
            "Files written     : " & files & vbCrLf & _
            "Writes blocked    : " & modSafety.gWriteAttemptBlocked & vbCrLf & vbCrLf & _
@@ -289,6 +298,15 @@ End Function
 '-----------------------------------------------------------------------
 ' One sample, end to end. Returns False on a handled failure.
 '-----------------------------------------------------------------------
+' DONE has its invoice. NO CLEARING is an internal transfer that settles
+' nothing, NO VENDOR PAYMENTS a treasury or FX settlement that settles against
+' the bank statement rather than a supplier -- both have no invoice to fetch
+' and never did. Everything else stopped somewhere short.
+Private Function IsCompleteAnswer(ByVal status As String) As Boolean
+    IsCompleteAnswer = (status = "DONE" Or status = "NO CLEARING" Or _
+                        status = "NO VENDOR PAYMENTS")
+End Function
+
 Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) As Boolean
     Dim sheet As Worksheet
     Dim match As FebanMatch
@@ -357,6 +375,7 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
         WriteResult sheet, item.Row, "NOT FOUND", vbNullString, vbNullString, _
                     vbNullString, 0, message
         modLog.LogAction item.Idx, "Match", message, "MANUAL", vbNullString
+        mIncomplete = mIncomplete + 1
         ProcessSample = True
         Exit Function
     End If
@@ -367,6 +386,7 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
         WriteResult sheet, item.Row, "AMBIGUOUS", vbNullString, vbNullString, _
                     vbNullString, 0, message
         modLog.LogAction item.Idx, "Match", message, "MANUAL", vbNullString
+        mIncomplete = mIncomplete + 1
         ProcessSample = True
         Exit Function
     End If
@@ -421,14 +441,19 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     WriteSampleReport item, match, chain, folder
 
-    ' Three complete answers, not one. NO CLEARING is an internal transfer
-    ' that settles nothing; NO VENDOR PAYMENTS is a treasury or FX settlement
-    ' that settles against the bank statement rather than a supplier. Both
-    ' have no invoice to fetch and never did, and counting them as failures
-    ' would be reporting the data as a defect.
-    ProcessSample = (chain.Status = "DONE" Or _
-                     chain.Status = "NO CLEARING" Or _
-                     chain.Status = "NO VENDOR PAYMENTS")
+    ' Every status the chain can name is a RESULT for this sample, so the run
+    ' carries on to the next one. Only 'ERROR' -- raised below, when the macro
+    ' does not recognise the screen it is on -- means it is no longer safe to
+    ' continue, and only that trips 'Stop on first error'.
+    '
+    ' This used to answer True for DONE, NO CLEARING and NO VENDOR PAYMENTS
+    ' only, so a single PARTIAL stopped everything queued behind it. One
+    ' sample whose three ZP documents were not vendor items in that period
+    ' ended a run with twelve samples still to go. A sample that did not reach
+    ' an invoice is a finding to read on the sheet, not a reason to abandon
+    ' the other eleven.
+    If Not IsCompleteAnswer(chain.Status) Then mIncomplete = mIncomplete + 1
+    ProcessSample = (chain.Status <> "ERROR")
     Exit Function
 
 SampleFailed:
@@ -949,6 +974,7 @@ Public Sub RunSingleMonth()
 
     modSapConnect.SapAttach
     modSafety.gWriteAttemptBlocked = 0
+    mIncomplete = 0
     modLog.WriteHeaderBlock
     remoteWas = modUtil.SuppressRemoteOpen()
     modExport.SweepHandover 0
@@ -993,6 +1019,7 @@ Public Sub RunSingleMonth()
     ' moment a sample reached FBL1N and exported its batch list.
     MsgBox "Finished " & answer & "." & vbCrLf & vbCrLf & _
            "Samples reaching the end of the chain : " & done & vbCrLf & _
+           "  of those, short of a full answer    : " & mIncomplete & vbCrLf & _
            "Samples that stopped early            : " & failed & vbCrLf & _
            "Files written                         : " & files & vbCrLf & vbCrLf & _
            IIf(failed > 0, "Where they stopped: " & modLog.FailureSummary() & vbCrLf & vbCrLf, "") & _

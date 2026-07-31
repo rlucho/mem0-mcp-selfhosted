@@ -106,6 +106,26 @@ Public Function LargestPaymentOfBatch(ByVal sampleIdx As Long, _
         Exit Function
     End If
 
+    ' 'No items selected' is an ordinary status message, type S, not E or A --
+    ' so the check above passes it and FBL1N quietly stays on the selection
+    ' screen. Everything after that then behaves as though a list were drawn:
+    ' no menu is found, the %pc fallback answers 'Function code cannot be
+    ' selected', and the sample is written off as an export failure. It is not.
+    ' The documents simply are not vendor line items in this company code and
+    ' posting period, which is an answer worth recording accurately.
+    If Not ResultListShowing() Then
+        result.Notes = "FBL1N found no line items for the " & count & " ZP document(s) " & _
+                       "from the batch, in company code " & modConfig.CompanyCode() & _
+                       " with posting date " & modUtil.SapDate(dateFrom) & " to " & _
+                       modUtil.SapDate(dateTo) & ". Either those documents are not " & _
+                       "vendor items, or they were posted outside that range." & _
+                       IIf(Len(modSapConnect.StatusBarText()) > 0, _
+                           " SAP said: " & modSapConnect.StatusBarText(), "")
+        modLog.LogAction sampleIdx, "FBL1N", result.Notes, "MANUAL", vbNullString
+        LargestPaymentOfBatch = result
+        Exit Function
+    End If
+
     ' Export the whole list, then decide from the file. Reading the file
     ' rather than the screen is what makes this safe across batches of
     ' different sizes -- see the note at the top of this module.
@@ -128,6 +148,41 @@ Failed:
     result.Notes = "The FBL1N stage stopped: " & Err.Description
     modLog.LogAction sampleIdx, "FBL1N failed", Err.Description, "ERROR", vbNullString
     LargestPaymentOfBatch = result
+End Function
+
+'-----------------------------------------------------------------------
+' Did Execute actually produce a list, or are we still sitting on the
+' selection screen?
+'
+' Testing for what should have GONE is the reliable direction here. FBL1N
+' renders a classic list on this system, so there is no control to look for
+' on the result side, and Fbl1n.ResultAnchor is a label coordinate that only
+' holds for one particular layout. The selection screen's own company-code
+' field, on the other hand, is unambiguous: while it still exists, Execute
+' has not taken us anywhere.
+'
+' Unmapped fields mean this cannot tell, and it answers True -- which is the
+' behaviour that was there before, so a blank Screen Map row loses nothing.
+'-----------------------------------------------------------------------
+Private Function ResultListShowing() As Boolean
+    Dim selectionField As String
+    Dim anchor As String
+
+    anchor = modConfig.ElementIdOrBlank("Fbl1n.ResultAnchor")
+    If Len(anchor) > 0 Then
+        If modSapConnect.Exists(anchor) Then
+            ResultListShowing = True
+            Exit Function
+        End If
+    End If
+
+    selectionField = modConfig.ElementIdOrBlank("Fbl1n.CompanyCode")
+    If Len(selectionField) = 0 Then
+        ResultListShowing = True
+        Exit Function
+    End If
+
+    ResultListShowing = Not modSapConnect.Exists(selectionField)
 End Function
 
 '-----------------------------------------------------------------------
