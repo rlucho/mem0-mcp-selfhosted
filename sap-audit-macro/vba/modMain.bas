@@ -596,6 +596,47 @@ Private Function ScopeSummary() As String
 End Function
 
 '-----------------------------------------------------------------------
+' Wipe the result columns so the sheet reads as 'not started' again.
+'
+' A re-run does not need this -- every result column is overwritten as each
+' sample finishes, and the evidence folders are cleared per sample before
+' anything is exported. It is for the case where the sheet should stop
+' claiming outcomes from a run that is no longer relevant: rows now marked
+' Include? = No keep their old Status forever otherwise.
+'-----------------------------------------------------------------------
+Public Sub ClearResults()
+    Dim sheet As Worksheet
+    Dim row As Long, lastUsed As Long, cleared As Long
+
+    Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
+    lastUsed = sheet.Cells(sheet.Rows.Count, COL_PAY_DATE).End(xlUp).row
+
+    If MsgBox("Clear Status, statement item, FI document, invoices, file count " & _
+              "and message on every sample row?" & vbCrLf & vbCrLf & _
+              "The samples themselves, the Include? column and the Log are left " & _
+              "alone, and no files on disk are touched.", _
+              vbQuestion + vbYesNo + vbDefaultButton2, "Clear results") <> vbYes Then
+        Exit Sub
+    End If
+
+    For row = modConfig.SAMPLES_FIRST_ROW To lastUsed
+        If IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then
+            sheet.Range(sheet.Cells(row, COL_STATUS), _
+                        sheet.Cells(row, COL_MESSAGE)).ClearContents
+            sheet.Cells(row, COL_STATUS).Font.Color = RGB(0, 0, 0)
+            sheet.Cells(row, COL_STATUS).Font.Bold = False
+            cleared = cleared + 1
+        End If
+    Next row
+
+    MsgBox cleared & " row(s) reset to not-started." & vbCrLf & vbCrLf & _
+           "Use 'Clear the log' as well if you want the audit trail to start " & _
+           "fresh -- it is kept separately because it is the record of what was " & _
+           "pulled, and successive attempts staying visible is usually the point.", _
+           vbInformation, "Clear results"
+End Sub
+
+'-----------------------------------------------------------------------
 ' Bulk-set the Include? column, so choosing what to run is not 141 edits.
 '-----------------------------------------------------------------------
 Public Sub IncludeAllSamples()
