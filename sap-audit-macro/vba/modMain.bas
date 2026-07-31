@@ -785,6 +785,52 @@ Public Sub ExcludeAllSamples()
     SetIncludeAll "No"
 End Sub
 
+' Mark the samples that already have a complete answer as excluded, so a
+' re-run picks up only what is left.
+'
+' STATUS DOES NOT DECIDE WHAT RUNS -- Include? does. A sheet full of DONE
+' still runs every row again, for hours, which is not what anyone expects
+' the second time they press the button. This is the bridge between the two.
+'
+' Only the three complete answers are excluded. ERROR, PARTIAL and the
+' BLOCKED statuses stay included, because those are the rows a re-run exists
+' to retry.
+Public Sub ExcludeFinishedSamples()
+    Dim sheet As Worksheet
+    Dim row As Long, lastUsed As Long
+    Dim excluded As Long, retried As Long, notStarted As Long
+    Dim status As String
+
+    Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
+    lastUsed = sheet.Cells(sheet.Rows.Count, COL_PAY_DATE).End(xlUp).row
+
+    For row = modConfig.SAMPLES_FIRST_ROW To lastUsed
+        If IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then
+            status = UCase$(Trim$(CStr(sheet.Cells(row, COL_STATUS).Value)))
+
+            Select Case status
+                Case "DONE", "NO CLEARING", "NO VENDOR PAYMENTS"
+                    sheet.Cells(row, COL_INCLUDE).Value = "No"
+                    excluded = excluded + 1
+                Case ""
+                    sheet.Cells(row, COL_INCLUDE).Value = "Yes"
+                    notStarted = notStarted + 1
+                Case Else
+                    sheet.Cells(row, COL_INCLUDE).Value = "Yes"
+                    retried = retried + 1
+            End Select
+        End If
+    Next row
+
+    MsgBox excluded & " sample(s) already answered -- excluded." & vbCrLf & _
+           retried & " stopped part-way -- left in, so a re-run retries them." & vbCrLf & _
+           notStarted & " not started -- left in." & vbCrLf & vbCrLf & _
+           "DONE, NO CLEARING and NO VENDOR PAYMENTS all count as answered: " & _
+           "the first has its invoice, and the other two have no invoice to " & _
+           "fetch and never did.", _
+           vbInformation, "Exclude finished samples"
+End Sub
+
 Private Sub SetIncludeAll(ByVal value As String)
     Dim sheet As Worksheet
     Dim row As Long, lastUsed As Long, touched As Long

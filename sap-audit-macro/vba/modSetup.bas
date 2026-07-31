@@ -49,6 +49,7 @@ Private Sub Build(ByVal quiet As Boolean)
     AddOne sheet, top, "3.  RUN SAMPLES", "modMain.RunExtract", built
     AddOne sheet, top, "     Include every sample", "modMain.IncludeAllSamples", built
     AddOne sheet, top, "     Exclude every sample", "modMain.ExcludeAllSamples", built
+    AddOne sheet, top, "     Exclude finished samples", "modMain.ExcludeFinishedSamples", built
     AddOne sheet, top, "     Clear results (not the log)", "modMain.ClearResults", built
     AddOne sheet, top, "     Run one month (testing)", "modMain.RunSingleMonth", built
     AddOne sheet, top, "     Probe this SAP screen", "modProbe.ProbeCurrentScreen", built
