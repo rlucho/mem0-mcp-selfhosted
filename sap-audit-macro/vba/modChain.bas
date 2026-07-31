@@ -184,7 +184,11 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
         ' treasury or FX settlement, and there are no supplier invoices behind
         ' it to download. Say which one it is.
         If rejected <= 2 Then
-            Finish result, "PARTIAL", _
+            ' A definite answer, not a failure: this clearing document settles
+            ' against the bank statement and no supplier is involved, so there
+            ' is no invoice to fetch and never was. Its own status, so a run of
+            ' 141 samples does not report a dozen of these as errors.
+            Finish result, "NO VENDOR PAYMENTS", _
                    "Clearing document " & result.ClearingDocument & " settles directly " & _
                    "against the bank statement -- the Payment Usage list holds only the " & _
                    "statement line and its offsetting entry, no vendor payments. This is " & _

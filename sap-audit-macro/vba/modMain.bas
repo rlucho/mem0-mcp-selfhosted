@@ -358,11 +358,14 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     WriteSampleReport item, match, chain, folder
 
-    ' DONE and NO CLEARING are both complete answers. NO CLEARING means the
-    ' document settles nothing -- an internal transfer -- so there is no
-    ' invoice to fetch and the line items are the evidence. Counting it as a
-    ' failure would be reporting the data as a defect.
-    ProcessSample = (chain.Status = "DONE" Or chain.Status = "NO CLEARING")
+    ' Three complete answers, not one. NO CLEARING is an internal transfer
+    ' that settles nothing; NO VENDOR PAYMENTS is a treasury or FX settlement
+    ' that settles against the bank statement rather than a supplier. Both
+    ' have no invoice to fetch and never did, and counting them as failures
+    ' would be reporting the data as a defect.
+    ProcessSample = (chain.Status = "DONE" Or _
+                     chain.Status = "NO CLEARING" Or _
+                     chain.Status = "NO VENDOR PAYMENTS")
     Exit Function
 
 SampleFailed:

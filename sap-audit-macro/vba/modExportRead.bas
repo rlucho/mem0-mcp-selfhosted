@@ -720,12 +720,16 @@ Public Function MostNegativeRow(ByVal path As String, ByVal sampleIdx As Long, _
     ' Cross-check, never a veto.
     If Len(expectedTypes) > 0 And Len(chosenType) > 0 Then
         If Not TypeWanted(chosenType, expectedTypes) Then
+            ' Noted, not advised. On a confirming payment this row is the
+            ' finance provider's settlement and the chain is about to go one
+            ' level deeper -- telling the operator to add KA to the invoice
+            ' types would be telling them to record the wrong thing.
             modLog.LogAction sampleIdx, "Read export", _
-                         "That row is document type " & chosenType & ", which is not in " & _
-                         "'Invoice document type' (" & expectedTypes & "). It was taken " & _
-                         "anyway, because the sign identifies the invoice. Add " & _
-                         chosenType & " to that setting if it is the invoice type here.", _
-                         "MANUAL", path
+                         "For the record: that row is document type " & chosenType & _
+                         ", which is not among the expected invoice types (" & _
+                         expectedTypes & "). The sign decided it, so this changes " & _
+                         "nothing -- it is worth a look only if the document turns out " & _
+                         "not to be an invoice.", "MANUAL", path
         End If
     End If
 

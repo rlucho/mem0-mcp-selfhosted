@@ -268,6 +268,10 @@ def build_control(workbook: Workbook) -> None:
         # it stops being read as one.
         ("NO CLEARING -- internal transfer, line items exported",
          '=COUNTIF(Samples!J5:J1000,"NO CLEARING")'),
+        # Settles against the bank statement, not a supplier -- an FX or
+        # treasury movement. No invoice exists to fetch.
+        ("NO VENDOR PAYMENTS -- treasury/FX settlement",
+         '=COUNTIF(Samples!J5:J1000,"NO VENDOR PAYMENTS")'),
         ("NOT FOUND -- no matching statement line",
          '=COUNTIF(Samples!J5:J1000,"NOT FOUND")'),
         ("AMBIGUOUS -- more than one line matched",
