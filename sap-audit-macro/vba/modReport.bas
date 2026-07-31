@@ -53,7 +53,7 @@ Public Function BuildSampleReport(ByVal sampleIdx As Long, ByVal monthTab As Str
     modUtil.EnsureFolder folder
     path = modUtil.JoinPath(folder, _
                             modUtil.ReportFileName(sampleIdx, amount, _
-                                                   modConfig.Setting("Company code")))
+                                                   modConfig.CompanyCode()))
 
     previousAlerts = Application.DisplayAlerts
     Application.DisplayAlerts = False
@@ -111,7 +111,7 @@ Private Function WriteHeader(ByVal sheet As Worksheet, ByVal sampleIdx As Long, 
                              ByVal amount As Double) As Long
     sheet.Cells(2, COL_LABEL).Value = "Audit sample " & Format$(sampleIdx, "00") & _
                                       " -- " & Format$(amount, "#,##0.00") & _
-                                      " -- company code " & modConfig.Setting("Company code")
+                                      " -- company code " & modConfig.CompanyCode()
     sheet.Cells(2, COL_LABEL).Font.Bold = True
     sheet.Cells(2, COL_LABEL).Font.Size = 14
 

@@ -57,7 +57,7 @@ Public Sub OpenMonth(ByVal dateFrom As Date, ByVal dateTo As Date)
     Dim waited As Double
 
     tcode = modConfig.Setting("Transaction for statement search")
-    companyCode = modConfig.Setting("Company code")
+    companyCode = modConfig.CompanyCode()
     houseBank = modConfig.Setting("House bank")
     accountId = modConfig.Setting("Account ID")
     selectionWindow = modConfig.ElementId("FEBAN.SelectionWindow")

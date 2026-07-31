@@ -73,7 +73,7 @@ Public Function LargestPaymentOfBatch(ByVal sampleIdx As Long, _
         result.Notes = "FBL1N is not mapped on the Screen Map, so the batch's ZP " & _
                        "payments were not listed. " & count & " ZP document number(s) " & _
                        "were collected and are in the Log, which is enough to run " & _
-                       "FBL1N by hand: company code " & modConfig.Setting("Company code") & _
+                       "FBL1N by hand: company code " & modConfig.CompanyCode() & _
                        ", all items, posting date " & modUtil.SapDate(dateFrom) & " to " & _
                        modUtil.SapDate(dateTo) & ", document number = those numbers."
         modLog.LogAction sampleIdx, "FBL1N", result.Notes, "MANUAL", vbNullString
@@ -181,7 +181,7 @@ Private Sub OpenSelectionScreen(ByVal sampleIdx As Long, _
     modSafety.StartTransaction "FBL1N"
 
     modSapConnect.Element(modConfig.ElementId("Fbl1n.CompanyCode")).Text = _
-        modConfig.Setting("Company code")
+        modConfig.CompanyCode()
 
     ' 'All items' rather than open or cleared, so a payment that has since been
     ' reversed still shows up.
@@ -198,7 +198,7 @@ Private Sub OpenSelectionScreen(ByVal sampleIdx As Long, _
     SetIfMapped "Fbl1n.PostingDateTo", modUtil.SapDate(dateTo)
 
     modLog.LogAction sampleIdx, "FBL1N", _
-                 "Selection: company code " & modConfig.Setting("Company code") & _
+                 "Selection: company code " & modConfig.CompanyCode() & _
                  ", all items, posting date " & modUtil.SapDate(dateFrom) & " to " & _
                  modUtil.SapDate(dateTo), "OK", vbNullString
 End Sub
@@ -709,7 +709,7 @@ Private Function TryFb03(ByVal sampleIdx As Long, ByVal docId As String, _
 
     If Len(bukrsId) > 0 Then
         If modSapConnect.Exists(bukrsId) Then
-            modSapConnect.Element(bukrsId).Text = modConfig.Setting("Company code")
+            modSapConnect.Element(bukrsId).Text = modConfig.CompanyCode()
         End If
     End If
 

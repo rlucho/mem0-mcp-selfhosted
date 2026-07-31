@@ -44,6 +44,7 @@ Private Sub Build(ByVal quiet As Boolean)
 
     top = BUTTON_TOP
 
+    AddOne sheet, top, "0.  Import request", "modImport.ImportRequest", built
     AddOne sheet, top, "1.  Check setup", "modMain.CheckSetup", built
     AddOne sheet, top, "2.  Probe this SAP screen", "modProbe.ProbeCurrentScreen", built
     AddOne sheet, top, "3.  Dump FEBAN grid columns", "modFeban.DumpGridColumns", built

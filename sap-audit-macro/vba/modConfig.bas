@@ -26,6 +26,33 @@ Public Const SCREENMAP_COL_VALUE As Long = 6
 Private mScreenMap As Object          ' Scripting.Dictionary: key -> element ID
 Private mRequiredKeys As Object       ' Scripting.Dictionary: key -> True
 
+' The company code of the sample being walked right now.
+'
+' It used to be one value on the Control sheet, which was true while there
+' was one audit request. There are several, and they are not all the same
+' company: Paper is GBKM, the Packaging files point somewhere else, and one
+' of them is stamped GBHP. So the code travels with the sample and the run
+' sets it before each one, falling back to the Control sheet for a workbook
+' whose Samples sheet predates the column.
+Private mCompanyCode As String
+
+'-----------------------------------------------------------------------
+' The company code in force. Read this rather than Setting("Company code"):
+' the sample's own code wins, and the Control sheet is only the default.
+'-----------------------------------------------------------------------
+Public Function CompanyCode() As String
+    If Len(mCompanyCode) > 0 Then
+        CompanyCode = mCompanyCode
+    Else
+        CompanyCode = Setting("Company code")
+    End If
+End Function
+
+' Set by the run before each sample; blank restores the Control default.
+Public Sub SetCompanyCode(ByVal code As String)
+    mCompanyCode = Trim$(code)
+End Sub
+
 '-----------------------------------------------------------------------
 ' Settings -- looked up by the label in column B of the Control sheet.
 ' The labels are the contract between that sheet and this module.

@@ -380,6 +380,23 @@ Public Function CloseExportWorkbooksUnder(ByVal root As String) As Long
     CloseExportWorkbooksUnder = doomed.Count
 End Function
 
+' 'Paper Samples - GBKM'. One folder per audit request, with the company
+' code in the name, because several requests are open at once and they are
+' not all the same company. A row that predates the import -- no request
+' name -- goes straight under the root as it always did, so nothing that
+' already ran moves.
+Public Function RequestFolderName(ByVal request As String, _
+                                  ByVal companyCode As String) As String
+    Dim name As String
+
+    name = Trim$(request)
+    If Len(name) = 0 Then Exit Function
+
+    If Len(Trim$(companyCode)) > 0 Then name = name & " - " & Trim$(companyCode)
+
+    RequestFolderName = SafeFileName(name)
+End Function
+
 ' '01 - 8072447.42'. The index leads so the folders sort in sample order;
 ' the amount is what the auditor's request identifies the line by. A plain
 ' decimal point, not the local separator, because this is a folder name and

@@ -67,7 +67,7 @@ Public Sub WriteHeaderBlock()
     LogAction 0, "RUN STARTED", _
           "Mode: " & mode & _
           " | Operator: " & modConfig.Setting("Operator name") & _
-          " | Company code: " & modConfig.Setting("Company code") & _
+          " | Company code: " & modConfig.CompanyCode() & _
           " | SAP release: " & modSapConnect.gSapRelease & _
           " | Workbook: " & ThisWorkbook.Name, _
           "OK", vbNullString

@@ -28,6 +28,12 @@ Private Const COL_INVOICES As Long = 13
 Private Const COL_FILES As Long = 14
 Private Const COL_MESSAGE As Long = 15
 Private Const COL_INCLUDE As Long = 16
+' Added when the macro stopped being about one audit request. Appended
+' rather than inserted, so the Control sheet's formulas over columns A to P
+' keep pointing at the same things.
+Private Const COL_REQUEST As Long = 17
+Private Const COL_COMPANY As Long = 18
+Private Const COL_COMMENT As Long = 19
 
 ' The period's statement export, so each sample folder can be given a copy.
 Private mMonthStatementFile As String
@@ -42,6 +48,9 @@ Private Type Sample
     Amount As Double
     Party As String
     Reference As String
+    Request As String          ' which audit request this row came from
+    CompanyCode As String      ' asked once per request at import
+    Comment As String          ' what the auditor asked for, in their words
 End Type
 
 '-----------------------------------------------------------------------
@@ -126,18 +135,24 @@ Public Sub RunExtract()
     For Each monthKey In monthTabs.Keys
         ' TryOpenMonth swallows and logs its own errors, so the loop needs no
         ' inline handler -- 'Resume' back into a For Each is fragile.
-        If TryOpenMonth(CStr(monthKey), CDate(monthTabs(monthKey)(0)), _
+        ' The company code of this group has to be in force before FEBAN is
+        ' opened, not just before the samples inside it are walked.
+        modConfig.SetCompanyCode CStr(monthTabs(monthKey)(4))
+
+        If TryOpenMonth(CStr(monthTabs(monthKey)(2)), CDate(monthTabs(monthKey)(0)), _
                         CDate(monthTabs(monthKey)(1))) Then
 
             ' The statement list is per period, so export it once here rather
             ' than once per sample -- otherwise Sep 25 alone would write seven
             ' copies of the same list.
-            If Len(ExportMonthStatementList(CStr(monthKey))) > 0 Then
+            If Len(ExportMonthStatementList(CStr(monthTabs(monthKey)(2)), _
+                                            CStr(monthTabs(monthKey)(3)), _
+                                            CStr(monthTabs(monthKey)(4)))) > 0 Then
                 files = files + 1
             End If
 
             For i = 1 To count
-                If samples(i).MonthTab = CStr(monthKey) Then
+                If PeriodKey(samples(i)) = CStr(monthKey) Then
                     If ProcessSample(samples(i), files) Then
                         processed = processed + 1
                     Else
@@ -183,15 +198,19 @@ End Sub
 ' The FEBAN result list for the month now on screen, as period context. Best
 ' effort -- it is not part of the evidence chain, so a failure here is logged
 ' and the samples run anyway.
-Private Function ExportMonthStatementList(ByVal monthTab As String) As String
+Private Function ExportMonthStatementList(ByVal monthTab As String, _
+                                          ByVal request As String, _
+                                          ByVal companyCode As String) As String
     Dim folder As String
 
     On Error GoTo Failed
 
     mMonthStatementFile = vbNullString
 
-    folder = modUtil.JoinPath(modConfig.DownloadRoot(), _
-                              modUtil.SafeFileName(monthTab))
+    folder = modUtil.JoinPath( _
+                 modUtil.JoinPath(modConfig.DownloadRoot(), _
+                                  modUtil.RequestFolderName(request, companyCode)), _
+                 modUtil.SafeFileName(monthTab))
 
     ExportMonthStatementList = modExport.ExportAlvGrid(0, folder, modUtil.FILE_FEBAN)
     mMonthStatementFile = ExportMonthStatementList
@@ -235,6 +254,11 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
 
     On Error GoTo SampleFailed
+
+    ' The company code travels with the sample now, so put it in force before
+    ' anything reads it -- FEBAN's selection, FBL1N's, the report heading and
+    ' the folder name all go through modConfig.CompanyCode().
+    modConfig.SetCompanyCode item.CompanyCode
 
     ' SAP opens each spreadsheet export in Excel once it has written it, and
     ' it does that asynchronously -- so the previous sample's export tends to
@@ -283,13 +307,16 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     modFeban.SelectRow match.GridRow
 
-    ' One folder per sample, named after the sample. Everything belonging to
-    ' this line goes in it under a fixed name that says which step produced
-    ' it -- so the folder can be sent to the auditor as it stands, without a
-    ' covering note explaining which file is which.
+    ' One folder per sample, inside one folder per month, inside one folder
+    ' per audit request. The request folder carries the company code in its
+    ' name, because several requests are in flight at once and they are not
+    ' all the same company.
     folder = modUtil.JoinPath( _
-                 modUtil.JoinPath(modConfig.DownloadRoot(), _
-                                  modUtil.SafeFileName(item.MonthTab)), _
+                 modUtil.JoinPath( _
+                     modUtil.JoinPath(modConfig.DownloadRoot(), _
+                                      modUtil.RequestFolderName(item.Request, _
+                                                                item.CompanyCode)), _
+                     modUtil.SafeFileName(item.MonthTab)), _
                  modUtil.SampleFolderName(item.Idx, item.Amount))
     stem = modUtil.EvidenceStem(item.Idx, item.PayDate, item.Amount)
 
@@ -373,7 +400,7 @@ Private Sub WriteSampleReport(ByRef item As Sample, ByRef match As FebanMatch, _
 
     modLog.LogAction item.Idx, "Report", _
                  "Wrote " & modUtil.ReportFileName(item.Idx, item.Amount, _
-                                                   modConfig.Setting("Company code")), _
+                                                   modConfig.CompanyCode()), _
                  "OK", path
     Exit Sub
 
@@ -466,6 +493,9 @@ Private Function LoadSamples(ByRef samples() As Sample) As Long
             samples(count).Amount = CDbl(sheet.Cells(row, COL_AMOUNT).Value)
             samples(count).Party = Trim$(CStr(sheet.Cells(row, COL_PARTY).Value))
             samples(count).Reference = Trim$(CStr(sheet.Cells(row, COL_REF).Value))
+            samples(count).Request = Trim$(CStr(sheet.Cells(row, COL_REQUEST).Value))
+            samples(count).CompanyCode = Trim$(CStr(sheet.Cells(row, COL_COMPANY).Value))
+            samples(count).Comment = Trim$(CStr(sheet.Cells(row, COL_COMMENT).Value))
 
             ' Columns C and D are formulas over the payment date. Fall back to
             ' deriving the range here if they have been cleared.
@@ -500,20 +530,32 @@ Private Function IsIncluded(ByVal sheet As Worksheet, ByVal row As Long) As Bool
 End Function
 
 ' month tab -> Array(dateFrom, dateTo), in first-seen order
+' The unit of work is not a month, it is a request-and-company-and-month.
+' FEBAN searches one company code at a time, and two requests can both hold
+' a Sep 25 sample for different companies -- grouping on the month alone
+' would run the second lot against the first one's company.
 Private Function DistinctMonths(ByRef samples() As Sample, ByVal count As Long) As Object
     Dim months As Object
     Dim i As Long
+    Dim key As String
 
     Set months = CreateObject("Scripting.Dictionary")
     months.CompareMode = vbTextCompare
 
     For i = 1 To count
-        If Not months.Exists(samples(i).MonthTab) Then
-            months.Add samples(i).MonthTab, Array(samples(i).DateFrom, samples(i).DateTo)
+        key = PeriodKey(samples(i))
+        If Not months.Exists(key) Then
+            months.Add key, Array(samples(i).DateFrom, samples(i).DateTo, _
+                                  samples(i).MonthTab, samples(i).Request, _
+                                  samples(i).CompanyCode)
         End If
     Next i
 
     Set DistinctMonths = months
+End Function
+
+Private Function PeriodKey(ByRef item As Sample) As String
+    PeriodKey = item.Request & "|" & item.CompanyCode & "|" & item.MonthTab
 End Function
 
 Private Function CountDistinctMonths(ByRef samples() As Sample, ByVal count As Long) As Long
@@ -551,7 +593,10 @@ Public Sub RunSingleMonth()
 
                 ' Once per period, not per sample -- but every sample folder
                 ' gets a copy, so the packs stand alone.
-                If Len(ExportMonthStatementList(samples(i).MonthTab)) > 0 Then
+                modConfig.SetCompanyCode samples(i).CompanyCode
+                If Len(ExportMonthStatementList(samples(i).MonthTab, _
+                                                samples(i).Request, _
+                                                samples(i).CompanyCode)) > 0 Then
                     files = files + 1
                 End If
 

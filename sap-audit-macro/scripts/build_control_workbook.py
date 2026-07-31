@@ -570,6 +570,12 @@ SAMPLE_HEADERS = [
     ("N", "Files", 7),
     ("O", "Message", 52),
     ("P", "Include?", 10),
+    # Added when the macro stopped being about one audit request. Appended
+    # rather than inserted, so the Control sheet's formulas over A:P still
+    # point at the same columns.
+    ("Q", "Request", 30),
+    ("R", "Company code", 13),
+    ("S", "Auditor's comment", 46),
 ]
 MACRO_COLUMNS = ("J", "K", "L", "M", "N", "O")
 
@@ -582,9 +588,10 @@ def build_samples(workbook: Workbook, rows: list[dict]) -> None:
     sheet["A2"] = "Audit samples"
     sheet["A2"].font = Font(name=FONT, size=14, bold=True, color="1F3864")
     sheet["A3"] = (
-        "Extracted from the auditor's 'Paper Samples' sheet by scripts/extract_samples.py. "
-        "Columns C and D are formulas, so correcting a payment date in column E re-derives "
-        "the FEBAN statement-date range automatically."
+        "Use 'Import request' to add an auditor's sample file -- it finds the header "
+        "wherever it is and asks which company code the request belongs to. Columns C and "
+        "D are formulas, so correcting a payment date in column E re-derives the FEBAN "
+        "statement-date range automatically."
     )
     sheet["A3"].font = NOTE_FONT
     sheet.merge_cells("A3:I3")
@@ -610,6 +617,11 @@ def build_samples(workbook: Workbook, rows: list[dict]) -> None:
         sheet[f"G{row}"] = record["party"]
         sheet[f"H{row}"] = record["payment_reference"]
         sheet[f"I{row}"] = record["flags"]
+        # The rows shipped with the workbook came from the Paper request, so
+        # they carry its name and company code. Anything imported later
+        # carries its own.
+        sheet[f"Q{row}"] = "Paper Samples"
+        sheet[f"R{row}"] = "GBKM"
 
         for column in ("C", "D", "E"):
             sheet[f"{column}{row}"].number_format = DATE_FMT

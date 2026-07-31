@@ -114,6 +114,16 @@ SetNote book, "Invoice document type", _
         "picked is not one of the types listed, the Log says so and takes it anyway. " & _
         "Blank to switch the cross-check off."
 
+' --- 1b. Samples sheet: the columns the importer writes ---------------------
+' Appended at Q, R and S so the Control sheet's formulas over A:P are
+' untouched. Existing rows are stamped with the request they came from --
+' the Paper samples, company code from the Control sheet -- so a workbook
+' that has already run keeps writing to the same folders.
+AddSampleColumn book, 17, "Request", 30
+AddSampleColumn book, 18, "Company code", 13
+AddSampleColumn book, 19, "Auditor's comment", 46
+StampExistingSamples book, "Paper Samples"
+
 ' --- 2. modules -------------------------------------------------------------
 vbaOk = False
 removed = 0
@@ -176,7 +186,8 @@ End If
 Function IsOurModule(n)
     Dim known
     known = "|modChain|modConfig|modExport|modExportRead|modFbl1n|modFeban|" & _
-            "modListFile|modDrilldown|modLog|modMain|modProbe|modReport|modSafety|" & _
+            "modListFile|modDrilldown|modImport|modLog|modMain|modProbe|modReport|" & _
+            "modSafety|" & _
             "modSapConnect|modSetup|modUtil|"
     IsOurModule = (InStr(1, known, "|" & n & "|", 1) > 0)
 End Function
@@ -267,6 +278,43 @@ Sub AddSetting(wb, settingName, value, note)
     sheet.Cells(lastRow + 1, 2).Value = settingName
     sheet.Cells(lastRow + 1, 3).Value = value
     sheet.Cells(lastRow + 1, 4).Value = note
+End Sub
+
+' Add a heading to the Samples sheet if the column is not already there.
+Sub AddSampleColumn(wb, col, title, width)
+    Dim sheet
+    Set sheet = wb.Worksheets("Samples")
+    If Trim(CStr(sheet.Cells(4, col).Value)) = title Then Exit Sub
+    sheet.Cells(4, col).Value = title
+    sheet.Cells(4, col).Font.Bold = True
+    sheet.Columns(col).ColumnWidth = width
+End Sub
+
+' Give rows that predate the importer a request name and the Control
+' sheet's company code, so they keep behaving exactly as before.
+Sub StampExistingSamples(wb, requestName)
+    Dim sheet, r, lastRow, companyCode
+    Set sheet = wb.Worksheets("Samples")
+
+    companyCode = ""
+    For r = 1 To 200
+        If Trim(CStr(wb.Worksheets("Control").Cells(r, 2).Value)) = "Company code" Then
+            companyCode = Trim(CStr(wb.Worksheets("Control").Cells(r, 3).Value))
+            Exit For
+        End If
+    Next
+
+    lastRow = sheet.Cells(sheet.Rows.Count, 5).End(-4162).Row   ' xlUp
+    For r = 5 To lastRow
+        If IsDate(sheet.Cells(r, 5).Value) Then
+            If Trim(CStr(sheet.Cells(r, 17).Value)) = "" Then
+                sheet.Cells(r, 17).Value = requestName
+            End If
+            If Trim(CStr(sheet.Cells(r, 18).Value)) = "" Then
+                sheet.Cells(r, 18).Value = companyCode
+            End If
+        End If
+    Next
 End Sub
 
 Function IIfStr(cond, a, b)
