@@ -98,8 +98,6 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                      ByVal dateFrom As Date, ByVal dateTo As Date, _
                      ByVal folder As String, ByVal fileStem As String) As ChainResult
     Dim result As ChainResult
-    Dim payment As ZpPayment
-    Dim matched As Long, rejected As Long
 
     On Error GoTo Failed
 
@@ -157,6 +155,127 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                  "Step 5: opened clearing document " & result.ClearingDocument, _
                  "OK", vbNullString
 
+    ContinueFromClearing sampleIdx, result, dateFrom, dateTo, folder, fileStem
+
+
+    Walk = result
+    Exit Function
+
+Failed:
+    Finish result, "ERROR", Err.Description
+    modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
+    Walk = result
+End Function
+
+'-----------------------------------------------------------------------
+' Enter the chain part-way, from a document the caller already knows.
+'
+' A SAP Payment Usage export names the documents that steps 1 to 5 exist to
+' discover. An SB row carrying a clearing document is where Walk arrives at
+' the end of step 5; a ZP row is where it arrives at the end of step 9. So
+' the import can hand those straight to the rung they belong on, and no
+' bank statement gets walked to reach somewhere the file already names.
+'
+' Both go through FB03 by document number. That is deterministic -- number,
+' company code, fiscal year -- and it is the one route that does not depend
+' on a list being on screen with the row in view.
+'-----------------------------------------------------------------------
+Public Function WalkFromClearing(ByVal sampleIdx As Long, _
+                                 ByVal clearingDocument As String, _
+                                 ByVal dateFrom As Date, ByVal dateTo As Date, _
+                                 ByVal folder As String, ByVal fileStem As String) As ChainResult
+    Dim result As ChainResult
+
+    On Error GoTo Failed
+
+    result.ClearingDocument = clearingDocument
+
+    If Not modFbl1n.OpenPaymentByDocument(sampleIdx, clearingDocument, _
+                                          Format$(dateFrom, "yyyy")) Then
+        Finish result, "ERROR", _
+               "Clearing document " & clearingDocument & " could not be opened, so the " & _
+               "batch behind it was not reached. It came from the imported list rather " & _
+               "than from a statement search, so check it belongs to company code " & _
+               modConfig.CompanyCode() & "."
+        WalkFromClearing = result
+        Exit Function
+    End If
+
+    modLog.LogAction sampleIdx, "Chain", _
+                 "Entered at step 5: opened clearing document " & clearingDocument & _
+                 " straight from the imported list, no statement search needed.", _
+                 "OK", vbNullString
+
+    ContinueFromClearing sampleIdx, result, dateFrom, dateTo, folder, fileStem
+
+    WalkFromClearing = result
+    Exit Function
+
+Failed:
+    Finish result, "ERROR", Err.Description
+    modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
+    WalkFromClearing = result
+End Function
+
+' Same, one rung higher: the row IS the payment, so there is no batch to
+' list and no largest-of to decide. Straight to its invoices.
+Public Function WalkFromPayment(ByVal sampleIdx As Long, _
+                                ByVal paymentDocument As String, _
+                                ByVal paymentVendor As String, _
+                                ByVal dateFrom As Date, ByVal dateTo As Date, _
+                                ByVal folder As String, ByVal fileStem As String) As ChainResult
+    Dim result As ChainResult
+
+    On Error GoTo Failed
+
+    result.ZpPaymentDocument = paymentDocument
+    result.ZpPaymentVendor = paymentVendor
+    result.ZpPaymentCount = 1
+    result.IsConfirmingPayment = NamesMatch(paymentVendor, _
+                                            modConfig.Setting("Confirming party name"))
+
+    If Not modFbl1n.OpenPaymentByDocument(sampleIdx, paymentDocument, _
+                                          Format$(dateFrom, "yyyy")) Then
+        Finish result, "BLOCKED_INVOICE", _
+               "Payment document " & paymentDocument & " could not be opened, so its " & _
+               "invoices were not reached. It came from the imported list rather than " & _
+               "from a statement search, so check it belongs to company code " & _
+               modConfig.CompanyCode() & "."
+        WalkFromPayment = result
+        Exit Function
+    End If
+
+    modLog.LogAction sampleIdx, "Chain", _
+                 "Entered at step 10: opened payment " & paymentDocument & _
+                 " straight from the imported list. No batch to list -- this row is " & _
+                 "the payment.", "OK", vbNullString
+
+    FetchInvoicePdf sampleIdx, result, folder, fileStem
+
+    WalkFromPayment = result
+    Exit Function
+
+Failed:
+    Finish result, "ERROR", Err.Description
+    modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
+    WalkFromPayment = result
+End Function
+
+'-----------------------------------------------------------------------
+' Steps 6 to 10, from a clearing document that is already on screen.
+'
+' Split out of Walk so the chain can be entered part-way. A Payment Usage
+' export already holds the documents the first five steps exist to find:
+' an SB row with a clearing document is exactly where Walk arrives at the
+' end of step 5, and a ZP row is where it arrives at the end of step 9. No
+' reason to walk a bank statement to get somewhere the file already names.
+'-----------------------------------------------------------------------
+Private Sub ContinueFromClearing(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                                 ByVal dateFrom As Date, ByVal dateTo As Date, _
+                                 ByVal folder As String, ByVal fileStem As String)
+    Dim payment As ZpPayment
+    Dim matched As Long, rejected As Long
+
     ' --- steps 6-7: Payment Usage, and the ZP numbers in the batch -------
     OpenPaymentUsage sampleIdx
 
@@ -167,8 +286,7 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
         Finish result, "ERROR", _
                "The Payment Usage list did not export, so the batch's ZP document " & _
                "numbers could not be read. Clearing document is " & result.ClearingDocument & "."
-        Walk = result
-        Exit Function
+        Exit Sub
     End If
 
     result.ZpNumbers = modExportRead.DocumentNumbersOfType( _
@@ -203,8 +321,7 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                    "probably read wrongly -- check the headings against the 'Payment " & _
                    "usage ...' settings on the Control sheet. The Log names the types it saw."
         End If
-        Walk = result
-        Exit Function
+        Exit Sub
     End If
 
     ' --- steps 8-9: the largest ZP payment of the batch ------------------
@@ -217,15 +334,13 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                "Reached the batch: " & matched & " " & _
                modConfig.Setting("Payment document type") & " payment(s) behind clearing " & _
                "document " & result.ClearingDocument & ". " & payment.Notes
-        Walk = result
-        Exit Function
+        Exit Sub
     End If
 
     If Not payment.Found Then
         Finish result, "PARTIAL", _
                "FBL1N ran but no largest payment could be read. " & payment.Notes
-        Walk = result
-        Exit Function
+        Exit Sub
     End If
 
     result.ZpPaymentDocument = payment.DocumentNumber
@@ -248,22 +363,13 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                IIf(Len(result.ZpPaymentDocument) > 0, _
                    " (document " & result.ZpPaymentDocument & ")", "") & _
                ", but it could not be opened, so its invoices were not reached."
-        Walk = result
-        Exit Function
+        Exit Sub
       End If
     End If
 
     ' --- step 10: the largest invoice inside it, and its PDF -------------
     FetchInvoicePdf sampleIdx, result, folder, fileStem
-
-    Walk = result
-    Exit Function
-
-Failed:
-    Finish result, "ERROR", Err.Description
-    modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
-    Walk = result
-End Function
+End Sub
 
 '-----------------------------------------------------------------------
 ' The confirming-payment hop: one more level down to the real invoices.

@@ -580,6 +580,11 @@ SAMPLE_HEADERS = [
     ("Q", "Request", 30),
     ("R", "Company code", 13),
     ("S", "Auditor's comment", 46),
+    # Set only when the row came from a SAP document list: the document to
+    # enter the chain at, and which rung that is. Blank on every row that
+    # came from an auditor's statement extract, which is the normal case.
+    ("T", "Start document", 16),
+    ("U", "Start at", 12),
 ]
 MACRO_COLUMNS = ("J", "K", "L", "M", "N", "O")
 

@@ -122,6 +122,8 @@ SetNote book, "Invoice document type", _
 AddSampleColumn book, 17, "Request", 30
 AddSampleColumn book, 18, "Company code", 13
 AddSampleColumn book, 19, "Auditor's comment", 46
+AddSampleColumn book, 20, "Start document", 16
+AddSampleColumn book, 21, "Start at", 12
 StampExistingSamples book, "Paper Samples"
 
 ' --- 2. modules -------------------------------------------------------------

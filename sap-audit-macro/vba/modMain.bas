@@ -34,6 +34,10 @@ Private Const COL_INCLUDE As Long = 16
 Private Const COL_REQUEST As Long = 17
 Private Const COL_COMPANY As Long = 18
 Private Const COL_COMMENT As Long = 19
+' Set when the row came from a SAP document list rather than a bank
+' statement: the document to enter the chain at, and which rung that is.
+Private Const COL_START_DOC As Long = 20
+Private Const COL_START_AT As Long = 21
 
 ' The period's statement export, so each sample folder can be given a copy.
 Private mMonthStatementFile As String
@@ -51,6 +55,8 @@ Private Type Sample
     Request As String          ' which audit request this row came from
     CompanyCode As String      ' asked once per request at import
     Comment As String          ' what the auditor asked for, in their words
+    StartDocument As String    ' blank for a normal statement-driven sample
+    StartAt As String          ' "", "CLEARING" or "PAYMENT"
 End Type
 
 '-----------------------------------------------------------------------
@@ -148,7 +154,20 @@ Public Sub RunExtract()
         ' opened, not just before the samples inside it are walked.
         modConfig.SetCompanyCode CStr(monthTabs(monthKey)(4))
 
-        If TryOpenMonth(CStr(monthTabs(monthKey)(2)), CDate(monthTabs(monthKey)(0)), _
+        ' Rows that name their own starting document do not need a statement
+        ' search at all -- FEBAN exists to find what they already carry.
+        If Len(CStr(monthTabs(monthKey)(5))) > 0 Then
+            For i = 1 To count
+                If PeriodKey(samples(i)) = CStr(monthKey) Then
+                    If ProcessSample(samples(i), files) Then
+                        processed = processed + 1
+                    Else
+                        errored = errored + 1
+                        If modConfig.SettingIsYes("Stop on first error") Then GoTo Finished
+                    End If
+                End If
+            Next i
+        ElseIf TryOpenMonth(CStr(monthTabs(monthKey)(2)), CDate(monthTabs(monthKey)(0)), _
                         CDate(monthTabs(monthKey)(1))) Then
 
             ' The statement list is per period, so export it once here rather
@@ -274,6 +293,14 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     ' surface during this one. Close anything sitting under the evidence
     ' folder before starting, or they stack up all run.
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+
+    ' A row that names its own starting document skips the statement search
+    ' entirely -- there is nothing to match, because the document it would
+    ' have been looking for is already in the cell.
+    If Len(item.StartAt) > 0 Then
+        ProcessSample = ProcessDirectSample(item, filesTotal, sheet)
+        Exit Function
+    End If
 
     ' Get back to the statement list BEFORE anything else. The previous sample
     ' may have ended several screens deep, or in FBL1N, or on an error -- and
@@ -423,6 +450,76 @@ Failed:
                  "SKIPPED", vbNullString
 End Sub
 
+'-----------------------------------------------------------------------
+' A sample imported from a SAP document list rather than a bank statement.
+'
+' No FEBAN, no date-and-amount match, no drill through the FI document --
+' the row already names the document, so the chain is entered at whichever
+' rung that document sits on.
+'-----------------------------------------------------------------------
+Private Function ProcessDirectSample(ByRef item As Sample, ByRef filesTotal As Long, _
+                                     ByVal sheet As Worksheet) As Boolean
+    Dim chain As ChainResult
+    Dim empty As FebanMatch
+    Dim folder As String
+    Dim stem As String
+    Dim cleared As Long
+
+    On Error GoTo DirectFailed
+
+    modConfig.SetCompanyCode item.CompanyCode
+    modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+
+    folder = modUtil.JoinPath( _
+                 modUtil.JoinPath( _
+                     modUtil.JoinPath(modConfig.DownloadRoot(), _
+                                      modUtil.RequestFolderName(item.Request, _
+                                                                item.CompanyCode)), _
+                     modUtil.SafeFileName(item.MonthTab)), _
+                 modUtil.SampleFolderName(item.Idx, item.Amount))
+    stem = modUtil.EvidenceStem(item.Idx, item.PayDate, item.Amount)
+
+    cleared = modUtil.ClearSampleFolder(folder)
+    If cleared > 0 Then
+        modLog.LogAction item.Idx, "Folder", _
+                     "Removed " & cleared & " file(s) from an earlier run of this sample.", _
+                     "OK", vbNullString
+    End If
+
+    Select Case item.StartAt
+        Case "CLEARING"
+            chain = modChain.WalkFromClearing(item.Idx, item.StartDocument, _
+                                              item.DateFrom, item.DateTo, folder, stem)
+        Case "PAYMENT"
+            chain = modChain.WalkFromPayment(item.Idx, item.StartDocument, item.Party, _
+                                             item.DateFrom, item.DateTo, folder, stem)
+        Case Else
+            Err.Raise vbObjectError + 590, "modMain.ProcessDirectSample", _
+                      "Column U of row " & item.Row & " reads '" & item.StartAt & "'. " & _
+                      "It must be CLEARING, PAYMENT, or blank for a normal " & _
+                      "statement-driven sample."
+    End Select
+
+    filesTotal = filesTotal + CountFiles(chain)
+
+    WriteResult sheet, item.Row, chain.Status, _
+                "from " & item.StartAt & " " & item.StartDocument, _
+                chain.FiDocument, InvoiceTrail(chain), _
+                CountFiles(chain), chain.Notes
+
+    WriteSampleReport item, empty, chain, folder
+
+    ProcessDirectSample = (chain.Status = "DONE" Or _
+                           chain.Status = "NO CLEARING" Or _
+                           chain.Status = "NO VENDOR PAYMENTS")
+    Exit Function
+
+DirectFailed:
+    WriteResult sheet, item.Row, "ERROR", vbNullString, vbNullString, vbNullString, _
+                0, Err.Description
+    modLog.LogAction item.Idx, "Sample failed", Err.Description, "ERROR", vbNullString
+End Function
+
 Private Function CountFiles(ByRef chain As ChainResult) As Long
     If Len(chain.FiDocumentFile) > 0 Then CountFiles = CountFiles + 1
     If Len(chain.ZpListFile) > 0 Then CountFiles = CountFiles + 1
@@ -515,6 +612,8 @@ Private Function LoadSamplesWhere(ByRef samples() As Sample, _
             samples(count).Request = Trim$(CStr(sheet.Cells(row, COL_REQUEST).Value))
             samples(count).CompanyCode = Trim$(CStr(sheet.Cells(row, COL_COMPANY).Value))
             samples(count).Comment = Trim$(CStr(sheet.Cells(row, COL_COMMENT).Value))
+            samples(count).StartDocument = Trim$(CStr(sheet.Cells(row, COL_START_DOC).Value))
+            samples(count).StartAt = UCase$(Trim$(CStr(sheet.Cells(row, COL_START_AT).Value)))
 
             ' Columns C and D are formulas over the payment date. Fall back to
             ' deriving the range here if they have been cleared.
@@ -693,7 +792,7 @@ Private Function DistinctMonths(ByRef samples() As Sample, ByVal count As Long) 
         If Not months.Exists(key) Then
             months.Add key, Array(samples(i).DateFrom, samples(i).DateTo, _
                                   samples(i).MonthTab, samples(i).Request, _
-                                  samples(i).CompanyCode)
+                                  samples(i).CompanyCode, samples(i).StartAt)
         End If
     Next i
 
@@ -701,7 +800,11 @@ Private Function DistinctMonths(ByRef samples() As Sample, ByVal count As Long) 
 End Function
 
 Private Function PeriodKey(ByRef item As Sample) As String
-    PeriodKey = item.Request & "|" & item.CompanyCode & "|" & item.MonthTab
+    ' The entry mode is part of the key: rows that skip FEBAN must not be
+    ' grouped with rows that need it, or a period that fails to open would
+    ' take down samples that never needed it.
+    PeriodKey = item.Request & "|" & item.CompanyCode & "|" & item.MonthTab & _
+                "|" & item.StartAt
 End Function
 
 Private Function CountDistinctMonths(ByRef samples() As Sample, ByVal count As Long) As Long

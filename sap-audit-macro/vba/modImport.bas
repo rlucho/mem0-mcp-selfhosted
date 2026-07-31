@@ -52,6 +52,20 @@ Private Const CAPTIONS_REFERENCE As String = _
 Private Const CAPTIONS_COMMENT As String = _
     "ey comments|ey comment|comments|comment|query|request"
 
+' A SAP document list rather than an auditor's statement extract. When all
+' three are present the rows already name the documents that steps 1 to 5
+' of the chain exist to discover.
+Private Const CAPTIONS_DOCNUMBER As String = _
+    "document number|documentno|document no.|doc. number|doc.no.|belnr"
+Private Const CAPTIONS_DOCTYPE As String = _
+    "document type|doc. type|documenttype|blart"
+Private Const CAPTIONS_CLEARING As String = _
+    "clearing document|clearing doc.|clrng doc.|augbl"
+
+' Set when the operator confirmed this file is a SAP document list and the
+' rows should enter the chain directly. Read by Commit.
+Private mDirectEntry As Boolean
+
 Private Type ColumnMap
     Found As Boolean
     HeaderRow As Long
@@ -60,6 +74,11 @@ Private Type ColumnMap
     PartyCol As Long
     ReferenceCol As Long
     CommentCol As Long
+    ' Set only for a SAP document list -- a Payment Usage export or an
+    ' FBL1N download. These are what let a row skip the statement search.
+    DocNumberCol As Long
+    DocTypeCol As Long
+    ClearingCol As Long
 End Type
 
 '-----------------------------------------------------------------------
@@ -101,6 +120,15 @@ Public Sub ImportRequest()
 
     Set book = Application.Workbooks.Open(fileName:=path, UpdateLinks:=0, ReadOnly:=True)
 
+    ' A SAP document list is not a statement extract, and treating it as one
+    ' sends FEBAN looking for payment documents that were never statement
+    ' lines. Offer the shortcut instead: the rows already name the documents.
+    If Not AskAboutDocumentList(book) Then
+        book.Close SaveChanges:=False
+        Application.DisplayAlerts = previousAlerts
+        Exit Sub
+    End If
+
     preview = Describe(book, requestName, companyCode)
 
     If MsgBox(preview & vbCrLf & vbCrLf & "Add these to the Samples sheet?", _
@@ -136,6 +164,65 @@ Failed:
     MsgBox "The request could not be imported." & vbCrLf & vbCrLf & Err.Description, _
            vbExclamation, "Import request"
 End Sub
+
+'-----------------------------------------------------------------------
+' 'These are SAP documents, not statement lines.'
+'
+' A Payment Usage export has a document number, a document type and a
+' clearing document, which an auditor's request never does. Those rows name
+' what the first five steps of the chain exist to discover, so there is no
+' reason to search a bank statement for them:
+'
+'   SB with a clearing document  -> enter at the clearing document
+'   SB with none                 -> the FI line items are the evidence
+'   ZP                           -> enter at the payment itself
+'
+' Returns False only if the operator cancels.
+'-----------------------------------------------------------------------
+Private Function AskAboutDocumentList(ByVal book As Workbook) As Boolean
+    Dim sheet As Worksheet
+    Dim map As ColumnMap
+    Dim looksLikeDocuments As Boolean
+    Dim answer As VbMsgBoxResult
+
+    mDirectEntry = False
+
+    For Each sheet In book.Worksheets
+        If Not IsSkippable(sheet) Then
+            map = FindColumns(sheet)
+            If map.Found Then
+                If map.DocNumberCol > 0 And map.DocTypeCol > 0 Then looksLikeDocuments = True
+            End If
+        End If
+    Next sheet
+
+    If Not looksLikeDocuments Then
+        AskAboutDocumentList = True
+        Exit Function
+    End If
+
+    answer = MsgBox( _
+        "This file holds SAP DOCUMENTS, not bank statement lines -- it has a " & _
+        "document number, a document type and a clearing document. A Payment " & _
+        "Usage or FBL1N export looks like this." & vbCrLf & vbCrLf & _
+        "Those rows already name what the first five steps of the chain exist " & _
+        "to find, so FEBAN can be skipped:" & vbCrLf & vbCrLf & _
+        "   ZP payment            -> straight to its invoices" & vbCrLf & _
+        "   SB with a clearing doc -> the batch behind it, then its invoices" & vbCrLf & _
+        "   SB with none           -> the FI line items, nothing settled" & vbCrLf & vbCrLf & _
+        "Each one gets its invoice list exported and the largest invoice's PDF " & _
+        "downloaded, the same as any other sample." & vbCrLf & vbCrLf & _
+        "YES     enter the chain at each document (recommended)" & vbCrLf & _
+        "NO      treat them as statement lines and search FEBAN by date and amount" & _
+        vbCrLf & _
+        "CANCEL  stop", _
+        vbQuestion + vbYesNoCancel, "SAP documents, not statement lines")
+
+    If answer = vbCancel Then Exit Function
+
+    mDirectEntry = (answer = vbYes)
+    AskAboutDocumentList = True
+End Function
 
 '-----------------------------------------------------------------------
 ' What the importer thinks it has found, before anything is written.
@@ -261,6 +348,15 @@ Private Function Commit(ByVal book As Workbook, ByVal requestName As String, _
                         target.Cells(outRow, 19).Value = _
                             CellString(sheet, row, map.CommentCol)
 
+                        ' Where this row enters the chain. Blank for a normal
+                        ' statement-driven sample, which is every auditor
+                        ' request; set only for a SAP document list.
+                        If mDirectEntry Then
+                            target.Cells(outRow, 20).Value = _
+                                EntryDocument(sheet, row, map)
+                            target.Cells(outRow, 21).Value = EntryRung(sheet, row, map)
+                        End If
+
                         target.Cells(outRow, 3).NumberFormat = "dd/mm/yyyy"
                         target.Cells(outRow, 4).NumberFormat = "dd/mm/yyyy"
                         target.Cells(outRow, 5).NumberFormat = "dd/mm/yyyy"
@@ -275,6 +371,59 @@ Private Function Commit(ByVal book As Workbook, ByVal requestName As String, _
     Next sheet
 
     Commit = added
+End Function
+
+'-----------------------------------------------------------------------
+' Which rung of the chain a SAP document row belongs on, and which document
+' to enter it with.
+'
+' A ZP IS the payment, so it enters at step 10 with its own number. An SB is
+' a bank statement posting: if it carries a clearing document that is the
+' batch, and the row enters at step 5 with the CLEARING number, not its own.
+' An SB with no clearing document settled nothing, and WalkFromClearing on a
+' blank number would go nowhere -- those are left as statement rows so the
+' normal chain reports them as NO CLEARING with their line items exported.
+'-----------------------------------------------------------------------
+Private Function EntryRung(ByVal sheet As Worksheet, ByVal row As Long, _
+                           ByRef map As ColumnMap) As String
+    Dim docType As String
+
+    docType = UCase$(CellString(sheet, row, map.DocTypeCol))
+
+    If IsPaymentType(docType) Then
+        EntryRung = "PAYMENT"
+    ElseIf Len(CellString(sheet, row, map.ClearingCol)) > 0 Then
+        EntryRung = "CLEARING"
+    End If
+End Function
+
+Private Function EntryDocument(ByVal sheet As Worksheet, ByVal row As Long, _
+                               ByRef map As ColumnMap) As String
+    Select Case EntryRung(sheet, row, map)
+        Case "PAYMENT":  EntryDocument = CellString(sheet, row, map.DocNumberCol)
+        Case "CLEARING": EntryDocument = CellString(sheet, row, map.ClearingCol)
+    End Select
+End Function
+
+' The Control sheet already names the payment document types, and takes a
+' list, so this follows whatever is set there rather than hardcoding ZP.
+Private Function IsPaymentType(ByVal docType As String) As Boolean
+    Dim wanted() As String
+    Dim i As Long
+
+    If Len(docType) = 0 Then Exit Function
+
+    wanted = Split(Replace(Replace(modConfig.Setting("Payment document type"), _
+                                   ";", ","), "|", ","), ",")
+
+    For i = LBound(wanted) To UBound(wanted)
+        If Len(Trim$(wanted(i))) > 0 Then
+            If StrComp(docType, UCase$(Trim$(wanted(i))), vbTextCompare) = 0 Then
+                IsPaymentType = True
+                Exit Function
+            End If
+        End If
+    Next i
 End Function
 
 '-----------------------------------------------------------------------
@@ -301,6 +450,9 @@ Private Function FindColumns(ByVal sheet As Worksheet) As ColumnMap
             result.PartyCol = MatchColumn(sheet, row, CAPTIONS_PARTY)
             result.ReferenceCol = MatchColumn(sheet, row, CAPTIONS_REFERENCE)
             result.CommentCol = MatchColumn(sheet, row, CAPTIONS_COMMENT)
+            result.DocNumberCol = MatchColumn(sheet, row, CAPTIONS_DOCNUMBER)
+            result.DocTypeCol = MatchColumn(sheet, row, CAPTIONS_DOCTYPE)
+            result.ClearingCol = MatchColumn(sheet, row, CAPTIONS_CLEARING)
             Exit For
         End If
     Next row
