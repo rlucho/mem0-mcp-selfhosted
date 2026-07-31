@@ -590,14 +590,106 @@ Public Function LargestRow(ByVal path As String, ByVal sampleIdx As Long, _
                                   documentSetting, vbNullString)
 End Function
 
+'-----------------------------------------------------------------------
+' The invoice: the most negative row of a Payment Usage list.
+'
+' This used to filter on document type, and the type was wrong -- KR is the
+' SAP standard but this system's first exported invoice came back as RN, so
+' the filter matched nothing on a file that plainly held an invoice. Codes
+' are configuration: they differ by company code, by client, by release.
+'
+' The SIGN does not. In a vendor line-item list the payment is a debit and
+' the invoice it settles is a credit, so the invoice is the negative row and
+' the biggest invoice is the most negative one. Nothing to configure and
+' nothing to keep in step with a customising table.
+'
+' 'Invoice document type' survives as a CROSS-CHECK only: when the row this
+' picks is not one of those types, the Log says so and still takes it. It
+' can no longer decide the answer, so it can no longer break it.
+'-----------------------------------------------------------------------
+Public Function MostNegativeRow(ByVal path As String, ByVal sampleIdx As Long, _
+                                ByVal amountSetting As String, _
+                                ByVal supplierSetting As String, _
+                                ByVal documentSetting As String, _
+                                ByVal expectedTypes As String) As ListRow
+    Dim result As ListRow
+    Dim amountCol As Long, supplierCol As Long, documentCol As Long
+    Dim typeCol As Long
+    Dim r As Long
+    Dim value As Double, best As Double
+    Dim chosenType As String
+    Dim positives As Long
+    Dim biggestPositive As Double
+
+    If Not LoadExport(path, sampleIdx) Then Exit Function
+    If Not FindColumns(sampleIdx, amountSetting, supplierSetting, documentSetting, _
+                       amountCol, supplierCol, documentCol) Then Exit Function
+
+    typeCol = MatchColumn(mHeaderRow, CaptionSetting(vbNullString, DEFAULT_DOCTYPE_CAPTIONS))
+
+    For r = mHeaderRow + 1 To mRowCount
+        If Not IsTotalRow(r, supplierCol) Then
+            value = modUtil.ParseSapAmount(mCells(r, amountCol))
+
+            If value < 0 Then
+                result.RowsConsidered = result.RowsConsidered + 1
+
+                ' Strictly less, so the first of two equal rows wins and the
+                ' answer does not depend on the order SAP happened to print.
+                If value < best Then
+                    best = value
+                    result.Found = True
+                    result.Amount = Abs(value)
+                    result.SourceRow = r
+                    result.Supplier = mCells(r, supplierCol)
+                    If documentCol > 0 Then result.DocumentNumber = mCells(r, documentCol)
+                    If typeCol > 0 Then chosenType = Normalise(mCells(r, typeCol))
+                End If
+            ElseIf value > 0 Then
+                positives = positives + 1
+                If value > biggestPositive Then biggestPositive = value
+            End If
+        End If
+    Next r
+
+    If Not result.Found Then
+        modLog.LogAction sampleIdx, "Read export", _
+                     "No row in " & path & " carries a negative amount, so there is no " & _
+                     "invoice to take. " & positives & " positive row(s), the largest " & _
+                     Format$(biggestPositive, "#,##0.00") & ". Column " & amountCol & _
+                     " was read as the amount -- check that against the file.", _
+                     "ERROR", path
+        Exit Function
+    End If
+
+    modLog.LogAction sampleIdx, "Read export", _
+                 "Most negative of " & result.RowsConsidered & " credit row(s): " & _
+                 Format$(-best, "#,##0.00") & _
+                 IIf(Len(result.DocumentNumber) > 0, ", document " & result.DocumentNumber, "") & _
+                 IIf(Len(chosenType) > 0, ", type " & chosenType, "") & _
+                 IIf(Len(result.Supplier) > 0, ", " & result.Supplier, "") & _
+                 ". Picked by sign, not by document type.", "OK", path
+
+    ' Cross-check, never a veto.
+    If Len(expectedTypes) > 0 And Len(chosenType) > 0 Then
+        If Not TypeWanted(chosenType, expectedTypes) Then
+            modLog.LogAction sampleIdx, "Read export", _
+                         "That row is document type " & chosenType & ", which is not in " & _
+                         "'Invoice document type' (" & expectedTypes & "). It was taken " & _
+                         "anyway, because the sign identifies the invoice. Add " & _
+                         chosenType & " to that setting if it is the invoice type here.", _
+                         "MANUAL", path
+        End If
+    End If
+
+    MostNegativeRow = result
+End Function
+
 ' Same, restricted to one document type.
 '
-' This is what picks the invoice. A Payment Usage list holds several
-' document types at once -- ZP payments, KR vendor invoices, SB statement
-' documents -- so taking the largest row without filtering can easily
-' return a payment where an invoice was wanted. The invoices are the KR
-' rows, and they carry negative amounts, which is why the comparison is on
-' magnitude throughout.
+' Kept for the ZP payment step, which needs the largest by MAGNITUDE across
+' a list where every row has the same sign. The invoice step no longer uses
+' it -- see MostNegativeRow above for why.
 Public Function LargestRowOfType(ByVal path As String, ByVal sampleIdx As Long, _
                                  ByVal amountSetting As String, _
                                  ByVal supplierSetting As String, _

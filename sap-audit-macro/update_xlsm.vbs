@@ -97,13 +97,13 @@ SetNote book, "Payment document type", _
 ' -- but only if the operator has not already put their own value there.
 fixedCells = fixedCells + SetValueIfDefault(book, "Invoice document type", "KR", "KR, RN")
 SetNote book, "Invoice document type", _
-        "The PDF is taken from the invoice, which carries a NEGATIVE amount. The list it " & _
-        "is picked from holds several types at once -- ZP payments, invoices, SB statement " & _
-        "documents -- so without this filter the largest row is usually a payment, not an " & _
-        "invoice. Comparisons are on magnitude, so the negative sign does not matter. " & _
-        "Takes a comma-separated list: KR is the SAP standard, and the first invoice " & _
-        "exported from this system came back as RN, so both are here. When nothing " & _
-        "matches, the Log names the types the file actually held."
+        "CROSS-CHECK ONLY -- this no longer decides anything. The invoice is picked by " & _
+        "SIGN: in a vendor line-item list the payment is a debit and the invoice it " & _
+        "settles is a credit, so the invoice is the negative row and the biggest invoice " & _
+        "is the most negative one. That holds whatever the type is called in this company " & _
+        "code, which matters because it is RN here and KR on the SAP standard. If the row " & _
+        "picked is not one of the types listed, the Log says so and takes it anyway. " & _
+        "Blank to switch the cross-check off."
 
 ' --- 2. modules -------------------------------------------------------------
 vbaOk = False

@@ -380,8 +380,8 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
                "screen. Tried " & modConfig.ElementIdOrBlank("Payment.UsageMenu") & ", " & _
                modConfig.ElementIdOrBlank("PaymentUsage.Menu") & " and a search of the " & _
                "whole menu bar for """ & mUsageMenuText & """. To finish by hand: open " & _
-               "payment " & result.ZpPaymentDocument & " and take the largest " & _
-               modConfig.Setting("Invoice document type") & " document behind it."
+               "payment " & result.ZpPaymentDocument & " and take the largest negative " & _
+               "(credit) document behind it -- that is the invoice."
         modLog.LogAction sampleIdx, "Step 10", result.Notes, "ERROR", vbNullString
         Exit Sub
     End If
@@ -421,20 +421,22 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
         Exit Sub
     End If
 
-    ' The invoice is the KR document, and KR rows carry negative amounts,
-    ' which is why every comparison is on magnitude. Without the type filter
-    ' the largest row of this list is usually a ZP payment.
-    largest = modExportRead.LargestRowOfType(result.InvoiceListFile, sampleIdx, _
-                                             "Invoice list amount column", _
-                                             "Invoice list supplier column", _
-                                             "Invoice list document column", _
-                                             modConfig.Setting("Invoice document type"))
+    ' The invoice is the negative row: the payment is a debit, the invoice it
+    ' settles is a credit, and the biggest invoice is the most negative. That
+    ' holds whatever the document type happens to be called in this company
+    ' code -- which is the point, because it was called RN here and the type
+    ' filter this replaces was looking for KR.
+    largest = modExportRead.MostNegativeRow(result.InvoiceListFile, sampleIdx, _
+                                            "Invoice list amount column", _
+                                            "Invoice list supplier column", _
+                                            "Invoice list document column", _
+                                            modConfig.Setting("Invoice document type"))
 
     If Not largest.Found Then
         Finish result, "PARTIAL", _
-               summary & " Exported " & result.InvoiceListFile & " but found no " & _
-               modConfig.Setting("Invoice document type") & " row in it to take an " & _
-               "invoice from. Open the file and check."
+               summary & " Exported " & result.InvoiceListFile & " but no row in it " & _
+               "carries a negative amount, so there is no invoice behind this payment " & _
+               "to take. Open the file and check the amount column."
         Exit Sub
     End If
 
@@ -443,8 +445,7 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
     result.InvoiceAmount = largest.Amount
 
     modLog.LogAction sampleIdx, "Step 10", _
-                 "Largest of " & largest.RowsConsidered & " " & _
-                 modConfig.Setting("Invoice document type") & " invoices behind the " & _
+                 "Largest of " & largest.RowsConsidered & " invoice(s) behind the " & _
                  "payment: " & Format$(largest.Amount, "#,##0.00") & _
                  IIf(Len(largest.DocumentNumber) > 0, _
                      ", document " & largest.DocumentNumber, "") & _

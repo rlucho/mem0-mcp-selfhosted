@@ -133,13 +133,13 @@ CONTROL_SETTINGS = [
     ("ZP list document column", "",
      "Caption of the document-number column in that same file. Same rules."),
     ("Invoice document type", "KR, RN",
-     "The PDF is taken from the invoice, which carries a NEGATIVE amount. The list it is "
-     "picked from holds several types at once -- ZP payments, invoices, SB statement "
-     "documents -- so without this filter the largest row is usually a payment, not an "
-     "invoice. Comparisons are on magnitude, so the negative sign does not matter. Takes "
-     "a comma-separated list: KR is the SAP standard, and the first invoice exported from "
-     "this system came back as RN, so both are here. When nothing matches, the Log names "
-     "the types the file actually held."),
+     "CROSS-CHECK ONLY -- this no longer decides anything. The invoice is picked by SIGN: "
+     "in a vendor line-item list the payment is a debit and the invoice it settles is a "
+     "credit, so the invoice is the negative row and the biggest invoice is the most "
+     "negative one. That holds whatever the type is called in this company code, which "
+     "matters because it is RN here and KR on the SAP standard. If the row picked is not "
+     "one of the types listed, the Log says so and takes it anyway. Blank to switch the "
+     "cross-check off."),
     ("Invoice list amount column", "",
      "Santander SCF route only. Caption of the amount column in the exported list of "
      "invoices behind an SCF payment. Blank falls back to a built-in list of captions."),
