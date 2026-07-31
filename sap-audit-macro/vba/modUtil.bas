@@ -10,6 +10,34 @@ Attribute VB_Name = "modUtil"
 '=======================================================================
 Option Explicit
 
+'-----------------------------------------------------------------------
+' How the extract is laid out on disk.
+'
+'   Audit GBKM\
+'     Sep 25\
+'       01 - 8072447.42\
+'         01 - 8072447.42 - GBKM.xlsx        <- the report, read this first
+'         1 - FEBAN statement list.xlsx
+'         2 - Payment usage - batch.xlsx
+'         3 - FBL1N - payments in the batch.xlsx
+'         4 - Invoices behind the largest payment.xlsx
+'         5 - Largest invoice.pdf
+'
+' One folder per sample, and fixed names inside it. The sample used to be
+' encoded in every file name because everything sat in one folder; now the
+' folder says which sample it is and the file name says which step of the
+' chain it came from, which is what an auditor needs to read a pack they
+' did not watch being made.
+'
+' The leading number keeps them in chain order in Explorer.
+'-----------------------------------------------------------------------
+Public Const FILE_FEBAN As String = "1 - FEBAN statement list.xlsx"
+Public Const FILE_BATCH As String = "2 - Payment usage - batch of payments.xlsx"
+Public Const FILE_FIDOC As String = "2 - FI document line items (not cleared).xlsx"
+Public Const FILE_ZPLIST As String = "3 - FBL1N - payments in the batch.xlsx"
+Public Const FILE_INVOICES As String = "4 - Invoices behind the largest payment.xlsx"
+Public Const FILE_PDF As String = "5 - Largest invoice.pdf"
+
 #If VBA7 Then
     Private Declare PtrSafe Sub SleepApi Lib "kernel32" Alias "Sleep" (ByVal ms As Long)
 #Else
@@ -303,34 +331,6 @@ Public Function CloseExportWorkbooksUnder(ByVal root As String) As Long
 
     CloseExportWorkbooksUnder = doomed.Count
 End Function
-
-'-----------------------------------------------------------------------
-' How the extract is laid out on disk.
-'
-'   Audit GBKM\
-'     Sep 25\
-'       01 - 8072447.42\
-'         01 - 8072447.42 - GBKM.xlsx        <- the report, read this first
-'         1 - FEBAN statement list.xlsx
-'         2 - Payment usage - batch.xlsx
-'         3 - FBL1N - payments in the batch.xlsx
-'         4 - Invoices behind the largest payment.xlsx
-'         5 - Largest invoice.pdf
-'
-' One folder per sample, and fixed names inside it. The sample used to be
-' encoded in every file name because everything sat in one folder; now the
-' folder says which sample it is and the file name says which step of the
-' chain it came from, which is what an auditor needs to read a pack they
-' did not watch being made.
-'
-' The leading number keeps them in chain order in Explorer.
-'-----------------------------------------------------------------------
-Public Const FILE_FEBAN As String = "1 - FEBAN statement list.xlsx"
-Public Const FILE_BATCH As String = "2 - Payment usage - batch of payments.xlsx"
-Public Const FILE_FIDOC As String = "2 - FI document line items (not cleared).xlsx"
-Public Const FILE_ZPLIST As String = "3 - FBL1N - payments in the batch.xlsx"
-Public Const FILE_INVOICES As String = "4 - Invoices behind the largest payment.xlsx"
-Public Const FILE_PDF As String = "5 - Largest invoice.pdf"
 
 ' '01 - 8072447.42'. The index leads so the folders sort in sample order;
 ' the amount is what the auditor's request identifies the line by. A plain
