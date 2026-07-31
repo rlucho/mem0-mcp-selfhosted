@@ -44,6 +44,7 @@ Public Type ZpPayment
     RowsConsidered As Long
     ExportFile As String
     Skipped As Boolean            ' the stage is not configured
+    NoVendorItems As Boolean      ' FBL1N has nothing for these documents, at any date
     Notes As String
 End Type
 
@@ -117,6 +118,7 @@ Public Function LargestPaymentOfBatch(ByVal sampleIdx As Long, _
         ' Before believing 'no items', widen the one filter that can hide a
         ' document we have already named. See RetryWithWiderDates.
         If Not RetryWithWiderDates(sampleIdx, dateFrom, dateTo) Then
+            result.NoVendorItems = True
             result.Notes = "FBL1N found no line items for the " & count & " ZP " & _
                            "document(s) from the batch, in company code " & _
                            modConfig.CompanyCode() & " -- not for posting date " & _

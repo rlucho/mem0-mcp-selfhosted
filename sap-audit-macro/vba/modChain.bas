@@ -337,6 +337,21 @@ Private Sub ContinueFromClearing(ByVal sampleIdx As Long, ByRef result As ChainR
         Exit Sub
     End If
 
+    ' The same finding as the NO VENDOR PAYMENTS above, reached one rung later.
+    ' Those are caught at the Payment Usage list, which holds no ZP documents at
+    ' all. This is the other shape: the clearing document DOES have a payment run
+    ' behind it, so the batch looks ordinary, and only FBL1N reveals that those
+    ' payments have no vendor line items -- a treasury or FX settlement that went
+    ' through a payment run. One finding, so one status, whichever rung found it.
+    If payment.NoVendorItems Then
+        Finish result, "NO VENDOR PAYMENTS", _
+               matched & " " & modConfig.Setting("Payment document type") & " payment(s) " & _
+               "sit behind clearing document " & result.ClearingDocument & ", but none of " & _
+               "them is a vendor line item, so no supplier and no invoice is involved. " & _
+               payment.Notes & " See " & modUtil.FILE_BATCH & " for the batch itself."
+        Exit Sub
+    End If
+
     If Not payment.Found Then
         Finish result, "PARTIAL", _
                "FBL1N ran but no largest payment could be read. " & payment.Notes
