@@ -247,6 +247,12 @@ Public Function CompleteSaveDialogIn(ByVal sampleIdx As Long, ByVal windowId As 
     modSapConnect.Element(pathId).Text = folder
     modSapConnect.Element(nameId).Text = fileName
 
+    ' Excel will not hold two workbooks with the same name at once, and every
+    ' sample folder now uses the same fixed names. The previous sample's copy
+    ' -- opened by SAP, not by us -- has to go before this one lands, or Excel
+    ' puts up a modal and waits for a human.
+    modUtil.CloseWorkbooksNamed fileName
+
     modSafety.GuardedPress Rebase(modConfig.ElementId("Save.GenerateButton"), windowId)
     modSapConnect.WaitForSap
 
@@ -256,6 +262,8 @@ Public Function CompleteSaveDialogIn(ByVal sampleIdx As Long, ByVal windowId As 
                      "ERROR", target
         Exit Function
     End If
+
+    SettleAfterExport fileName
 
     modLog.LogAction sampleIdx, "Export", _
                  "Wrote " & Format$(modUtil.FileSizeBytes(target) / 1024, "0.0") & " KB", _
@@ -360,6 +368,9 @@ Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As Str
         End If
     End If
 
+    ' See CompleteSaveDialogIn: same-named workbook from the previous sample.
+    modUtil.CloseWorkbooksNamed fileName
+
     modSafety.GuardedPress modConfig.ElementId("Save.GenerateButton")
     modSapConnect.WaitForSap
 
@@ -378,12 +389,22 @@ Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As Str
         Exit Function
     End If
 
+    SettleAfterExport fileName
+
     modLog.LogAction sampleIdx, "Export", _
                  "Wrote " & Format$(modUtil.FileSizeBytes(target) / 1024, "0.0") & " KB", _
                  "OK", target
 
     CompleteSaveDialog = target
 End Function
+
+' SAP hands the file to Excel once it has finished writing it, and it does
+' that on its own schedule -- so closing before the export is not enough on
+' its own. Give the hand-off a moment, then close it again.
+Private Sub SettleAfterExport(ByVal fileName As String)
+    modUtil.SleepSeconds 1#
+    modUtil.CloseWorkbooksNamed fileName
+End Sub
 
 Private Function WaitForFile(ByVal path As String, ByVal maxSeconds As Double) As Boolean
     Dim waited As Double

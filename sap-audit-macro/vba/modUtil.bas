@@ -274,6 +274,53 @@ End Function
 ' path means only the file just written is touched -- never the control
 ' workbook, and never anything the operator opened themselves.
 '-----------------------------------------------------------------------
+'-----------------------------------------------------------------------
+' Close any open workbook with this file NAME, wherever it came from.
+'
+' Excel refuses to hold two workbooks with the same name at once, whatever
+' folder each is in. That never mattered while every export carried the
+' sample number in its name; it started mattering the moment each sample
+' got its own folder and the names inside became fixed. Sample 1's
+' '2 - Payment usage - batch of payments.xlsx' is auto-opened by SAP, and
+' when sample 2's file of the same name arrives Excel puts up a modal and
+' waits for a human -- and refuses the open, so the macro's own read of
+' that file fails too.
+'
+' Matching on name rather than path is the point: it is the name Excel
+' objects to. Returns how many were closed.
+'-----------------------------------------------------------------------
+Public Function CloseWorkbooksNamed(ByVal fileName As String) As Long
+    Dim book As Workbook
+    Dim doomed As Collection
+    Dim item As Variant
+    Dim previousAlerts As Boolean
+
+    If Len(fileName) = 0 Then Exit Function
+
+    Set doomed = New Collection
+
+    On Error Resume Next
+    For Each book In Application.Workbooks
+        If Not book Is ThisWorkbook Then
+            If StrComp(book.Name, fileName, vbTextCompare) = 0 Then doomed.Add book
+        End If
+    Next book
+    On Error GoTo 0
+
+    previousAlerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+
+    On Error Resume Next
+    For Each item In doomed
+        item.Close SaveChanges:=False
+    Next item
+    On Error GoTo 0
+
+    Application.DisplayAlerts = previousAlerts
+
+    CloseWorkbooksNamed = doomed.Count
+End Function
+
 Public Sub CloseWorkbookIfOpen(ByVal path As String)
     Dim book As Workbook
     Dim previousAlerts As Boolean

@@ -127,6 +127,44 @@ Done:
     On Error GoTo 0
 End Function
 
+' Close any workbook carrying this file's name but loaded from somewhere
+' else. Anything open from this very path is left alone -- that is the file
+' we are about to read.
+Private Sub CloseSameNameElsewhere(ByVal path As String)
+    Dim book As Workbook
+    Dim doomed As Collection
+    Dim item As Variant
+    Dim wanted As String
+
+    wanted = BaseName(path)
+    Set doomed = New Collection
+
+    On Error Resume Next
+    For Each book In Application.Workbooks
+        If Not book Is ThisWorkbook Then
+            If StrComp(book.Name, wanted, vbTextCompare) = 0 Then
+                If StrComp(book.FullName, path, vbTextCompare) <> 0 Then doomed.Add book
+            End If
+        End If
+    Next book
+
+    For Each item In doomed
+        item.Close SaveChanges:=False
+    Next item
+    On Error GoTo 0
+End Sub
+
+Private Function BaseName(ByVal path As String) As String
+    Dim slash As Long
+
+    slash = InStrRev(path, "\")
+    If slash = 0 Then
+        BaseName = path
+    Else
+        BaseName = Mid$(path, slash + 1)
+    End If
+End Function
+
 Private Function LoadFromWorkbook(ByVal path As String, ByVal sampleIdx As Long) As Boolean
     Dim book As Workbook
     Dim sheet As Worksheet
@@ -138,6 +176,15 @@ Private Function LoadFromWorkbook(ByVal path As String, ByVal sampleIdx As Long)
     Application.DisplayAlerts = False
 
     On Error GoTo Failed
+
+    ' Excel refuses to open a second workbook with a name it already holds,
+    ' and every sample folder uses the same fixed names. If the previous
+    ' sample's copy is still open -- SAP opens each export by itself -- this
+    ' open fails with a modal, so clear the name first. Same path is fine:
+    ' Workbooks.Open just returns the one already open.
+    If StrComp(BaseName(path), path, vbTextCompare) <> 0 Then
+        CloseSameNameElsewhere path
+    End If
 
     ' UpdateLinks:=0 stops a linked export prompting; ReadOnly leaves the
     ' operator's file untouched.
