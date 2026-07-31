@@ -92,6 +92,15 @@ SetNote book, "Payment document type", _
         "list -- 'ZP, ZV, KZ' -- for batches paid outside the normal payment run. When " & _
         "nothing matches, the Log names the types the file actually held."
 
+' An invoice document carries more than one attachment; picking row 0 got the
+' workflow notes instead of the invoice.
+AddSetting book, "Invoice attachment title contains", "Invoice", _
+        "An invoice document carries more than one attachment -- on this system the " & _
+        "workflow notes sit above the document itself -- so the row whose text contains " & _
+        "this word is the one downloaded. The titles come from the archiving system " & _
+        "rather than from SAP, so they do not follow the SAP logon language. Nothing " & _
+        "matching takes the last row and says so in the Log, naming every attachment."
+
 ' The first invoice this system exported came back as document type RN, not
 ' the KR the setting shipped with, so the KR filter matched nothing. Widen it
 ' -- but only if the operator has not already put their own value there.
@@ -240,6 +249,24 @@ Sub SetNote(wb, settingName, note)
             Exit Sub
         End If
     Next
+End Sub
+
+' Add a Control setting below the last existing one, if it is not there yet.
+Sub AddSetting(wb, settingName, value, note)
+    Dim sheet, r, lastRow
+    Set sheet = wb.Worksheets("Control")
+    lastRow = 0
+    For r = 1 To 200
+        If Trim(CStr(sheet.Cells(r, 2).Value)) = settingName Then Exit Sub   ' already there
+        If Len(Trim(CStr(sheet.Cells(r, 2).Value))) > 0 And _
+           Len(Trim(CStr(sheet.Cells(r, 4).Value))) > 0 Then lastRow = r
+    Next
+    If lastRow = 0 Then Exit Sub
+
+    sheet.Rows(lastRow + 1).Insert
+    sheet.Cells(lastRow + 1, 2).Value = settingName
+    sheet.Cells(lastRow + 1, 3).Value = value
+    sheet.Cells(lastRow + 1, 4).Value = note
 End Sub
 
 Function IIfStr(cond, a, b)

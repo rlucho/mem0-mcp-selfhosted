@@ -603,7 +603,17 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
                  IIf(Len(largest.Supplier) > 0, ", " & largest.Supplier, ""), _
                  "OK", result.InvoiceListFile
 
-    result.InvoicePdfFile = SaveAttachedPdf(sampleIdx, result, folder, fileStem)
+    ' OPEN THE INVOICE BEFORE REACHING FOR ITS ATTACHMENT.
+    '
+    ' The attachment toolbox hangs off whatever document is on screen, and
+    ' after the export that is still the payment-usage LIST -- whose object is
+    ' the ZP payment. So every PDF downloaded so far was the payment advice
+    ' for the payment, not the invoice: right list, wrong document. Both
+    ' recordings drill into the invoice row with F2 before pressing the
+    ' toolbox, and that is the step that was missing.
+    If OpenInvoiceDocument(sampleIdx, result) Then
+        result.InvoicePdfFile = SaveAttachedPdf(sampleIdx, result, folder, fileStem)
+    End If
 
     If Len(result.InvoicePdfFile) > 0 Then
         Finish result, "DONE", _
@@ -630,12 +640,54 @@ End Sub
 ' dialog, this reports MANUAL with the document numbers rather than
 ' claiming a success that left no file behind.
 '-----------------------------------------------------------------------
+'-----------------------------------------------------------------------
+' Drill into the invoice itself, from the list it was picked off.
+'
+' Same mechanism as opening the largest payment: find the label whose text
+' is the document number, put the cursor in it, F2, and check the document
+' number is on the screen that came up. FB03 by number if the list will not
+' give it up.
+'-----------------------------------------------------------------------
+Private Function OpenInvoiceDocument(ByVal sampleIdx As Long, _
+                                     ByRef result As ChainResult) As Boolean
+    If Len(result.InvoiceNumber) = 0 Then
+        Finish result, "BLOCKED_INVOICE", _
+               "The invoice row carries no document number, so the invoice could not be " & _
+               "opened and its attachment was not reached."
+        modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "ERROR", vbNullString
+        Exit Function
+    End If
+
+    If modFbl1n.OpenPaymentOnList(sampleIdx, result.InvoiceNumber) Then
+        OpenInvoiceDocument = True
+    ElseIf modFbl1n.OpenPaymentByDocument(sampleIdx, result.InvoiceNumber, _
+                                          Format$(Date, "yyyy")) Then
+        OpenInvoiceDocument = True
+    Else
+        Finish result, "BLOCKED_INVOICE", _
+               "Identified invoice " & result.InvoiceNumber & _
+               IIf(Len(result.InvoiceSupplier) > 0, " (" & result.InvoiceSupplier & ")", "") & _
+               " for " & Format$(result.InvoiceAmount, "#,##0.00") & _
+               " but could not open the document, so its attachment was not downloaded. " & _
+               "The list it came from is in the folder."
+        modLog.LogAction sampleIdx, "Invoice PDF", result.Notes, "ERROR", vbNullString
+    End If
+
+    If OpenInvoiceDocument Then
+        modLog.LogAction sampleIdx, "Invoice PDF", _
+                     "Opened invoice " & result.InvoiceNumber & _
+                     " so the attachment comes off the invoice rather than off the " & _
+                     "payment.", "OK", vbNullString
+    End If
+End Function
+
 Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainResult, _
                                  ByVal folder As String, ByVal fileStem As String) As String
     Dim toolboxId As String, gridId As String, exportItem As String
     Dim saveWindow As String, columnName As String
     Dim toolbox As Object, grid As Object
     Dim target As String
+    Dim chosenRow As Long
 
     toolboxId = FindGosToolbox()
     gridId = modConfig.ElementIdOrBlank("Invoice.AttachListGrid")
@@ -683,17 +735,16 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
 
     Set grid = modSapConnect.Element(gridId)
 
-    ' Take the first attachment. Where a document carries several, the run
-    ' says so rather than silently picking one and calling it the invoice.
+    ' WHICH attachment. An invoice document carries more than one: on this
+    ' system row 0 is "Readsoft Workflow Notes" and row 1 is "Readsoft Invoice
+    ' & Sales ...", so taking row 0 gets the workflow notes. Both recordings
+    ' select row 1, but a fixed index is the same mistake in a different
+    ' place. Pick by what the row SAYS, and fall back to the recorded shape.
+    chosenRow = ChooseAttachmentRow(sampleIdx, grid, columnName)
+
     On Error Resume Next
-    If grid.RowCount > 1 Then
-        modLog.LogAction sampleIdx, "Invoice PDF", _
-                     grid.RowCount & " attachments on this document; the first was " & _
-                     "taken. Check by hand which one the auditor wants.", _
-                     "MANUAL", vbNullString
-    End If
-    If Len(columnName) > 0 Then grid.setCurrentCell 0, columnName
-    grid.selectedRows = "0"
+    If Len(columnName) > 0 Then grid.setCurrentCell chosenRow, columnName
+    grid.selectedRows = CStr(chosenRow)
     On Error GoTo 0
     modSapConnect.WaitForSap
 
@@ -720,6 +771,86 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
         sampleIdx, saveWindow, folder, modUtil.FILE_PDF)
 
     CloseAttachmentList
+End Function
+
+'-----------------------------------------------------------------------
+' Which row of the attachment list is the invoice.
+'
+' 'Invoice attachment title contains' on the Control sheet names the word to
+' look for -- 'Invoice' here, because the archive titles these rows
+' 'Readsoft Invoice & Sales ...'. Those titles come from the archiving
+' system rather than from SAP, so they do not follow the logon language;
+' where they do differ, it is one cell to change.
+'
+' Nothing matching falls back to the LAST row rather than the first: both
+' recordings took row 1 of 2, and the workflow notes that must not be picked
+' sit above the document.
+'-----------------------------------------------------------------------
+Private Function ChooseAttachmentRow(ByVal sampleIdx As Long, ByVal grid As Object, _
+                                     ByVal columnName As String) As Long
+    Dim rowCount As Long, r As Long
+    Dim wanted As String
+    Dim rowText As String
+    Dim titles As String
+
+    wanted = UCase$(Trim$(modConfig.Setting("Invoice attachment title contains")))
+
+    On Error Resume Next
+    rowCount = grid.RowCount
+    On Error GoTo 0
+
+    If rowCount <= 1 Then Exit Function          ' row 0, the only one there is
+
+    For r = 0 To rowCount - 1
+        rowText = AttachmentRowText(grid, r, columnName)
+        titles = titles & IIf(Len(titles) > 0, " | ", "") & r & ":" & rowText
+
+        If Len(wanted) > 0 And Len(rowText) > 0 Then
+            If InStr(UCase$(rowText), wanted) > 0 Then
+                ChooseAttachmentRow = r
+                modLog.LogAction sampleIdx, "Invoice PDF", _
+                             rowCount & " attachments; row " & r & " taken because it " & _
+                             "reads " & rowText & ". All of them: " & titles, _
+                             "OK", vbNullString
+                Exit Function
+            End If
+        End If
+    Next r
+
+    ChooseAttachmentRow = rowCount - 1
+    modLog.LogAction sampleIdx, "Invoice PDF", _
+                 rowCount & " attachments and none whose text contains " & wanted & _
+                 ", so the last was taken. All of them: " & titles & _
+                 ". Correct 'Invoice attachment title contains' on the Control sheet " & _
+                 "if the wrong one came back.", "MANUAL", vbNullString
+End Function
+
+' Everything readable on one row of the attachment list, so the match does
+' not depend on knowing which column holds the title.
+Private Function AttachmentRowText(ByVal grid As Object, ByVal row As Long, _
+                                   ByVal columnName As String) As String
+    Dim columns As Variant
+    Dim i As Long
+    Dim value As String
+    Dim collected As String
+
+    On Error Resume Next
+
+    If Len(columnName) > 0 Then collected = grid.GetCellValue(row, columnName)
+
+    columns = grid.ColumnOrder
+    For i = 0 To UBound(columns)
+        value = grid.GetCellValue(row, columns(i))
+        If Len(Trim$(value)) > 0 Then
+            If InStr(collected, value) = 0 Then
+                collected = collected & IIf(Len(collected) > 0, " ", "") & value
+            End If
+        End If
+    Next i
+
+    On Error GoTo 0
+
+    AttachmentRowText = Trim$(collected)
 End Function
 
 ' Locate the services-for-object toolbox.

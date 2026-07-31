@@ -10,13 +10,18 @@ Attribute VB_Name = "modReport"
 ' Written into the sample's own folder as '01 - 8072447.42 - GBKM.xlsx', so
 ' the folder can be zipped and sent as it stands.
 '
-' Two sheets:
-'   Report      the trail, top to bottom, with the files listed against it
-'   Invoice     the PDF, embedded as an object, when there is one
+' One sheet: the trail, top to bottom, with the evidence files listed
+' against the step each one proves and hyperlinked to their place in the
+' folder.
 '
-' No log sheet, and no absolute paths anywhere: this workbook is the thing
-' that leaves the building. File names, yes -- they name the file sitting
-' next to it in the same folder. Machine paths, no.
+' The PDF was embedded as an OLE object once. It depended on a PDF handler
+' being registered, it failed on this machine, and it took the whole report
+' with it -- and since the PDF is in the same folder as the report, it was
+' never worth the failure mode.
+'
+' No log sheet either, and no absolute paths anywhere: this workbook is the
+' thing that leaves the building. File names, yes -- they name the file
+' sitting next to it in the same folder. Machine paths, no.
 '
 ' Nothing here talks to SAP. It runs after the chain has finished, reads
 ' what the chain returned, and never raises -- a report that will not build
@@ -77,10 +82,6 @@ Public Function BuildSampleReport(ByVal sampleIdx As Long, ByVal monthTab As Str
     ' got one. Writing the file first means the worst case is a report
     ' without an embedded copy of a PDF that is sitting next to it anyway.
     book.SaveAs fileName:=path, FileFormat:=51      ' xlOpenXMLWorkbook
-
-    ' No Log sheet: the report goes to the auditor, and the run's audit trail
-    ' belongs in the control workbook where it covers the whole run.
-    If AttachInvoice(book, chain) Then book.Save
 
     book.Close SaveChanges:=False
     Application.DisplayAlerts = previousAlerts
@@ -272,70 +273,6 @@ Private Function WriteProvenance(ByVal sheet As Worksheet, ByVal startRow As Lon
         "taken from.")
 
     WriteProvenance = row + 1
-End Function
-
-'-----------------------------------------------------------------------
-' The PDF, embedded rather than only referenced, so the pack survives being
-' forwarded as a single file.
-'
-' Embedding is Excel asking Windows for a PDF OLE handler. Where Acrobat is
-' installed that works; where Edge or Chrome owns .pdf it is often refused,
-' and the refusal used to take the whole report down with it. This now runs
-' AFTER the report has been saved, returns whether anything changed, and
-' falls back to a link on the same sheet.
-'
-' Returns True when the workbook was modified and is worth re-saving.
-'-----------------------------------------------------------------------
-Private Function AttachInvoice(ByVal book As Workbook, ByRef chain As ChainResult) As Boolean
-    Dim sheet As Worksheet
-    Dim embedded As Boolean
-
-    If Len(chain.InvoicePdfFile) = 0 Then Exit Function
-    If Not modUtil.FileExists(chain.InvoicePdfFile) Then Exit Function
-
-    On Error GoTo Failed
-
-    Set sheet = book.Worksheets.Add(After:=book.Worksheets(book.Worksheets.Count))
-    sheet.Name = "Invoice"
-
-    sheet.Cells(2, COL_LABEL).Value = "Invoice " & chain.InvoiceNumber & _
-                                      IIf(Len(chain.InvoiceSupplier) > 0, _
-                                          " -- " & chain.InvoiceSupplier, "") & _
-                                      " -- " & Format$(chain.InvoiceAmount, "#,##0.00")
-    sheet.Cells(2, COL_LABEL).Font.Bold = True
-
-    On Error Resume Next
-    sheet.OLEObjects.Add fileName:=chain.InvoicePdfFile, Link:=False, _
-                         DisplayAsIcon:=True, _
-                         IconLabel:=modUtil.FILE_PDF, _
-                         Left:=40, Top:=60, Width:=64, Height:=64
-    embedded = (Err.Number = 0)
-    Err.Clear
-    On Error GoTo 0
-
-    If embedded Then
-        sheet.Cells(4, COL_LABEL).Value = "Double-click the icon below to open the PDF. " & _
-                                          "It is embedded in this workbook, and the same " & _
-                                          "file is in the folder beside it."
-    Else
-        sheet.Cells(4, COL_LABEL).Value = "The PDF could not be embedded on this machine, " & _
-                                          "so it is linked instead. The file is in the " & _
-                                          "folder beside this workbook."
-        sheet.Hyperlinks.Add Anchor:=sheet.Cells(6, COL_LABEL), _
-                             Address:=chain.InvoicePdfFile, _
-                             TextToDisplay:=modUtil.FILE_PDF
-    End If
-
-    sheet.Columns(COL_LABEL).ColumnWidth = 90
-    sheet.Cells(4, COL_LABEL).WrapText = True
-
-    AttachInvoice = True
-    Exit Function
-
-Failed:
-    ' The sheet may be half built. Leave it -- it names the invoice and the
-    ' file is in the folder -- and let the caller save what there is.
-    AttachInvoice = True
 End Function
 
 '-----------------------------------------------------------------------

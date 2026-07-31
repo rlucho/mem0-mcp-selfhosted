@@ -132,6 +132,12 @@ CONTROL_SETTINGS = [
      "Caption of the vendor-name column in that same file. Same rules."),
     ("ZP list document column", "",
      "Caption of the document-number column in that same file. Same rules."),
+    ("Invoice attachment title contains", "Invoice",
+     "An invoice document carries more than one attachment -- on this system the "
+     "workflow notes sit above the document itself -- so the row whose text contains "
+     "this word is the one downloaded. The titles come from the archiving system rather "
+     "than from SAP, so they do not follow the SAP logon language. Nothing matching "
+     "takes the last row and says so in the Log, naming every attachment it saw."),
     ("Invoice document type", "KR, RN",
      "CROSS-CHECK ONLY -- this no longer decides anything. The invoice is picked by SIGN: "
      "in a vendor line-item list the payment is a debit and the invoice it settles is a "
