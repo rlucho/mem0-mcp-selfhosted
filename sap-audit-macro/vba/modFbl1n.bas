@@ -114,16 +114,23 @@ Public Function LargestPaymentOfBatch(ByVal sampleIdx As Long, _
     ' The documents simply are not vendor line items in this company code and
     ' posting period, which is an answer worth recording accurately.
     If Not ResultListShowing() Then
-        result.Notes = "FBL1N found no line items for the " & count & " ZP document(s) " & _
-                       "from the batch, in company code " & modConfig.CompanyCode() & _
-                       " with posting date " & modUtil.SapDate(dateFrom) & " to " & _
-                       modUtil.SapDate(dateTo) & ". Either those documents are not " & _
-                       "vendor items, or they were posted outside that range." & _
-                       IIf(Len(modSapConnect.StatusBarText()) > 0, _
-                           " SAP said: " & modSapConnect.StatusBarText(), "")
-        modLog.LogAction sampleIdx, "FBL1N", result.Notes, "MANUAL", vbNullString
-        LargestPaymentOfBatch = result
-        Exit Function
+        ' Before believing 'no items', widen the one filter that can hide a
+        ' document we have already named. See RetryWithWiderDates.
+        If Not RetryWithWiderDates(sampleIdx, dateFrom, dateTo) Then
+            result.Notes = "FBL1N found no line items for the " & count & " ZP " & _
+                           "document(s) from the batch, in company code " & _
+                           modConfig.CompanyCode() & " -- not for posting date " & _
+                           modUtil.SapDate(dateFrom) & " to " & modUtil.SapDate(dateTo) & _
+                           ", and not for a year either side of it. So they are not " & _
+                           "vendor line items in this company code at all, which is " & _
+                           "what a treasury or FX payment looks like: no supplier, no " & _
+                           "invoice to fetch." & _
+                           IIf(Len(modSapConnect.StatusBarText()) > 0, _
+                               " SAP said: " & modSapConnect.StatusBarText(), "")
+            modLog.LogAction sampleIdx, "FBL1N", result.Notes, "MANUAL", vbNullString
+            LargestPaymentOfBatch = result
+            Exit Function
+        End If
     End If
 
     ' Export the whole list, then decide from the file. Reading the file
@@ -148,6 +155,60 @@ Failed:
     result.Notes = "The FBL1N stage stopped: " & Err.Description
     modLog.LogAction sampleIdx, "FBL1N failed", Err.Description, "ERROR", vbNullString
     LargestPaymentOfBatch = result
+End Function
+
+'-----------------------------------------------------------------------
+' 'No items selected' with a posting-date range in force does not mean the
+' documents are absent -- only that they are absent from that range.
+'
+' The range comes from the FEBAN statement period: the month the money left
+' the bank. A payment can be posted in a different month from the one its
+' statement line falls in, and GBHP's fiscal year is not the calendar year
+' either. Meanwhile the document numbers already identify the documents
+' exactly -- they are unique within a company code and fiscal year -- so the
+' date range contributes nothing to the selection and can only take results
+' away. It is there because the recording had it there.
+'
+' Rather than drop it (it does keep the search cheap when it is right), try
+' again with a year either side before concluding anything. SAP stays on the
+' selection screen after 'no items' and keeps the document-number filter, so
+' this costs two field writes and one round trip, and it turns a guess about
+' why nothing came back into an answer.
+'-----------------------------------------------------------------------
+Private Function RetryWithWiderDates(ByVal sampleIdx As Long, _
+                                     ByVal dateFrom As Date, ByVal dateTo As Date) As Boolean
+    Dim wideFrom As Date, wideTo As Date
+
+    If Len(modConfig.ElementIdOrBlank("Fbl1n.PostingDateFrom")) = 0 Then Exit Function
+    If Not modSapConnect.Exists(modConfig.ElementIdOrBlank("Fbl1n.PostingDateFrom")) Then Exit Function
+
+    wideFrom = DateAdd("yyyy", -1, dateFrom)
+    wideTo = DateAdd("yyyy", 1, dateTo)
+
+    SetIfMapped "Fbl1n.PostingDateFrom", modUtil.SapDate(wideFrom)
+    SetIfMapped "Fbl1n.PostingDateTo", modUtil.SapDate(wideTo)
+
+    modSafety.GuardedPress modConfig.ElementId("Fbl1n.ExecuteButton")
+
+    If modSapConnect.StatusBarType() = "E" Or modSapConnect.StatusBarType() = "A" Then Exit Function
+
+    RetryWithWiderDates = ResultListShowing()
+
+    If RetryWithWiderDates Then
+        modLog.LogAction sampleIdx, "FBL1N", _
+                     "Nothing came back for posting date " & modUtil.SapDate(dateFrom) & _
+                     " to " & modUtil.SapDate(dateTo) & ", but widening to " & _
+                     modUtil.SapDate(wideFrom) & " to " & modUtil.SapDate(wideTo) & _
+                     " found them: these payments were posted outside the month their " & _
+                     "statement line falls in. The evidence below comes from the wider " & _
+                     "search.", "MANUAL", vbNullString
+    Else
+        modLog.LogAction sampleIdx, "FBL1N", _
+                     "Still nothing with posting date widened to " & _
+                     modUtil.SapDate(wideFrom) & " to " & modUtil.SapDate(wideTo) & _
+                     ", so the date range was not what was hiding them.", _
+                     "MANUAL", vbNullString
+    End If
 End Function
 
 '-----------------------------------------------------------------------
