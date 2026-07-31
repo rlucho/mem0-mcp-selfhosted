@@ -77,6 +77,51 @@ for path in files:
         elif seen_proc and depth == 0 and re.match(r'(?:Public|Private|Dim|Const)\s+\w+', t):
             problems.append(f"BLOCKER {path}:{n}  declaration after a procedure: {t[:60]}")
 
+# 3c. VBA reserved words cannot be used as variable names.
+#
+# 'Dim empty As FebanMatch' compiles to nothing but "Syntax error", with no
+# hint which word is the problem -- and neither a structure check nor an
+# identifier-resolution check notices, because the name resolves perfectly
+# well to the declaration it is not allowed to have.
+# Only words VBA genuinely refuses as an identifier. Statements and
+# functions like Name, Date, Error, Line, Input, Close and Left ARE legal
+# variable names, however odd they read, and flagging them would make this
+# rule noise -- a checker people learn to ignore is worse than none.
+RESERVED = set("""
+empty null nothing true false me
+and or not xor eqv imp mod is like to then step as in each
+if else end select case do loop while wend until for next exit goto on
+resume return stop set let new call rem erase redim with
+dim const static public private friend option
+sub function property type enum declare event raiseevent implements
+byval byref optional paramarray withevents
+""".split())
+
+# Only the things that DECLARE a variable. 'Private Sub Finish' declares a
+# procedure, and Sub is allowed to follow Private there.
+DECLARES = re.compile(
+    r'^\s*(?:Dim|Const|Static|(?:Public|Private)(?:\s+Const|\s+Static)?)\s+'
+    r'([A-Za-z_]\w*)\s*(?:\(|As|,|=|$)')
+NOT_A_VARIABLE = {"sub", "function", "property", "type", "enum", "declare",
+                  "const", "static", "withevents"}
+
+for path in files:
+    for n, t, _ in logical(path):
+        m = DECLARES.match(t)
+        if not m:
+            continue
+        first = m.group(1).lower()
+        if first in NOT_A_VARIABLE:
+            continue
+        if first in RESERVED:
+            problems.append(f"BLOCKER {path}:{n}  '{m.group(1)}' is a VBA reserved "
+                            f"word and cannot be a variable name: {t[:60]}")
+        # 'Dim a As Long, empty As String' -- the ones after the first comma
+        for extra in re.finditer(r',\s*([A-Za-z_]\w*)\s+As\b', t):
+            if extra.group(1).lower() in RESERVED:
+                problems.append(f"BLOCKER {path}:{n}  '{extra.group(1)}' is a VBA "
+                                f"reserved word and cannot be a variable name")
+
 # 4. VBA allows at most 25 line-continuations per statement
 for path in files:
     cont, start = 0, None

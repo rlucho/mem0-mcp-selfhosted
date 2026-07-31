@@ -467,7 +467,7 @@ End Sub
 Private Function ProcessDirectSample(ByRef item As Sample, ByRef filesTotal As Long, _
                                      ByVal sheet As Worksheet) As Boolean
     Dim chain As ChainResult
-    Dim empty As FebanMatch
+    Dim noMatch As FebanMatch     ' never populated: there was no statement search
     Dim folder As String
     Dim stem As String
     Dim cleared As Long
@@ -514,7 +514,7 @@ Private Function ProcessDirectSample(ByRef item As Sample, ByRef filesTotal As L
                 chain.FiDocument, InvoiceTrail(chain), _
                 CountFiles(chain), chain.Notes
 
-    WriteSampleReport item, empty, chain, folder
+    WriteSampleReport item, noMatch, chain, folder
 
     ProcessDirectSample = (chain.Status = "DONE" Or _
                            chain.Status = "NO CLEARING" Or _

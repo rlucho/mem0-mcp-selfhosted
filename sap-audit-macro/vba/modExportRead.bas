@@ -990,7 +990,7 @@ NextRow:
                  matched & " distinct " & wantedType & " document number(s) taken from " & _
                  path & IIf(rejected > 0, ", " & rejected & " row(s) rejected as a " & _
                  "different document type", "") & "." & typesSeen, _
-                 IIf(matched > 0, "OK", "ERROR"), path
+                 IIf(matched > 0, "OK", "MANUAL"), path
 
     DocumentNumbersOfType = results
 End Function

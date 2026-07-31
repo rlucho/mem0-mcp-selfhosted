@@ -1120,7 +1120,7 @@ Private Function OpenClearingLine(ByVal sampleIdx As Long) As Boolean
                      "the payment may hang off Posting Area 2 of the statement item " & _
                      "rather than Posting Area 1, which is the field this macro reads. " & _
                      "Open the statement line by hand and check both areas.", _
-                     "ERROR", vbNullString
+                     "MANUAL", vbNullString
         Exit Function
     End If
 
