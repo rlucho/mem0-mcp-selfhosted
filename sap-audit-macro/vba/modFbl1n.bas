@@ -146,7 +146,7 @@ Private Function LargestInExport(ByVal sampleIdx As Long, _
                                        "ZP list document column")
 
     If Not largest.Found Then
-        result.Notes = "Exported " & result.ExportFile & " but no amount could be read " & _
+        result.Notes = "Exported " & modUtil.FILE_ZPLIST & " but no amount could be read " & _
                        "from it. Open the file and copy its column headings into the " & _
                        "'ZP list ...' settings on the Control sheet."
         modLog.LogAction sampleIdx, "FBL1N", result.Notes, "ERROR", result.ExportFile

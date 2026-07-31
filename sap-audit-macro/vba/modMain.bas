@@ -371,9 +371,10 @@ Private Sub WriteSampleReport(ByRef item As Sample, ByRef match As FebanMatch, _
     path = modReport.BuildSampleReport(item.Idx, item.MonthTab, item.PayDate, item.Amount, _
                                        item.Party, item.Reference, match, chain, folder)
 
-    If Len(path) > 0 Then
-        modLog.LogAction item.Idx, "Report", "Wrote the sample report.", "OK", path
-    End If
+    modLog.LogAction item.Idx, "Report", _
+                 "Wrote " & modUtil.ReportFileName(item.Idx, item.Amount, _
+                                                   modConfig.Setting("Company code")), _
+                 "OK", path
     Exit Sub
 
 Failed:

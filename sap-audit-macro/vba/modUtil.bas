@@ -35,8 +35,9 @@ Public Const FILE_FEBAN As String = "1 - FEBAN statement list.xlsx"
 Public Const FILE_BATCH As String = "2 - Payment usage - batch of payments.xlsx"
 Public Const FILE_FIDOC As String = "2 - FI document line items (not cleared).xlsx"
 Public Const FILE_ZPLIST As String = "3 - FBL1N - payments in the batch.xlsx"
-Public Const FILE_INVOICES As String = "4 - Invoices behind the largest payment.xlsx"
-Public Const FILE_PDF As String = "5 - Largest invoice.pdf"
+Public Const FILE_INVOICES As String = "4 - Documents behind the largest payment.xlsx"
+Public Const FILE_SCF As String = "5 - Supplier invoices behind the SCF settlement.xlsx"
+Public Const FILE_PDF As String = "6 - Largest invoice.pdf"
 
 #If VBA7 Then
     Private Declare PtrSafe Sub SleepApi Lib "kernel32" Alias "Sleep" (ByVal ms As Long)
@@ -388,7 +389,7 @@ Private Function IsEvidenceName(ByVal name As String) As Boolean
     If Len(name) < 4 Then Exit Function
     If Mid$(name, 2, 3) <> " - " Then Exit Function
 
-    IsEvidenceName = (Left$(name, 1) >= "1" And Left$(name, 1) <= "5")
+    IsEvidenceName = (Left$(name, 1) >= "1" And Left$(name, 1) <= "6")
 End Function
 
 ' '01 - 8072447.42 - GBKM.xlsx'

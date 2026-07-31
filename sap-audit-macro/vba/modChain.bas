@@ -19,11 +19,14 @@ Attribute VB_Name = "modChain"
 ' Screen Map rows are blank still finishes at the last step that worked and
 ' says so, carrying the document numbers a person needs to take it on.
 '
-' ONE ROUTE, NOT TWO. N1.vbs walked a Santander SCF payment and B2.vbs a
-' regular vendor, and they turned out to be the same shape -- Environment >
-' Payment usage on the payment, export, open the invoice, save the
-' attachment. The regular one only looked shorter because there were fewer
-' rows to sort through. IsConfirmingPayment now only colours the report.
+' TWO ROUTES AFTER ALL. B2.vbs (a regular vendor) runs Environment > Payment
+' usage ONCE on the payment and the supplier invoices are right there.
+' N1.vbs (Santander SCF) runs it TWICE, with a document-overview and a
+' clearing-line drill in between. Reading the two as one shape was wrong:
+' a confirming payment settles the finance provider, so one hop only reaches
+' the provider's settlement for the whole batch -- a KA payment advice --
+' and a run that stopped there downloaded the advice and called it an
+' invoice. IsConfirmingPayment now decides the route, not just the wording.
 '
 ' THE INVOICE IS THE NEGATIVE ROW. The list step 10 picks from holds the
 ' payment and the invoices it settles: the payment is a debit and the
@@ -77,6 +80,8 @@ Public Type ChainResult
 
     ' step 10: the largest invoice inside that payment
     InvoiceListFile As String
+    ScfListFile As String            ' confirming payments only: one level deeper
+    ScfSettlementDocument As String
     InvoiceNumber As String
     InvoiceSupplier As String
     InvoiceAmount As Double
@@ -129,7 +134,7 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                "any line, so it settles nothing and there is no payment batch behind " & _
                "it -- a transfer between the company's own accounts posts exactly this " & _
                "way. Its line items are the evidence, and they are in " & _
-               IIf(Len(result.FiDocumentFile) > 0, result.FiDocumentFile, _
+               IIf(Len(result.FiDocumentFile) > 0, modUtil.FILE_FIDOC, _
                    "(the export did not run -- see the Log)") & "."
         modLog.LogAction sampleIdx, "Step 4", result.Notes, _
                      IIf(Len(result.FiDocumentFile) > 0, "OK", "ERROR"), result.FiDocumentFile
@@ -184,12 +189,12 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
                    "against the bank statement -- the Payment Usage list holds only the " & _
                    "statement line and its offsetting entry, no vendor payments. This is " & _
                    "a treasury or FX settlement rather than a payment run, so there is no " & _
-                   "supplier invoice behind it. See " & result.ZpListFile & "; the Log " & _
+                   "supplier invoice behind it. See " & modUtil.FILE_BATCH & "; the Log " & _
                    "names the document types it held."
         Else
             Finish result, "PARTIAL", _
                    "No " & modConfig.Setting("Payment document type") & " document " & _
-                   "numbers were found among " & rejected & " rows in " & result.ZpListFile & _
+                   "numbers were found among " & rejected & " rows in " & modUtil.FILE_BATCH & _
                    ". That many rows is a payment run, so the document-type column was " & _
                    "probably read wrongly -- check the headings against the 'Payment " & _
                    "usage ...' settings on the Control sheet. The Log names the types it saw."
@@ -254,6 +259,115 @@ Failed:
     Finish result, "ERROR", Err.Description
     modLog.LogAction sampleIdx, "Chain failed", Err.Description, "ERROR", vbNullString
     Walk = result
+End Function
+
+'-----------------------------------------------------------------------
+' The confirming-payment hop: one more level down to the real invoices.
+'
+' A supply-chain-finance payment settles the finance provider, so the list
+' behind it holds the provider's settlement for the whole batch -- the run
+' that reached this point downloaded a KA payment advice and called it an
+' invoice. The supplier invoices sit behind THAT document.
+'
+' The hop is the same shape as steps 4-6 of the main chain, so it reuses
+' them: open the document, take its clearing line, run payment usage again.
+' Returns False when it cannot get there, having set the status itself, so
+' a confirming payment never quietly reports the advice as the invoice.
+'-----------------------------------------------------------------------
+Private Function DescendThroughScf(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                                   ByRef largest As ListRow, ByVal folder As String, _
+                                   ByVal summary As String) As Boolean
+    Dim usageMenuId As String
+    Dim beforeMenu As String
+    Dim deeper As ListRow
+
+    result.ScfSettlementDocument = largest.DocumentNumber
+
+    modLog.LogAction sampleIdx, "Step 10 (SCF)", _
+                 "Largest document behind the confirming payment is " & _
+                 Format$(largest.Amount, "#,##0.00") & _
+                 IIf(Len(largest.DocumentNumber) > 0, ", " & largest.DocumentNumber, "") & _
+                 ". That is the Santander SCF settlement, not a supplier invoice, so the " & _
+                 "chain goes one level deeper.", "OK", result.InvoiceListFile
+
+    If Len(result.ScfSettlementDocument) = 0 Then
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " This is a confirming payment, and the settlement document " & _
+               "behind it carries no document number in " & modUtil.FILE_INVOICES & _
+               ", so the supplier invoices could not be reached."
+        modLog.LogAction sampleIdx, "Step 10 (SCF)", result.Notes, "ERROR", vbNullString
+        Exit Function
+    End If
+
+    If Not modFbl1n.OpenPaymentOnList(sampleIdx, result.ScfSettlementDocument) Then
+        If Not modFbl1n.OpenPaymentByDocument(sampleIdx, result.ScfSettlementDocument, _
+                                              Format$(Date, "yyyy")) Then
+            Finish result, "BLOCKED_INVOICE", _
+                   summary & " This is a confirming payment. Its settlement document " & _
+                   result.ScfSettlementDocument & " could not be opened, so the supplier " & _
+                   "invoices behind it were not reached. " & modUtil.FILE_INVOICES & _
+                   " holds the settlement itself."
+            modLog.LogAction sampleIdx, "Step 10 (SCF)", result.Notes, "ERROR", vbNullString
+            Exit Function
+        End If
+    End If
+
+    ' N1.vbs pressed the overview button, then double-clicked the clearing
+    ' column of the settlement's line items, before payment usage was there.
+    ShowDocumentOverview sampleIdx
+    OpenClearingLine sampleIdx
+
+    usageMenuId = FindUsageMenu()
+    If Len(usageMenuId) = 0 Then
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " This is a confirming payment, and Environment > Payment usage " & _
+               "is not on the screen of settlement document " & result.ScfSettlementDocument & _
+               ", so the supplier invoices were not reached."
+        modLog.LogAction sampleIdx, "Step 10 (SCF)", result.Notes, "ERROR", vbNullString
+        Exit Function
+    End If
+
+    beforeMenu = modSapConnect.ScreenSignature()
+    modSapConnect.Element(usageMenuId).Select
+    modSapConnect.WaitForSap
+    modSafety.AssertPopupKnown
+
+    If modSapConnect.ScreenSignature() = beforeMenu Then
+        Finish result, "BLOCKED_INVOICE", _
+               summary & " This is a confirming payment, and the second payment-usage " & _
+               "call left the screen unchanged, so the supplier invoices were not listed."
+        modLog.LogAction sampleIdx, "Step 10 (SCF)", result.Notes, "ERROR", vbNullString
+        Exit Function
+    End If
+
+    result.ScfListFile = modExport.ExportClassicList(sampleIdx, folder, modUtil.FILE_SCF)
+
+    If Len(result.ScfListFile) = 0 Then
+        Finish result, "PARTIAL", _
+               summary & " This is a confirming payment. Reached the supplier invoices " & _
+               "behind settlement " & result.ScfSettlementDocument & " but the list did " & _
+               "not export."
+        Exit Function
+    End If
+
+    deeper = modExportRead.MostNegativeRow(result.ScfListFile, sampleIdx, _
+                                           "Invoice list amount column", _
+                                           "Invoice list supplier column", _
+                                           "Invoice list document column", _
+                                           modConfig.Setting("Invoice document type"))
+
+    If Not deeper.Found Then
+        Finish result, "PARTIAL", _
+               summary & " This is a confirming payment. Exported " & modUtil.FILE_SCF & _
+               " but no row in it carries a negative amount, so no supplier invoice " & _
+               "could be identified behind settlement " & result.ScfSettlementDocument & "."
+        Exit Function
+    End If
+
+    ' The deeper row replaces the settlement as 'the invoice' from here on --
+    ' including for the attachment, which is the whole point of the hop.
+    largest = deeper
+    DescendThroughScf = True
 End Function
 
 '-----------------------------------------------------------------------
@@ -453,10 +567,28 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
 
     If Not largest.Found Then
         Finish result, "PARTIAL", _
-               summary & " Exported " & result.InvoiceListFile & " but no row in it " & _
+               summary & " Exported " & modUtil.FILE_INVOICES & " but no row in it " & _
                "carries a negative amount, so there is no invoice behind this payment " & _
                "to take. Open the file and check the amount column."
         Exit Sub
+    End If
+
+    ' A CONFIRMING PAYMENT IS ONE LEVEL SHORT.
+    '
+    ' The ZP pays Santander SCF, not the suppliers, so what comes back here
+    ' is the settlement of the finance facility -- a KA document covering the
+    ' whole batch, which is a payment advice, not an invoice. N1.vbs shows the
+    ' extra hop: open that document, drill its clearing line, and run
+    ' Environment > Payment usage a SECOND time. The supplier invoices are on
+    ' that list.
+    ' Decided on the data as well as the setting: when the biggest 'invoice'
+    ' behind the payment is billed by the confirming party itself, we are
+    ' still looking at the finance provider's own paperwork whatever the
+    ' vendor name on the payment said. Sample 1's list was 351 KA rows, every
+    ' one of them 'Santander SCF'.
+    If result.IsConfirmingPayment Or _
+       NamesMatch(largest.Supplier, modConfig.Setting("Confirming party name")) Then
+        If Not DescendThroughScf(sampleIdx, result, largest, folder, summary) Then Exit Sub
     End If
 
     result.InvoiceNumber = largest.DocumentNumber

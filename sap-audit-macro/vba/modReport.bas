@@ -10,10 +10,13 @@ Attribute VB_Name = "modReport"
 ' Written into the sample's own folder as '01 - 8072447.42 - GBKM.xlsx', so
 ' the folder can be zipped and sent as it stands.
 '
-' Three sheets:
+' Two sheets:
 '   Report      the trail, top to bottom, with the files listed against it
 '   Invoice     the PDF, embedded as an object, when there is one
-'   Log         this sample's rows from the run's audit trail
+'
+' No log sheet, and no absolute paths anywhere: this workbook is the thing
+' that leaves the building. File names, yes -- they name the file sitting
+' next to it in the same folder. Machine paths, no.
 '
 ' Nothing here talks to SAP. It runs after the chain has finished, reads
 ' what the chain returned, and never raises -- a report that will not build
@@ -40,6 +43,7 @@ Public Function BuildSampleReport(ByVal sampleIdx As Long, ByVal monthTab As Str
     Dim path As String
     Dim row As Long
     Dim previousAlerts As Boolean
+    Dim problem As String
 
     modUtil.EnsureFolder folder
     path = modUtil.JoinPath(folder, _
@@ -60,19 +64,24 @@ Public Function BuildSampleReport(ByVal sampleIdx As Long, ByVal monthTab As Str
     row = WriteHeader(sheet, sampleIdx, amount)
     row = WriteRequest(sheet, row, sampleIdx, monthTab, payDate, amount, party, reference)
     row = WriteTrail(sheet, row, match, chain)
-    row = WriteOutcome(sheet, row, chain)
+    row = WriteOutcome(sheet, row, chain, folder)
     row = WriteFiles(sheet, row, folder, chain)
     row = WriteProvenance(sheet, row, monthTab)
 
     Layout sheet
 
-    AttachInvoice book, chain
-    CopyLogRows book, sampleIdx
-
-    sheet.Activate
-    sheet.Range("A1").Select
-
+    ' SAVE BEFORE EMBEDDING. Embedding the PDF is a nice-to-have that reaches
+    ' outside Excel for a PDF OLE handler, and when that fails it took the
+    ' whole report with it: every sample that reached an invoice -- 1, 3 and
+    ' 4 -- ended up with no report at all, while sample 2, which had no PDF,
+    ' got one. Writing the file first means the worst case is a report
+    ' without an embedded copy of a PDF that is sitting next to it anyway.
     book.SaveAs fileName:=path, FileFormat:=51      ' xlOpenXMLWorkbook
+
+    ' No Log sheet: the report goes to the auditor, and the run's audit trail
+    ' belongs in the control workbook where it covers the whole run.
+    If AttachInvoice(book, chain) Then book.Save
+
     book.Close SaveChanges:=False
     Application.DisplayAlerts = previousAlerts
 
@@ -80,10 +89,18 @@ Public Function BuildSampleReport(ByVal sampleIdx As Long, ByVal monthTab As Str
     Exit Function
 
 Failed:
+    problem = Err.Description
+
     On Error Resume Next
     If Not book Is Nothing Then book.Close SaveChanges:=False
     Application.DisplayAlerts = previousAlerts
     On Error GoTo 0
+
+    ' Raise rather than return "". Returning a blank meant the caller logged
+    ' neither a success nor a failure, so a report that never got written
+    ' left no trace anywhere -- the only way to notice was to look in the
+    ' folder and find it missing.
+    Err.Raise vbObjectError + 580, "modReport.BuildSampleReport", problem
 End Function
 
 '-----------------------------------------------------------------------
@@ -160,7 +177,7 @@ Private Function WriteTrail(ByVal sheet As Worksheet, ByVal startRow As Long, _
 End Function
 
 Private Function WriteOutcome(ByVal sheet As Worksheet, ByVal startRow As Long, _
-                              ByRef chain As ChainResult) As Long
+                              ByRef chain As ChainResult, ByVal folder As String) As Long
     Dim row As Long
 
     row = Section(sheet, startRow, "Outcome")
@@ -176,10 +193,40 @@ Private Function WriteOutcome(ByVal sheet As Worksheet, ByVal startRow As Long, 
     End Select
     sheet.Cells(row - 1, COL_VALUE).Font.Bold = True
 
-    row = Pair(sheet, row, "Notes", chain.Notes)
+    row = Pair(sheet, row, "Notes", WithoutPaths(chain.Notes, folder))
     sheet.Cells(row - 1, COL_VALUE).WrapText = True
 
     WriteOutcome = row + 1
+End Function
+
+' Strip machine paths out of anything that reaches the auditor, leaving the
+' file name. The notes are written for whoever is running the extract and
+' happily quote 'C:\Users\eslucres\Documents\Audit GBKM\_dry run\Sep 25\
+' 02 - 2161788.23\2 - Payment usage - batch of payments.xlsx' -- which says
+' nothing to the reader and rather a lot about the operator's laptop.
+'
+' Folder names here contain spaces, so no amount of pattern-matching finds
+' where a path ends. It does not have to: the two folders that can appear
+' are both known, so this replaces those exact strings and leaves the file
+' name behind. A backstop -- the messages themselves name files directly.
+Private Function WithoutPaths(ByVal text As String, ByVal folder As String) As String
+    Dim result As String
+
+    result = text
+    result = DropAll(result, folder & "\")
+    result = DropAll(result, folder)
+    result = DropAll(result, modConfig.DownloadRoot() & "\")
+    result = DropAll(result, modConfig.DownloadRoot())
+
+    WithoutPaths = Trim$(result)
+End Function
+
+Private Function DropAll(ByVal text As String, ByVal fragment As String) As String
+    If Len(fragment) = 0 Then
+        DropAll = text
+    Else
+        DropAll = Replace(text, fragment, vbNullString, 1, -1, vbTextCompare)
+    End If
 End Function
 
 Private Function WriteFiles(ByVal sheet As Worksheet, ByVal startRow As Long, _
@@ -220,24 +267,33 @@ Private Function WriteProvenance(ByVal sheet As Worksheet, ByVal startRow As Lon
         "from the exported files, not from what was on screen. The invoice is the most " & _
         "negative row: a payment is a debit and the invoice it settles is a credit.")
     row = Note(sheet, row, _
-        "The 'Log' sheet in this workbook is this sample's rows from the run's audit " & _
-        "trail, timestamped and stamped with the SAP system, client and user.")
+        "Every step above is timestamped in the run's audit trail, which is kept in the " & _
+        "extract's control workbook against the SAP system, client and user it was " & _
+        "taken from.")
 
     WriteProvenance = row + 1
 End Function
 
 '-----------------------------------------------------------------------
 ' The PDF, embedded rather than only referenced, so the pack survives being
-' forwarded as a single file. Embedding needs a PDF handler registered on
-' the machine and is refused on some locked-down builds, so a failure falls
-' back to a link and says so.
+' forwarded as a single file.
+'
+' Embedding is Excel asking Windows for a PDF OLE handler. Where Acrobat is
+' installed that works; where Edge or Chrome owns .pdf it is often refused,
+' and the refusal used to take the whole report down with it. This now runs
+' AFTER the report has been saved, returns whether anything changed, and
+' falls back to a link on the same sheet.
+'
+' Returns True when the workbook was modified and is worth re-saving.
 '-----------------------------------------------------------------------
-Private Sub AttachInvoice(ByVal book As Workbook, ByRef chain As ChainResult)
+Private Function AttachInvoice(ByVal book As Workbook, ByRef chain As ChainResult) As Boolean
     Dim sheet As Worksheet
     Dim embedded As Boolean
 
-    If Len(chain.InvoicePdfFile) = 0 Then Exit Sub
-    If Not modUtil.FileExists(chain.InvoicePdfFile) Then Exit Sub
+    If Len(chain.InvoicePdfFile) = 0 Then Exit Function
+    If Not modUtil.FileExists(chain.InvoicePdfFile) Then Exit Function
+
+    On Error GoTo Failed
 
     Set sheet = book.Worksheets.Add(After:=book.Worksheets(book.Worksheets.Count))
     sheet.Name = "Invoice"
@@ -272,47 +328,15 @@ Private Sub AttachInvoice(ByVal book As Workbook, ByRef chain As ChainResult)
 
     sheet.Columns(COL_LABEL).ColumnWidth = 90
     sheet.Cells(4, COL_LABEL).WrapText = True
-End Sub
 
-'-----------------------------------------------------------------------
-' This sample's rows from the run's audit trail.
-'-----------------------------------------------------------------------
-Private Sub CopyLogRows(ByVal book As Workbook, ByVal sampleIdx As Long)
-    Dim source As Worksheet, sheet As Worksheet
-    Dim lastUsed As Long, r As Long, out As Long, c As Long
-
-    On Error GoTo Failed
-
-    Set source = ThisWorkbook.Worksheets(modConfig.SHEET_LOG)
-    Set sheet = book.Worksheets.Add(After:=book.Worksheets(book.Worksheets.Count))
-    sheet.Name = "Log"
-
-    ' Column headings live on row 4 of the Log sheet.
-    For c = 1 To 10
-        sheet.Cells(1, c).Value = source.Cells(4, c).Value
-        sheet.Cells(1, c).Font.Bold = True
-    Next c
-
-    out = 2
-    lastUsed = source.Cells(source.Rows.Count, 1).End(xlUp).Row
-
-    For r = 5 To lastUsed
-        If source.Cells(r, 2).Value = sampleIdx Then
-            For c = 1 To 10
-                sheet.Cells(out, c).Value = source.Cells(r, c).Value
-            Next c
-            sheet.Cells(out, 1).NumberFormat = "dd/mm/yyyy hh:mm:ss"
-            out = out + 1
-        End If
-    Next r
-
-    sheet.Columns("A:J").AutoFit
-    sheet.Columns("H").ColumnWidth = 80
-    sheet.Columns("H").WrapText = True
-    Exit Sub
+    AttachInvoice = True
+    Exit Function
 
 Failed:
-End Sub
+    ' The sheet may be half built. Leave it -- it names the invoice and the
+    ' file is in the folder -- and let the caller save what there is.
+    AttachInvoice = True
+End Function
 
 '-----------------------------------------------------------------------
 ' Small builders
