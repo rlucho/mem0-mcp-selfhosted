@@ -256,6 +256,12 @@ def build_control(workbook: Workbook) -> None:
         ("BLOCKED_INVOICE -- reached the payment, no PDF",
          '=COUNTIF(Samples!J5:J1000,"BLOCKED_INVOICE")'),
         ("PARTIAL -- traced, no invoice file", '=COUNTIF(Samples!J5:J1000,"PARTIAL")'),
+        # An FI document that clears nothing settles no supplier, so there is
+        # no invoice to fetch. Its line items are the evidence instead. That
+        # is a complete answer, not a failure, and it gets its own counter so
+        # it stops being read as one.
+        ("NO CLEARING -- internal transfer, line items exported",
+         '=COUNTIF(Samples!J5:J1000,"NO CLEARING")'),
         ("NOT FOUND -- no matching statement line",
          '=COUNTIF(Samples!J5:J1000,"NOT FOUND")'),
         ("AMBIGUOUS -- more than one line matched",

@@ -167,7 +167,7 @@ End If
 Function IsOurModule(n)
     Dim known
     known = "|modChain|modConfig|modExport|modExportRead|modFbl1n|modFeban|" & _
-            "modListFile|modDrilldown|modLog|modMain|modProbe|modSafety|" & _
+            "modListFile|modDrilldown|modLog|modMain|modProbe|modReport|modSafety|" & _
             "modSapConnect|modSetup|modUtil|"
     IsOurModule = (InStr(1, known, "|" & n & "|", 1) > 0)
 End Function

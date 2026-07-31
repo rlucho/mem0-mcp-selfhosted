@@ -29,6 +29,9 @@ Private Const COL_FILES As Long = 14
 Private Const COL_MESSAGE As Long = 15
 Private Const COL_INCLUDE As Long = 16
 
+' The period's statement export, so each sample folder can be given a copy.
+Private mMonthStatementFile As String
+
 Private Type Sample
     Row As Long
     Idx As Long
@@ -185,11 +188,13 @@ Private Function ExportMonthStatementList(ByVal monthTab As String) As String
 
     On Error GoTo Failed
 
+    mMonthStatementFile = vbNullString
+
     folder = modUtil.JoinPath(modConfig.DownloadRoot(), _
                               modUtil.SafeFileName(monthTab))
 
-    ExportMonthStatementList = modExport.ExportAlvGrid( _
-        0, folder, "00_" & modUtil.SafeFileName(monthTab) & "_FEBAN_statement.xlsx")
+    ExportMonthStatementList = modExport.ExportAlvGrid(0, folder, modUtil.FILE_FEBAN)
+    mMonthStatementFile = ExportMonthStatementList
     Exit Function
 
 Failed:
@@ -225,6 +230,7 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     Dim folder As String
     Dim stem As String
     Dim message As String
+    Dim cleared As Long
 
     Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
 
@@ -277,14 +283,35 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     modFeban.SelectRow match.GridRow
 
-    folder = modUtil.JoinPath(modConfig.DownloadRoot(), _
-                              modUtil.SafeFileName(item.MonthTab))
+    ' One folder per sample, named after the sample. Everything belonging to
+    ' this line goes in it under a fixed name that says which step produced
+    ' it -- so the folder can be sent to the auditor as it stands, without a
+    ' covering note explaining which file is which.
+    folder = modUtil.JoinPath( _
+                 modUtil.JoinPath(modConfig.DownloadRoot(), _
+                                  modUtil.SafeFileName(item.MonthTab)), _
+                 modUtil.SampleFolderName(item.Idx, item.Amount))
     stem = modUtil.EvidenceStem(item.Idx, item.PayDate, item.Amount)
+
+    ' A re-run starts this sample's folder clean, or the exports -- which
+    ' never overwrite -- would leave '..._2.xlsx' beside every file and the
+    ' pack would go to the auditor full of near duplicates.
+    cleared = modUtil.ClearSampleFolder(folder)
+    If cleared > 0 Then
+        modLog.LogAction item.Idx, "Folder", _
+                     "Removed " & cleared & " file(s) from an earlier run of this " & _
+                     "sample before re-exporting into " & folder & ".", _
+                     "OK", vbNullString
+    End If
 
     ' statement item -> FI document -> clearing document -> cleared items with
     ' supplier names -> the invoice for the largest of them. The period's
     ' statement list was already exported once, back in RunExtract.
     chain = modChain.Walk(item.Idx, match, item.DateFrom, item.DateTo, folder, stem)
+
+    ' The statement list is exported once per period, not once per sample, but
+    ' each pack needs its own copy or it is not self-contained.
+    CopyMonthStatementInto folder
 
     filesTotal = filesTotal + CountFiles(chain)
 
@@ -293,10 +320,13 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
                 chain.FiDocument, InvoiceTrail(chain), _
                 CountFiles(chain), chain.Notes
 
-    ' Only DONE counts as reaching the end. Anything else stopped somewhere,
-    ' and reporting it as processed made "Errors: 0" true while seven chains
-    ' had in fact failed.
-    ProcessSample = (chain.Status = "DONE")
+    WriteSampleReport item, match, chain, folder
+
+    ' DONE and NO CLEARING are both complete answers. NO CLEARING means the
+    ' document settles nothing -- an internal transfer -- so there is no
+    ' invoice to fetch and the line items are the evidence. Counting it as a
+    ' failure would be reporting the data as a defect.
+    ProcessSample = (chain.Status = "DONE" Or chain.Status = "NO CLEARING")
     Exit Function
 
 SampleFailed:
@@ -310,7 +340,51 @@ SampleFailed:
     On Error GoTo 0
 End Function
 
+' Give this sample's folder its own copy of the period's statement list, so
+' the folder stands alone. Never fatal -- a missing copy costs context, not
+' evidence, and the original is still one level up.
+Private Sub CopyMonthStatementInto(ByVal folder As String)
+    Dim fso As Object
+    Dim target As String
+
+    If Len(mMonthStatementFile) = 0 Then Exit Sub
+    If Not modUtil.FileExists(mMonthStatementFile) Then Exit Sub
+
+    target = modUtil.JoinPath(folder, modUtil.FILE_FEBAN)
+    If modUtil.FileExists(target) Then Exit Sub
+
+    On Error Resume Next
+    modUtil.EnsureFolder folder
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    fso.CopyFile mMonthStatementFile, target, True
+    On Error GoTo 0
+End Sub
+
+' The per-sample report. Never fatal: the evidence files are already on disk
+' by this point, and a report that will not build must not undo them.
+Private Sub WriteSampleReport(ByRef item As Sample, ByRef match As FebanMatch, _
+                              ByRef chain As ChainResult, ByVal folder As String)
+    Dim path As String
+
+    On Error GoTo Failed
+
+    path = modReport.BuildSampleReport(item.Idx, item.MonthTab, item.PayDate, item.Amount, _
+                                       item.Party, item.Reference, match, chain, folder)
+
+    If Len(path) > 0 Then
+        modLog.LogAction item.Idx, "Report", "Wrote the sample report.", "OK", path
+    End If
+    Exit Sub
+
+Failed:
+    modLog.LogAction item.Idx, "Report", _
+                 "The sample report could not be written: " & Err.Description & _
+                 ". The evidence files in " & folder & " are unaffected.", _
+                 "SKIPPED", vbNullString
+End Sub
+
 Private Function CountFiles(ByRef chain As ChainResult) As Long
+    If Len(chain.FiDocumentFile) > 0 Then CountFiles = CountFiles + 1
     If Len(chain.ZpListFile) > 0 Then CountFiles = CountFiles + 1
     If Len(chain.ZpExportFile) > 0 Then CountFiles = CountFiles + 1
     If Len(chain.InvoiceListFile) > 0 Then CountFiles = CountFiles + 1
@@ -473,6 +547,13 @@ Public Sub RunSingleMonth()
         If StrComp(samples(i).MonthTab, Trim$(answer), vbTextCompare) = 0 Then
             If Not matched Then
                 modFeban.OpenMonth samples(i).DateFrom, samples(i).DateTo
+
+                ' Once per period, not per sample -- but every sample folder
+                ' gets a copy, so the packs stand alone.
+                If Len(ExportMonthStatementList(samples(i).MonthTab)) > 0 Then
+                    files = files + 1
+                End If
+
                 matched = True
             End If
             If ProcessSample(samples(i), files) Then

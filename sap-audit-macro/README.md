@@ -110,6 +110,7 @@ sap-audit-macro/
     ├── modFbl1n.bas            steps 8-9: the ZP payments of one batch
     ├── modExportRead.bas       reads an export back (workbook or text)
     ├── modExport.bas           ALV and classic list export to local files
+    ├── modReport.bas           the per-sample report workbook
     ├── modLog.bas              the audit trail
     ├── modUtil.bas             date, amount, filename helpers
     ├── modMain.bas             entry points
@@ -209,15 +210,40 @@ inside it — 10 FEBAN executions for 56 samples, not 56.
 
 ## Output
 
+One folder per sample, named after the sample, with fixed names inside it. The folder says
+which sample it is and the file name says which step of the chain produced it, so a folder can
+be zipped and sent to the auditor as it stands.
+
 ```
 <download root>/
   Sep 25/
-    00_Sep 25_FEBAN_statement.xlsx      once per month
-    01_2025-09-03_8072447_ZP_batch_list.xlsx
-    01_2025-09-03_8072447_ZP_payments.xlsx
-    01_2025-09-03_8072447_invoice.pdf
-    ...
+    1 - FEBAN statement list.xlsx           the period's list, exported once
+    01 - 8072447.42/
+      01 - 8072447.42 - GBKM.xlsx           the report — read this first
+      1 - FEBAN statement list.xlsx         a copy, so the folder stands alone
+      2 - Payment usage - batch of payments.xlsx
+      3 - FBL1N - payments in the batch.xlsx
+      4 - Invoices behind the largest payment.xlsx
+      5 - Largest invoice.pdf
+    05 - 8617262.93/
+      05 - 8617262.93 - GBKM.xlsx
+      1 - FEBAN statement list.xlsx
+      2 - FI document line items (not cleared).xlsx
 ```
+
+The report workbook carries the trail top to bottom — what the auditor asked for, the statement
+line it matched, the FI and clearing documents, the batch, the largest payment, the largest
+invoice — with each evidence file listed against the step it proves and the PDF embedded as an
+object. Its `Log` sheet holds that sample's rows from the run's audit trail.
+
+The second folder above is the shape a sample takes when the FI document clears nothing: a
+transfer between the company's own bank accounts settles no supplier, so there is no batch, no
+payment and no invoice. The line items are the evidence, and the status is `NO CLEARING` rather
+than an error.
+
+A re-run clears the numbered files out of a sample's folder before re-exporting, because the
+SAP save dialog never overwrites — without it a second run would leave `..._2.xlsx` beside
+every file. Only names this macro writes are removed.
 
 The recordings name every export `.XLSX`, so these come back as real workbooks rather than
 delimited text. `modExportRead` sniffs the first two bytes — a ZIP signature means a workbook

@@ -110,7 +110,7 @@ Public Function LargestPaymentOfBatch(ByVal sampleIdx As Long, _
     ' rather than the screen is what makes this safe across batches of
     ' different sizes -- see the note at the top of this module.
     result.ExportFile = modExport.ExportClassicList( _
-        sampleIdx, folder, fileStem & "_ZP_payments.xlsx")
+        sampleIdx, folder, modUtil.FILE_ZPLIST)
 
     If Len(result.ExportFile) = 0 Then
         result.Notes = "The FBL1N list did not export, so the largest payment of the " & _
@@ -738,7 +738,7 @@ Public Sub DumpFbl1nColumns()
            "are no grid columns to read." & vbCrLf & vbCrLf & _
            "The macro does not read that screen at all -- it exports the list and reads " & _
            "the file. To check the column names, open the exported " & _
-           "*_ZP_payments.xlsx and look at its headings, then put them in the " & _
+           """" & modUtil.FILE_ZPLIST & """ and look at its headings, then put them in the " & _
            "'ZP list ...' settings on the Control sheet if the Log says it picked " & _
            "the wrong ones." & vbCrLf & vbCrLf & _
            "modFeban.DumpGridColumns still works, because FEBAN does use an ALV grid.", _

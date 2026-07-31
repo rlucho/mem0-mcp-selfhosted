@@ -304,6 +304,110 @@ Public Function CloseExportWorkbooksUnder(ByVal root As String) As Long
     CloseExportWorkbooksUnder = doomed.Count
 End Function
 
+'-----------------------------------------------------------------------
+' How the extract is laid out on disk.
+'
+'   Audit GBKM\
+'     Sep 25\
+'       01 - 8072447.42\
+'         01 - 8072447.42 - GBKM.xlsx        <- the report, read this first
+'         1 - FEBAN statement list.xlsx
+'         2 - Payment usage - batch.xlsx
+'         3 - FBL1N - payments in the batch.xlsx
+'         4 - Invoices behind the largest payment.xlsx
+'         5 - Largest invoice.pdf
+'
+' One folder per sample, and fixed names inside it. The sample used to be
+' encoded in every file name because everything sat in one folder; now the
+' folder says which sample it is and the file name says which step of the
+' chain it came from, which is what an auditor needs to read a pack they
+' did not watch being made.
+'
+' The leading number keeps them in chain order in Explorer.
+'-----------------------------------------------------------------------
+Public Const FILE_FEBAN As String = "1 - FEBAN statement list.xlsx"
+Public Const FILE_BATCH As String = "2 - Payment usage - batch of payments.xlsx"
+Public Const FILE_FIDOC As String = "2 - FI document line items (not cleared).xlsx"
+Public Const FILE_ZPLIST As String = "3 - FBL1N - payments in the batch.xlsx"
+Public Const FILE_INVOICES As String = "4 - Invoices behind the largest payment.xlsx"
+Public Const FILE_PDF As String = "5 - Largest invoice.pdf"
+
+' '01 - 8072447.42'. The index leads so the folders sort in sample order;
+' the amount is what the auditor's request identifies the line by. A plain
+' decimal point, not the local separator, because this is a folder name and
+' has to be the same on every machine that opens the pack.
+Public Function SampleFolderName(ByVal sampleIdx As Long, ByVal amount As Double) As String
+    SampleFolderName = SafeFileName(Format$(sampleIdx, "00") & " - " & AmountForName(amount))
+End Function
+
+'-----------------------------------------------------------------------
+' Empty a sample's folder of the previous run's evidence.
+'
+' The exports never overwrite: a second run used to leave
+' '..._ZP_batch_list_2.xlsx' beside the first, and with one folder per
+' sample that turns the pack an auditor receives into a pile of near
+' duplicates. So a re-run starts the folder clean.
+'
+' It only ever deletes names THIS macro writes -- the numbered evidence
+' files and their _2 variants -- inside a folder this macro created. Any
+' other file in there, including anything the operator put there, is left
+' alone. Returns how many were removed.
+'-----------------------------------------------------------------------
+Public Function ClearSampleFolder(ByVal folder As String) As Long
+    Dim fso As Object
+    Dim file As Object
+    Dim doomed As Collection
+    Dim item As Variant
+    Dim name As String
+
+    If Len(folder) = 0 Then Exit Function
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FolderExists(folder) Then Exit Function
+
+    Set doomed = New Collection
+
+    On Error Resume Next
+    For Each file In fso.GetFolder(folder).Files
+        name = file.Name
+        If IsEvidenceName(name) Then doomed.Add file.path
+    Next file
+
+    For Each item In doomed
+        fso.DeleteFile CStr(item), True
+    Next item
+    On Error GoTo 0
+
+    ClearSampleFolder = doomed.Count
+End Function
+
+' '1 - ...' through '5 - ...' are the numbered evidence names; anything
+' matching '<digit> - ' is ours. The report itself is overwritten in place
+' by SaveAs, so it does not need deleting.
+Private Function IsEvidenceName(ByVal name As String) As Boolean
+    If Len(name) < 4 Then Exit Function
+    If Mid$(name, 2, 3) <> " - " Then Exit Function
+
+    IsEvidenceName = (Left$(name, 1) >= "1" And Left$(name, 1) <= "5")
+End Function
+
+' '01 - 8072447.42 - GBKM.xlsx'
+Public Function ReportFileName(ByVal sampleIdx As Long, ByVal amount As Double, _
+                               ByVal companyCode As String) As String
+    ReportFileName = SafeFileName(Format$(sampleIdx, "00") & " - " & AmountForName(amount) & _
+                                  " - " & companyCode) & ".xlsx"
+End Function
+
+Private Function AmountForName(ByVal amount As Double) As String
+    Dim text As String
+
+    ' Format$ follows the machine's locale, so a Spanish or German Excel
+    ' would write 8072447,42 and the same sample would get two different
+    ' folder names on two laptops. Normalise to a point.
+    text = Format$(Abs(amount), "0.00")
+    AmountForName = Replace(text, ",", ".")
+End Function
+
 ' Stem for every file belonging to one sample, so the extract sorts in
 ' sample order and each file names the evidence it is.
 Public Function EvidenceStem(ByVal sampleIdx As Long, ByVal paymentDate As Date, _

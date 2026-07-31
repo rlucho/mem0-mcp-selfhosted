@@ -25,17 +25,24 @@ Attribute VB_Name = "modChain"
 ' attachment. The regular one only looked shorter because there were fewer
 ' rows to sort through. IsConfirmingPayment now only colours the report.
 '
-' THE INVOICE IS THE KR DOCUMENT. The list step 10 picks from holds several
-' document types at once, and the KR rows -- the vendor invoices -- carry
-' negative amounts. Filtering to KR is what stops the largest row coming
-' back as a ZP payment; comparing on magnitude is what stops the sign
-' mattering.
+' THE INVOICE IS THE NEGATIVE ROW. The list step 10 picks from holds the
+' payment and the invoices it settles: the payment is a debit and the
+' invoices are credits, so the biggest invoice is the most negative row.
+' This used to filter on document type and got it wrong -- KR is the SAP
+' standard, this system posts RN -- and a type is configuration while a sign
+' is arithmetic.
 '
 ' Two 'largest' decisions, both read from exported data rather than assumed
 ' from a sort order: the largest ZP payment in the batch, then the largest
-' KR invoice inside it. The recordings sort the list on screen and click a
+' invoice inside it. The recordings sort the list on screen and click a
 ' row by position -- lbl[164,8] -- which is a fixed screen coordinate and
 ' would silently pick the wrong document on a batch of a different size.
+'
+' NOT EVERY SAMPLE HAS AN INVOICE. A CHAPS transfer between the company's
+' own bank accounts clears nothing and settles no supplier, so there is no
+' batch, no payment and no invoice behind it. The chain exports the FI
+' document's line items instead -- that IS the evidence for those -- and
+' says so rather than reporting a failure.
 '=======================================================================
 Option Explicit
 
@@ -52,6 +59,7 @@ Private mUsageMenuText As String
 Public Type ChainResult
     ' steps 3-5
     FiDocument As String
+    FiDocumentFile As String         ' the line items, when nothing clears
     ClearingDocument As String
 
     ' steps 6-7: the batch
@@ -109,11 +117,22 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
 
     ' --- steps 4-5: the clearing document --------------------------------
     If Not OpenClearingLine(sampleIdx) Then
-        Finish result, "PARTIAL", _
-               "FI document " & result.FiDocument & " has no line with both posting key " & _
-               modConfig.Setting("Clearing line posting key") & " and a clearing " & _
-               "document, so the batch could not be reached. Check the document by hand."
-        modLog.LogAction sampleIdx, "Step 4", result.Notes, "ERROR", vbNullString
+        ' Nothing clears, so there is no batch, no payment and no invoice to
+        ' reach -- an internal funding transfer between the company's own bank
+        ' accounts looks exactly like this. The line items ARE the evidence
+        ' for those samples, so export the screen we are standing on.
+        result.FiDocumentFile = modExport.ExportAlvGridById( _
+            sampleIdx, "Doc.BsegGrid", folder, modUtil.FILE_FIDOC)
+
+        Finish result, "NO CLEARING", _
+               "FI document " & result.FiDocument & " carries no clearing document on " & _
+               "any line, so it settles nothing and there is no payment batch behind " & _
+               "it -- a transfer between the company's own accounts posts exactly this " & _
+               "way. Its line items are the evidence, and they are in " & _
+               IIf(Len(result.FiDocumentFile) > 0, result.FiDocumentFile, _
+                   "(the export did not run -- see the Log)") & "."
+        modLog.LogAction sampleIdx, "Step 4", result.Notes, _
+                     IIf(Len(result.FiDocumentFile) > 0, "OK", "ERROR"), result.FiDocumentFile
         Walk = result
         Exit Function
     End If
@@ -137,7 +156,7 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
     OpenPaymentUsage sampleIdx
 
     result.ZpListFile = modExport.ExportListFrom( _
-        sampleIdx, mListWindow, vbNullString, folder, fileStem & "_ZP_batch_list.xlsx")
+        sampleIdx, mListWindow, vbNullString, folder, modUtil.FILE_BATCH)
 
     If Len(result.ZpListFile) = 0 Then
         Finish result, "ERROR", _
@@ -413,7 +432,7 @@ Private Sub FetchInvoicePdf(ByVal sampleIdx As Long, ByRef result As ChainResult
     End If
 
     result.InvoiceListFile = modExport.ExportClassicList( _
-        sampleIdx, folder, fileStem & "_invoices.xlsx")
+        sampleIdx, folder, modUtil.FILE_INVOICES)
 
     If Len(result.InvoiceListFile) = 0 Then
         Finish result, "PARTIAL", _
@@ -504,7 +523,7 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
         Exit Function
     End If
 
-    target = modUtil.JoinPath(folder, fileStem & "_invoice.pdf")
+    target = modUtil.JoinPath(folder, modUtil.FILE_PDF)
     If modSafety.BlockedByDryRun("Would save the invoice PDF to " & target) Then Exit Function
 
     If Len(toolboxId) = 0 Then
@@ -566,7 +585,7 @@ Private Function SaveAttachedPdf(ByVal sampleIdx As Long, ByRef result As ChainR
     ' The PDF dialog is one window deeper than the list exports, because the
     ' attachment list itself is already wnd[1].
     SaveAttachedPdf = modExport.CompleteSaveDialogIn( _
-        sampleIdx, saveWindow, folder, fileStem & "_invoice.pdf")
+        sampleIdx, saveWindow, folder, modUtil.FILE_PDF)
 
     CloseAttachmentList
 End Function
