@@ -37,12 +37,23 @@ Option Explicit
 ' ever called the same thing -- and the sample folder only ever receives a
 ' file that nothing has open.
 '
-' The scratch folder is emptied between samples and at both ends of a run,
-' so the opened copies do not stack up and nothing temporary is left behind.
+' Timing is the whole trick. Between samples the scratch WORKBOOKS are
+' closed but the FILES are left alone, because SAP's hand-off can still be
+' in flight and Excel asked to open a file that has just been deleted stops
+' the run just as dead as the duplicate name did. Deleting happens at the
+' start of a run, when nothing can be pending, and at the end with a grace
+' period for the last export.
+'
 ' It sits under TEMP, not under the evidence root, so an auditor opening the
 ' pack never sees it at all.
 '-----------------------------------------------------------------------
 Private Const HANDOVER_FOLDER As String = "sap-audit-handover"
+
+' How long a scratch file is left alone at the end of a run, in case SAP is
+' still on its way to Excel with it. Generous on purpose -- the cost of
+' waiting is a few files sitting in TEMP until the next run opens, and the
+' cost of not waiting is a modal that stops the run.
+Public Const HANDOVER_GRACE_SECONDS As Double = 120
 
 Private mHandoverSequence As Long
 
@@ -534,19 +545,46 @@ Private Function Deliver(ByVal sampleIdx As Long, ByVal written As String, _
 End Function
 
 '-----------------------------------------------------------------------
-' Empty the scratch folder: close whatever Excel opened out of it, then
-' delete the files. Called between samples so the opened copies do not
-' stack up across a run, and with removeFolder at both ends of one.
+' Close whatever Excel has opened out of the scratch folder, WITHOUT
+' deleting anything.
+'
+' This is the between-samples call, and the distinction matters. SAP hands
+' each export to Excel on its own schedule -- seconds after the file is
+' written, well into the next sample -- and if the file has been deleted by
+' then Excel puts up 'Sorry, we couldn't find ...' and waits for a human.
+' That is the same class of stoppage the scratch folder exists to prevent,
+' so during a run the files stay put and only the workbooks get closed.
+' Closing is enough: it is the open workbooks that would otherwise pile up.
+'-----------------------------------------------------------------------
+Public Function CloseHandoverWorkbooks() As Long
+    Dim folder As String
+
+    folder = HandoverFolder()
+    If Len(folder) = 0 Then Exit Function
+
+    CloseHandoverWorkbooks = modUtil.CloseExportWorkbooksUnder(folder)
+End Function
+
+'-----------------------------------------------------------------------
+' Delete the scratch files -- but only ones old enough that SAP cannot
+' still be about to hand them to Excel.
+'
+' minimumAgeSeconds of 0 means everything, which is what the START of a run
+' wants: anything in there is left over from a run that has already ended,
+' so no hand-off can be pending. The END of a run passes a grace period
+' instead, because the last export may still be in flight; whatever it
+' leaves behind is cleared by the next run's opening sweep.
 '
 ' A file that will not delete is one Excel still has open; the next sweep
 ' gets it. So this reports what it managed and never raises.
 '-----------------------------------------------------------------------
-Public Function SweepHandover(ByVal removeFolder As Boolean) As Long
+Public Function SweepHandover(ByVal minimumAgeSeconds As Double) As Long
     Dim folder As String
     Dim fso As Object
     Dim file As Object
     Dim doomed As Collection
     Dim item As Variant
+    Dim age As Double
 
     folder = HandoverFolder()
     If Len(folder) = 0 Then Exit Function
@@ -560,7 +598,8 @@ Public Function SweepHandover(ByVal removeFolder As Boolean) As Long
 
     On Error Resume Next
     For Each file In fso.GetFolder(folder).Files
-        doomed.Add file.path
+        age = DateDiff("s", file.DateLastModified, Now)
+        If age >= minimumAgeSeconds Then doomed.Add file.path
     Next file
 
     For Each item In doomed
@@ -570,7 +609,7 @@ Public Function SweepHandover(ByVal removeFolder As Boolean) As Long
 
     ' Fails while anything is still in there, which is fine -- it is out of
     ' the way and the next run reuses it.
-    If removeFolder Then fso.DeleteFolder folder, True
+    fso.DeleteFolder folder, True
     On Error GoTo 0
 End Function
 

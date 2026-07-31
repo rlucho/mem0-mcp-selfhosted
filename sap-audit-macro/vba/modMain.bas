@@ -149,7 +149,7 @@ Public Sub RunExtract()
     ' And because refusing does not work on SAP's route in, every export is
     ' written to a scratch name first. Start from an empty scratch folder, in
     ' case a previous run was killed with files in it.
-    modExport.SweepHandover True
+    modExport.SweepHandover 0
 
     Application.ScreenUpdating = False
 
@@ -212,7 +212,7 @@ Finished:
     Application.StatusBar = False
     modLog.WriteFooterBlock processed, errored, files
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
-    modExport.SweepHandover True
+    modExport.SweepHandover modExport.HANDOVER_GRACE_SECONDS
     On Error GoTo 0
 
     MsgBox "Run finished." & vbCrLf & vbCrLf & _
@@ -313,7 +313,7 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     ' folder before starting, or they stack up all run. The scratch copies
     ' SAP actually opens are swept the same way, and deleted.
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
-    modExport.SweepHandover False
+    modExport.CloseHandoverWorkbooks
 
     ' A row that names its own starting document skips the statement search
     ' entirely -- there is nothing to match, because the document it would
@@ -336,6 +336,19 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
 
     match = modFeban.FindSample(item.PayDate, item.Amount)
 
+    ' NOT FOUND and AMBIGUOUS are answers about the data, not failures of the
+    ' macro, so both return True and the run carries on. They used to fall
+    ' through to the error exit, which meant one line the auditor asked about
+    ' that is not in FEBAN stopped everything queued behind it -- and with
+    ' 'Stop on first error' set to YES that is the whole run. A sample whose
+    ' payment sits on a bank account this company code's statements do not
+    ' carry is a finding to report, in the same way NO CLEARING is.
+    '
+    ' Logged as MANUAL rather than ERROR for the same reason: a human has to
+    ' look at it, but nothing went wrong on the screen. WhyNoMatch is what
+    ' tells the two apart -- '1971 rows read, 71 on that date, none for that
+    ' amount' is a real miss, while '0 rows on that date' means the period or
+    ' the company code is wrong and every sample will say the same.
     If Not match.Found Then
         message = "No statement line in " & item.MonthTab & " matches " & _
                   Format$(item.PayDate, "dd/mm/yyyy") & " for " & _
@@ -343,7 +356,8 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
                   modFeban.WhyNoMatch(item.PayDate, item.Amount)
         WriteResult sheet, item.Row, "NOT FOUND", vbNullString, vbNullString, _
                     vbNullString, 0, message
-        modLog.LogAction item.Idx, "Match", message, "ERROR", vbNullString
+        modLog.LogAction item.Idx, "Match", message, "MANUAL", vbNullString
+        ProcessSample = True
         Exit Function
     End If
 
@@ -352,7 +366,8 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
                   "Resolve by hand -- the macro will not guess which one the auditor means."
         WriteResult sheet, item.Row, "AMBIGUOUS", vbNullString, vbNullString, _
                     vbNullString, 0, message
-        modLog.LogAction item.Idx, "Match", message, "ERROR", vbNullString
+        modLog.LogAction item.Idx, "Match", message, "MANUAL", vbNullString
+        ProcessSample = True
         Exit Function
     End If
 
@@ -490,7 +505,7 @@ Private Function ProcessDirectSample(ByRef item As Sample, ByRef filesTotal As L
 
     modConfig.SetCompanyCode item.CompanyCode
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
-    modExport.SweepHandover False
+    modExport.CloseHandoverWorkbooks
 
     folder = modUtil.JoinPath( _
                  modUtil.JoinPath( _
@@ -736,7 +751,7 @@ Public Sub RestoreExcelSettings()
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
     Application.StatusBar = False
-    swept = modExport.SweepHandover(True)
+    swept = modExport.SweepHandover(0)
     On Error GoTo 0
 
     MsgBox "Excel is back to normal:" & vbCrLf & vbCrLf & _
@@ -936,7 +951,7 @@ Public Sub RunSingleMonth()
     modSafety.gWriteAttemptBlocked = 0
     modLog.WriteHeaderBlock
     remoteWas = modUtil.SuppressRemoteOpen()
-    modExport.SweepHandover True
+    modExport.SweepHandover 0
 
     For i = 1 To count
         If StrComp(samples(i).MonthTab, Trim$(answer), vbTextCompare) = 0 Then
@@ -971,7 +986,7 @@ Public Sub RunSingleMonth()
     modLog.WriteFooterBlock done, failed, files
     modUtil.RestoreRemoteOpen remoteWas
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
-    modExport.SweepHandover True
+    modExport.SweepHandover modExport.HANDOVER_GRACE_SECONDS
 
     ' Say where they stopped, read off the Log, rather than assuming. The old
     ' wording claimed none got past the statement match, which was wrong the
