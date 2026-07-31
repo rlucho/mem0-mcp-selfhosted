@@ -266,29 +266,49 @@ Public Function FileSizeBytes(ByVal path As String) As Double
     If fso.FileExists(path) Then FileSizeBytes = fso.GetFile(path).Size
 End Function
 
+' Copy, verified by size and retried a few times. Both ends can be busy for
+' a moment -- SAP has only just let go of the source, and Excel may have
+' opened it -- and a copy that silently half-happened would put a truncated
+' list in the evidence folder with nothing downstream any the wiser.
+Public Function CopyFileTo(ByVal source As String, ByVal target As String) As Boolean
+    Dim fso As Object
+    Dim attempt As Long
+    Dim copied As Boolean
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FileExists(source) Then Exit Function
+
+    For attempt = 1 To 4
+        copied = False
+
+        On Error Resume Next
+        fso.CopyFile source, target, True
+        copied = (fso.FileExists(target) And _
+                  fso.GetFile(target).Size = fso.GetFile(source).Size)
+        On Error GoTo 0
+
+        If copied Then
+            CopyFileTo = True
+            Exit Function
+        End If
+
+        SleepSeconds 0.5
+    Next attempt
+End Function
+
 '-----------------------------------------------------------------------
-' SAP's spreadsheet export writes the file and then opens it in Excel. That
-' is how the operator ended a run with the export sitting on top of the
-' workbook that produced it, and a ~$ lock file left in the evidence folder.
-'
-' Nothing here needs the file open, so close it again. Matching on the full
-' path means only the file just written is touched -- never the control
-' workbook, and never anything the operator opened themselves.
-'-----------------------------------------------------------------------
-'-----------------------------------------------------------------------
-' Stop SAP handing each export to Excel in the first place.
-'
-' SAP downloads the file and then asks Excel to open it, over DDE. Closing
-' the workbook afterwards is a race that cannot be won -- three separate
-' closes were in place and 'Excel can't open two workbooks with the same
-' name at the same time' still stopped a 56-sample run twice, because the
-' open lands whenever SAP gets round to it and every sample folder now uses
-' the same file names.
+' Refuse DDE open requests for the duration of a run.
 '
 ' IgnoreRemoteRequests is the switch behind Excel's 'Ignore other
-' applications that use DDE' option. With it on, the request is refused and
-' nothing opens -- which is what we want, since the macro opens the export
-' itself, from the path, when it is ready to read it.
+' applications that use DDE' option. It was put here to stop SAP handing
+' each export to Excel, and it does not do that: SAP opens the file through
+' OLE automation, not DDE, so it drives this very Excel instance directly
+' and the switch never sees the request. 'Excel can't open two workbooks
+' with the same name at the same time' went on stopping runs with it on.
+'
+' What actually fixed that is in modExport -- SAP writes to a scratch name
+' that never repeats, so there is no collision to lose the race to. This is
+' kept because it costs nothing and closes the one route it does cover.
 '
 ' It is an APPLICATION setting, not a workbook one, so it outlives a crash.
 ' Every caller restores it, the run restores it on the way out of both its

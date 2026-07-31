@@ -16,6 +16,37 @@ Attribute VB_Name = "modExport"
 Option Explicit
 
 '-----------------------------------------------------------------------
+' Where SAP is told to write, and where the evidence ends up.
+'
+' SAP does not merely write the export -- it opens it in Excel afterwards.
+' It does that through OLE automation, driving this very instance, so
+' Excel's 'ignore other applications that use DDE' switch never sees the
+' request and cannot refuse it. Excel will not hold two workbooks with the
+' same name whatever folders they are in, and since each sample got its own
+' folder every sample writes the same handful of names. Sample 42's
+' '4 - Documents behind the largest payment.xlsx' therefore arrives while
+' sample 41's is still open, and a modal stops the run until a human clicks
+' OK. Closing the previous copy first cannot win that race: the hand-off
+' lands whenever SAP gets round to it, seconds later, and three separate
+' closes did not stop it.
+'
+' So there is no race here any more. SAP writes to a scratch folder under a
+' name carrying a counter that never repeats, and the file is copied into
+' the sample folder under its proper name once it is completely written.
+' Excel can open the scratch copy whenever it likes -- no two of those are
+' ever called the same thing -- and the sample folder only ever receives a
+' file that nothing has open.
+'
+' The scratch folder is emptied between samples and at both ends of a run,
+' so the opened copies do not stack up and nothing temporary is left behind.
+' It sits under TEMP, not under the evidence root, so an auditor opening the
+' pack never sees it at all.
+'-----------------------------------------------------------------------
+Private Const HANDOVER_FOLDER As String = "sap-audit-handover"
+
+Private mHandoverSequence As Long
+
+'-----------------------------------------------------------------------
 ' ALV grid export via the grid's own toolbar export button.
 ' Returns the full path written, or "" if nothing was written.
 '
@@ -220,15 +251,16 @@ End Function
 ' already occupying wnd[1].
 Public Function CompleteSaveDialogIn(ByVal sampleIdx As Long, ByVal windowId As String, _
                                      ByVal folder As String, ByVal fileName As String) As String
-    Dim target As String
     Dim pathId As String, nameId As String
+    Dim writeFolder As String, writeName As String
+    Dim written As String, target As String
+    Dim bytes As Double
 
     modUtil.EnsureFolder folder
-    target = modUtil.JoinPath(folder, fileName)
 
-    If modUtil.FileExists(target) Then
+    ' Overwriting silently would destroy evidence from an earlier run.
+    If modUtil.FileExists(modUtil.JoinPath(folder, fileName)) Then
         fileName = UniqueName(folder, fileName)
-        target = modUtil.JoinPath(folder, fileName)
     End If
 
     ' Rebase the recorded wnd[1] paths onto whichever window this dialog is in,
@@ -244,30 +276,29 @@ Public Function CompleteSaveDialogIn(ByVal sampleIdx As Long, ByVal windowId As 
         Exit Function
     End If
 
-    modSapConnect.Element(pathId).Text = folder
-    modSapConnect.Element(nameId).Text = fileName
+    HandoverTarget folder, fileName, writeFolder, writeName
 
-    ' Excel will not hold two workbooks with the same name at once, and every
-    ' sample folder now uses the same fixed names. The previous sample's copy
-    ' -- opened by SAP, not by us -- has to go before this one lands, or Excel
-    ' puts up a modal and waits for a human.
-    modUtil.CloseWorkbooksNamed fileName
+    modSapConnect.Element(pathId).Text = writeFolder
+    modSapConnect.Element(nameId).Text = writeName
 
     modSafety.GuardedPress Rebase(modConfig.ElementId("Save.GenerateButton"), windowId)
     modSapConnect.WaitForSap
 
-    If Not WaitForFile(target, 20) Then
+    written = modUtil.JoinPath(writeFolder, writeName)
+    If Not WaitForFile(written, 20) Then
         modLog.LogAction sampleIdx, "Export", _
-                     "SAP reported no error but " & target & " did not appear.", _
-                     "ERROR", target
+                     "SAP reported no error but " & written & " did not appear.", _
+                     "ERROR", written
         Exit Function
     End If
 
-    SettleAfterExport fileName
+    bytes = WaitUntilStable(written, 20)
+
+    target = Deliver(sampleIdx, written, folder, fileName)
+    If Len(target) = 0 Then Exit Function
 
     modLog.LogAction sampleIdx, "Export", _
-                 "Wrote " & Format$(modUtil.FileSizeBytes(target) / 1024, "0.0") & " KB", _
-                 "OK", target
+                 "Wrote " & Format$(bytes / 1024, "0.0") & " KB", "OK", target
 
     CompleteSaveDialogIn = target
 End Function
@@ -320,8 +351,10 @@ End Sub
 '-----------------------------------------------------------------------
 Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As String, _
                                     ByVal fileName As String) As String
-    Dim target As String
     Dim pathId As String, nameId As String, encodingId As String
+    Dim writeFolder As String, writeName As String
+    Dim written As String, target As String
+    Dim bytes As Double
 
     If Not modSapConnect.ModalWindowOpen() Then
         modLog.LogAction sampleIdx, "Export", _
@@ -334,15 +367,11 @@ Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As Str
 
     pathId = modConfig.ElementId("Save.Path")
     nameId = modConfig.ElementId("Save.FileName")
-    target = modUtil.JoinPath(folder, fileName)
 
     ' Overwriting silently would destroy evidence from an earlier run.
-    If modUtil.FileExists(target) Then
+    If modUtil.FileExists(modUtil.JoinPath(folder, fileName)) Then
         fileName = UniqueName(folder, fileName)
-        target = modUtil.JoinPath(folder, fileName)
     End If
-
-    modSapConnect.Element(pathId).Text = folder
 
     ' The recording left the default file name in place, so this field's ID is
     ' standard rather than confirmed. If it is not on the dialog, SAP keeps its
@@ -357,7 +386,10 @@ Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As Str
         Exit Function
     End If
 
-    modSapConnect.Element(nameId).Text = fileName
+    HandoverTarget folder, fileName, writeFolder, writeName
+
+    modSapConnect.Element(pathId).Text = writeFolder
+    modSapConnect.Element(nameId).Text = writeName
 
     encodingId = modConfig.ElementIdOrBlank("Save.Encoding")
     If Len(encodingId) > 0 Then
@@ -368,43 +400,179 @@ Private Function CompleteSaveDialog(ByVal sampleIdx As Long, ByVal folder As Str
         End If
     End If
 
-    ' See CompleteSaveDialogIn: same-named workbook from the previous sample.
-    modUtil.CloseWorkbooksNamed fileName
-
     modSafety.GuardedPress modConfig.ElementId("Save.GenerateButton")
     modSapConnect.WaitForSap
 
     ' SAP writes asynchronously; give the file a moment to land.
-    If Not WaitForFile(target, 15) Then
+    written = modUtil.JoinPath(writeFolder, writeName)
+    If Not WaitForFile(written, 15) Then
         modLog.LogAction sampleIdx, "Export", _
-                     "SAP reported no error but " & target & " did not appear.", _
-                     "ERROR", target
+                     "SAP reported no error but " & written & " did not appear.", _
+                     "ERROR", written
         Exit Function
     End If
 
-    If modUtil.FileSizeBytes(target) = 0 Then
+    bytes = WaitUntilStable(written, 20)
+    If bytes = 0 Then
         modLog.LogAction sampleIdx, "Export", _
-                     "Wrote " & target & " but it is empty -- the list had no rows.", _
-                     "ERROR", target
+                     "Wrote " & written & " but it is empty -- the list had no rows.", _
+                     "ERROR", written
         Exit Function
     End If
 
-    SettleAfterExport fileName
+    target = Deliver(sampleIdx, written, folder, fileName)
+    If Len(target) = 0 Then Exit Function
 
     modLog.LogAction sampleIdx, "Export", _
-                 "Wrote " & Format$(modUtil.FileSizeBytes(target) / 1024, "0.0") & " KB", _
-                 "OK", target
+                 "Wrote " & Format$(bytes / 1024, "0.0") & " KB", "OK", target
 
     CompleteSaveDialog = target
 End Function
 
-' SAP hands the file to Excel once it has finished writing it, and it does
-' that on its own schedule -- so closing before the export is not enough on
-' its own. Give the hand-off a moment, then close it again.
-Private Sub SettleAfterExport(ByVal fileName As String)
-    modUtil.SleepSeconds 1#
-    modUtil.CloseWorkbooksNamed fileName
+'-----------------------------------------------------------------------
+' The scratch hand-off. See the note at the top of the module.
+'-----------------------------------------------------------------------
+
+' Decide where SAP should be told to put this file. Normally that is the
+' scratch folder under a name that never repeats; if the scratch folder is
+' unavailable it is the sample folder itself, which is what this did before
+' and still works, just with the collision back.
+Private Sub HandoverTarget(ByVal folder As String, ByVal fileName As String, _
+                           ByRef writeFolder As String, ByRef writeName As String)
+    Dim scratch As String
+
+    scratch = HandoverFolder()
+
+    If Len(scratch) = 0 Or Not NeedsHandover(fileName) Then
+        writeFolder = folder
+        writeName = fileName
+        Exit Sub
+    End If
+
+    On Error GoTo NoScratch
+    modUtil.EnsureFolder scratch
+
+    ' A leftover from a run that was killed mid-export would satisfy the
+    ' 'has it appeared yet' wait without SAP writing anything, so step over
+    ' any name already taken rather than reusing it.
+    Do
+        mHandoverSequence = mHandoverSequence + 1
+        writeName = Format$(mHandoverSequence, "0000") & " " & fileName
+    Loop While modUtil.FileExists(modUtil.JoinPath(scratch, writeName))
+
+    writeFolder = scratch
+    Exit Sub
+
+NoScratch:
+    writeFolder = folder
+    writeName = fileName
 End Sub
+
+' TEMP, because nothing temporary belongs in a pack an auditor receives.
+Private Function HandoverFolder() As String
+    Dim base As String
+
+    base = Environ$("TEMP")
+    If Len(base) = 0 Then base = Environ$("TMP")
+
+    ' No TEMP at all is unusual but not fatal, and the evidence root is known
+    ' to be writable -- it is where the run is already putting files. The
+    ' folder gets swept either way.
+    If Len(base) = 0 Then base = modConfig.DownloadRoot()
+    If Len(base) = 0 Then Exit Function
+
+    HandoverFolder = modUtil.JoinPath(base, HANDOVER_FOLDER)
+End Function
+
+' Only spreadsheets need it. Excel is the only thing that objects to a
+' repeated name, and the invoice PDF is the only other kind of file the run
+' writes -- routing that through the scratch folder would just risk leaving
+' a copy behind when Acrobat holds it open.
+Private Function NeedsHandover(ByVal fileName As String) As Boolean
+    Dim dotPos As Long
+    Dim extension As String
+
+    dotPos = InStrRev(fileName, ".")
+    If dotPos = 0 Then Exit Function
+
+    extension = LCase$(Mid$(fileName, dotPos))
+    NeedsHandover = (extension = ".xlsx" Or extension = ".xls" Or _
+                     extension = ".csv" Or extension = ".txt")
+End Function
+
+' Put the finished file where the pack expects it, and answer with where
+' that is. A copy rather than a move: SAP's hand-off to Excel can still be
+' on its way, and 'the file could not be found' is exactly the modal this
+' is here to avoid. The scratch copy goes in the next sweep.
+Private Function Deliver(ByVal sampleIdx As Long, ByVal written As String, _
+                         ByVal folder As String, ByVal fileName As String) As String
+    Dim target As String
+
+    target = modUtil.JoinPath(folder, fileName)
+
+    ' Written in place already -- no scratch folder was available.
+    If StrComp(written, target, vbTextCompare) = 0 Then
+        Deliver = target
+        Exit Function
+    End If
+
+    modUtil.EnsureFolder folder
+
+    ' Defensive. Nothing should be holding this name: this line is the only
+    ' thing that ever creates it, and the macro closes what it opens.
+    modUtil.CloseWorkbooksNamed fileName
+
+    If Not modUtil.CopyFileTo(written, target) Then
+        modLog.LogAction sampleIdx, "Export", _
+                     "SAP wrote " & written & " but it could not be copied to " & _
+                     target & ", so the sample folder has no copy of it.", _
+                     "ERROR", written
+        Exit Function
+    End If
+
+    Deliver = target
+End Function
+
+'-----------------------------------------------------------------------
+' Empty the scratch folder: close whatever Excel opened out of it, then
+' delete the files. Called between samples so the opened copies do not
+' stack up across a run, and with removeFolder at both ends of one.
+'
+' A file that will not delete is one Excel still has open; the next sweep
+' gets it. So this reports what it managed and never raises.
+'-----------------------------------------------------------------------
+Public Function SweepHandover(ByVal removeFolder As Boolean) As Long
+    Dim folder As String
+    Dim fso As Object
+    Dim file As Object
+    Dim doomed As Collection
+    Dim item As Variant
+
+    folder = HandoverFolder()
+    If Len(folder) = 0 Then Exit Function
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FolderExists(folder) Then Exit Function
+
+    modUtil.CloseExportWorkbooksUnder folder
+
+    Set doomed = New Collection
+
+    On Error Resume Next
+    For Each file In fso.GetFolder(folder).Files
+        doomed.Add file.path
+    Next file
+
+    For Each item In doomed
+        fso.DeleteFile CStr(item), True
+        If Not fso.FileExists(CStr(item)) Then SweepHandover = SweepHandover + 1
+    Next item
+
+    ' Fails while anything is still in there, which is fine -- it is out of
+    ' the way and the next run reuses it.
+    If removeFolder Then fso.DeleteFolder folder, True
+    On Error GoTo 0
+End Function
 
 Private Function WaitForFile(ByVal path As String, ByVal maxSeconds As Double) As Boolean
     Dim waited As Double
@@ -417,6 +585,35 @@ Private Function WaitForFile(ByVal path As String, ByVal maxSeconds As Double) A
         modUtil.SleepSeconds 0.5
         waited = waited + 0.5
     Loop
+End Function
+
+' SAP creates the file and then fills it, so 'it exists' is not 'it is
+' finished'. Wait until the size stops changing, and answer with it: a copy
+' taken mid-write would put a truncated list in the evidence folder and
+' nothing downstream would notice.
+'
+' Still empty counts as settled once it has had a few seconds, so an export
+' of an empty list reports that quickly instead of sitting out the whole
+' timeout.
+Private Function WaitUntilStable(ByVal path As String, ByVal maxSeconds As Double) As Double
+    Dim waited As Double
+    Dim size As Double, previous As Double
+
+    previous = -1
+
+    Do While waited < maxSeconds
+        size = modUtil.FileSizeBytes(path)
+        If size = previous And (size > 0 Or waited >= 3) Then
+            WaitUntilStable = size
+            Exit Function
+        End If
+
+        previous = size
+        modUtil.SleepSeconds 0.4
+        waited = waited + 0.4
+    Loop
+
+    WaitUntilStable = modUtil.FileSizeBytes(path)
 End Function
 
 ' file.txt -> file_2.txt, file_3.txt, ...

@@ -146,6 +146,11 @@ Public Sub RunExtract()
     ' of the run -- the macro opens the file itself when it wants to read it.
     remoteWas = modUtil.SuppressRemoteOpen()
 
+    ' And because refusing does not work on SAP's route in, every export is
+    ' written to a scratch name first. Start from an empty scratch folder, in
+    ' case a previous run was killed with files in it.
+    modExport.SweepHandover True
+
     Application.ScreenUpdating = False
 
     ' FEBAN selects a period, not a payment, so open each month once and
@@ -207,6 +212,7 @@ Finished:
     Application.StatusBar = False
     modLog.WriteFooterBlock processed, errored, files
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+    modExport.SweepHandover True
     On Error GoTo 0
 
     MsgBox "Run finished." & vbCrLf & vbCrLf & _
@@ -304,8 +310,10 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     ' SAP opens each spreadsheet export in Excel once it has written it, and
     ' it does that asynchronously -- so the previous sample's export tends to
     ' surface during this one. Close anything sitting under the evidence
-    ' folder before starting, or they stack up all run.
+    ' folder before starting, or they stack up all run. The scratch copies
+    ' SAP actually opens are swept the same way, and deleted.
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+    modExport.SweepHandover False
 
     ' A row that names its own starting document skips the statement search
     ' entirely -- there is nothing to match, because the document it would
@@ -482,6 +490,7 @@ Private Function ProcessDirectSample(ByRef item As Sample, ByRef filesTotal As L
 
     modConfig.SetCompanyCode item.CompanyCode
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+    modExport.SweepHandover False
 
     folder = modUtil.JoinPath( _
                  modUtil.JoinPath( _
@@ -710,25 +719,31 @@ End Function
 '-----------------------------------------------------------------------
 ' Put Excel back the way it was, if a run ended badly.
 '
-' The run switches off Excel's response to DDE open requests, so SAP cannot
-' hand it each export as it is written. That is an APPLICATION setting: it
-' survives closing the workbook, and while it is on, double-clicking a file
-' in Explorer opens Excel with a blank window. Every exit path restores it,
-' but a hard crash has no exit path -- hence a button.
+' The run switches off Excel's response to DDE open requests. That is an
+' APPLICATION setting: it survives closing the workbook, and while it is on,
+' double-clicking a file in Explorer opens Excel with a blank window. Every
+' exit path restores it, but a hard crash has no exit path -- hence a button.
+'
+' It also empties the scratch folder the exports pass through, for the same
+' reason: a run that stopped hard leaves files in it.
 '-----------------------------------------------------------------------
 Public Sub RestoreExcelSettings()
+    Dim swept As Long
+
     modUtil.RestoreRemoteOpen False
 
     On Error Resume Next
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
     Application.StatusBar = False
+    swept = modExport.SweepHandover(True)
     On Error GoTo 0
 
     MsgBox "Excel is back to normal:" & vbCrLf & vbCrLf & _
            "  responds to files opened from Explorer" & vbCrLf & _
            "  screen updating on" & vbCrLf & _
-           "  alerts on" & vbCrLf & vbCrLf & _
+           "  alerts on" & vbCrLf & _
+           "  " & swept & " leftover export(s) cleared from the scratch folder" & vbCrLf & vbCrLf & _
            "Only needed if a run stopped hard -- every normal exit does this " & _
            "on its own.", vbInformation, "Restore Excel settings"
 End Sub
@@ -921,6 +936,7 @@ Public Sub RunSingleMonth()
     modSafety.gWriteAttemptBlocked = 0
     modLog.WriteHeaderBlock
     remoteWas = modUtil.SuppressRemoteOpen()
+    modExport.SweepHandover True
 
     For i = 1 To count
         If StrComp(samples(i).MonthTab, Trim$(answer), vbTextCompare) = 0 Then
@@ -955,6 +971,7 @@ Public Sub RunSingleMonth()
     modLog.WriteFooterBlock done, failed, files
     modUtil.RestoreRemoteOpen remoteWas
     modUtil.CloseExportWorkbooksUnder modConfig.DownloadRoot()
+    modExport.SweepHandover True
 
     ' Say where they stopped, read off the Log, rather than assuming. The old
     ' wording claimed none got past the statement match, which was wrong the

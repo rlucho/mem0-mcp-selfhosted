@@ -250,8 +250,9 @@ be zipped and sent to the auditor as it stands.
 
 The report workbook carries the trail top to bottom — what the auditor asked for, the statement
 line it matched, the FI and clearing documents, the batch, the largest payment, the largest
-invoice — with each evidence file listed against the step it proves and the PDF embedded as an
-object. Its `Log` sheet holds that sample's rows from the run's audit trail.
+invoice — with each evidence file listed by name against the step it proves. Names, not paths:
+the folder travels to whoever receives it, and a path from the machine that made it means
+nothing there.
 
 The second folder above is the shape a sample takes when the FI document clears nothing: a
 transfer between the company's own bank accounts settles no supplier, so there is no batch, no
@@ -276,29 +277,36 @@ and, in the workbook itself:
 
 ## Known limits
 
-- **Level 2, the Santander SCF route, is blocked.** `Audit2.vbs` captured no steps — just the
-  scripting boilerplate and a `resizeWorkingPane` call. Those samples run all of level 1, then
-  log `BLOCKED_SCF` carrying the clearing document, the SCF item's document number and the path
-  to the exported cleared-items list, so they can be finished by hand. Filling in
-  `Scf.OpenPayment` and `Scf.InvoiceListMenu` from a fresh recording turns level 2 on with **no
-  code change**. Eight of the 56 samples name `SANTANDER SCF` directly in the auditor's request,
-  and more may turn out to be SCF once the cleared items are read — the branch is decided by
-  what the cleared-items list says, not by the request.
-- **The regular-supplier PDF download is unverified.** `Invoice.*` on the Screen Map is
-  standard SAP rather than recorded, because that walk wasn't captured either. Where those
-  rows are blank the run logs `MANUAL` with the document numbers, rather than reporting a
-  success that left no file behind.
-- **Invoice images sometimes cannot be scripted out of SAP at all.** Listing attachments works;
-  extracting the PDF often does not, because SAP hands the document to the registered external
-  viewer and a script cannot capture that. If that turns out to be the case here, a read-only
-  extract from the content server by Basis beats fighting the GUI for 56 documents.
 - **Ties are not resolved automatically.** Matching is on value date plus amount. Several
   samples are for exactly 2,450,000.00 on month-end dates, so ties are a real prospect; those
   are reported `AMBIGUOUS` for a human to settle rather than resolved by picking the first row.
 - **Statement lines that were never posted** come back `PARTIAL` with no document. That is a
   finding to report, not a failure to fix.
-- **None of this has been run against SAP.** It was written from the recordings, and the
-  structural checks that can be done without SAP have been done — every cross-module
-  reference, block and `GoTo` label resolves, and the list-parsing logic is tested in
-  `scripts/test_list_parser.py`. The first `CheckSetup` and `DRY RUN` on your machine are the
-  real tests.
+- **Only one company code has been run end to end.** GBKM's 56 samples went through with no
+  failures — 26 reaching the invoice PDF, 16 stopping at `NO CLEARING` because an internal
+  transfer settles no supplier, 14 at `NO VENDOR PAYMENTS` because a treasury or FX settlement
+  has no vendor line. Other company codes use the same screens but not necessarily the same
+  document types, which is why the invoice is chosen by sign — the most negative line — rather
+  than by document type.
+- **The fiscal year is not always the calendar year.** GBKM posts September 2025 into FY 2026,
+  so a document lookup tries the calendar year and then either side of it. A company code
+  whose year is offset by more than one would need that widening.
+
+## What the run leaves on the machine
+
+Two things outlive a run and can be put back by hand if it stops hard — the
+**Restore Excel settings** button does both:
+
+- **DDE open requests are refused** for the duration of a run (Excel's *Ignore other
+  applications that use DDE*). While that is on, double-clicking a file in Explorer opens Excel
+  with a blank window.
+- **A scratch folder in `%TEMP%\sap-audit-handover`** holds each export for as long as it takes
+  to copy it into the sample folder. SAP does not merely write an export — it opens it in
+  Excel, through OLE automation, so the DDE switch cannot refuse it. Excel will not hold two
+  workbooks with the same name whatever folders they are in, and every sample folder uses the
+  same handful of names, so sample 42's `4 - Documents behind the largest payment.xlsx` used to
+  arrive while sample 41's was still open and stop the run on a modal until somebody clicked
+  OK. Closing the previous copy first cannot win that race; the hand-off lands seconds later,
+  whenever SAP gets round to it. So SAP now writes to a name that never repeats and the file is
+  copied to its proper name once it is completely written — nothing Excel opens is ever called
+  the same thing twice. The folder is emptied between samples and at both ends of a run.
