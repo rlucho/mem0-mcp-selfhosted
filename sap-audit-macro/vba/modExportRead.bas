@@ -36,6 +36,11 @@ Private mHeaderRow As Long        ' 0 when no header was recognised
 Private mPath As String
 Private mWasWorkbook As Boolean
 
+' The document types the last Payment Usage read saw and did not want. The
+' chain uses them to tell a settlement from a mis-read column: SB, SA and AB
+' are bookkeeping entries, and a list of nothing else is not a payment run.
+Private mLastRejectedTypes As String
+
 ' LANGUAGE INDEPENDENCE
 '
 ' Column captions are translated -- 'Document Type' is 'Belegart' on a
@@ -103,6 +108,11 @@ Private Sub Reset()
     mPath = vbNullString
     mWasWorkbook = False
 End Sub
+
+' The types the last Payment Usage read rejected, comma separated.
+Public Function LastRejectedTypes() As String
+    LastRejectedTypes = mLastRejectedTypes
+End Function
 
 ' A real .xlsx is a ZIP, so it starts with the bytes "PK". Sniffing beats
 ' trusting the extension: SAP happily writes plain text into a .XLSX name,
@@ -979,6 +989,9 @@ NextRow:
     ' When nothing matched, the useful thing to say is what the file DID hold.
     ' Two samples came back '0 ZP documents, 2 rows rejected' with no way to
     ' tell whether the column was wrong or the batch simply is not a ZP run.
+    mLastRejectedTypes = vbNullString
+    If rejectedTypes.Count > 0 Then mLastRejectedTypes = Join(rejectedTypes.Keys, ", ")
+
     If matched = 0 And rejectedTypes.Count > 0 Then
         typesSeen = " The types actually in the file: " & _
                     Join(rejectedTypes.Keys, ", ") & ". If one of those is the " & _

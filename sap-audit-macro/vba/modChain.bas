@@ -301,18 +301,27 @@ Private Sub ContinueFromClearing(ByVal sampleIdx As Long, ByRef result As ChainR
         ' offsets it -- means this is not a vendor payment run at all, but a
         ' treasury or FX settlement, and there are no supplier invoices behind
         ' it to download. Say which one it is.
-        If rejected <= 2 Then
+        ' The threshold was 2, which is the shape GBKM's internal transfers have:
+        ' the SB statement line and the AB that offsets it. Sample 141 is a VAT
+        ' return -- SB, then an SA journal for the VAT, then AB for a two-penny
+        ' rounding -- and three rows was enough to be called a mis-read payment
+        ' run. It is not: a real payment run behind one of these batches has run
+        ' to between 34 and 656 payments, never a handful. Read from the Control
+        ' sheet with a default, so it can be widened again without a code change.
+        If rejected <= modConfig.SettingNumber("Max rows for a settlement", 8) Then
             ' A definite answer, not a failure: this clearing document settles
             ' against the bank statement and no supplier is involved, so there
             ' is no invoice to fetch and never was. Its own status, so a run of
             ' 141 samples does not report a dozen of these as errors.
             Finish result, "NO VENDOR PAYMENTS", _
                    "Clearing document " & result.ClearingDocument & " settles directly " & _
-                   "against the bank statement -- the Payment Usage list holds only the " & _
-                   "statement line and its offsetting entry, no vendor payments. This is " & _
-                   "a treasury or FX settlement rather than a payment run, so there is no " & _
-                   "supplier invoice behind it. See " & modUtil.FILE_BATCH & "; the Log " & _
-                   "names the document types it held."
+                   "against the bank statement -- the Payment Usage list holds " & _
+                   rejected & " bookkeeping row(s)" & _
+                   IIf(Len(modExportRead.LastRejectedTypes()) > 0, _
+                       " of type " & modExportRead.LastRejectedTypes(), "") & _
+                   " and no vendor payments. This is a treasury, tax or FX settlement " & _
+                   "rather than a payment run, so there is no supplier invoice behind " & _
+                   "it. See " & modUtil.FILE_BATCH & "."
         Else
             Finish result, "PARTIAL", _
                    "No " & modConfig.Setting("Payment document type") & " document " & _
