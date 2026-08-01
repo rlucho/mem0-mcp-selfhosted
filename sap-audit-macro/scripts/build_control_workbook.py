@@ -104,6 +104,11 @@ CONTROL_SETTINGS = [
      "the next sample."),
     ("Max seconds to wait per screen", 60,
      "Guards against an indefinite hang when SAP is slow."),
+    ("Max rows for a settlement", 8,
+     "A clearing document with no vendor payments and no more than this many "
+     "bookkeeping rows is a treasury, tax or FX settlement -- there is no invoice "
+     "behind it. Above it, the run assumes the document-type column was misread. "
+     "A real payment run here has held between 34 and 656 payments, never a handful."),
     ("SAP date format", "DDMMYYYY",
      "How dates are typed into SAP. DDMMYYYY = 01092025, which is what "
      "recordings/Audit.vbs used and therefore what is known to work here. Also "
@@ -585,6 +590,11 @@ SAMPLE_HEADERS = [
     # came from an auditor's statement extract, which is the normal case.
     ("T", "Start document", 16),
     ("U", "Start at", 12),
+    # A follow-up request pastes the SAP extract it worked from under each
+    # sample, naming the ZP the auditor treated as the largest payment of the
+    # batch. Captured so the run can be checked against their answer. Blank
+    # whenever the file shows no working, which is most of them.
+    ("V", "Auditor's ZP", 14),
 ]
 MACRO_COLUMNS = ("J", "K", "L", "M", "N", "O")
 

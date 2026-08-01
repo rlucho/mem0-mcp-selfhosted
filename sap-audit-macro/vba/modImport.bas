@@ -321,6 +321,14 @@ Private Function Commit(ByVal book As Workbook, ByVal requestName As String, _
     Set target = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
     outRow = NextFreeRow(target)
 
+    ' Column V post-dates the workbook builder, so a sheet made before it has
+    ' no heading there. Write one rather than leaving a column of values under
+    ' a blank header.
+    If Len(Trim$(CStr(target.Cells(4, 22).Value))) = 0 Then
+        target.Cells(4, 22).Value = "Auditor's ZP"
+        target.Columns(22).ColumnWidth = 14
+    End If
+
     For Each sheet In book.Worksheets
         If Not IsSkippable(sheet) Then
             map = FindColumns(sheet)
@@ -347,6 +355,13 @@ Private Function Commit(ByVal book As Workbook, ByVal requestName As String, _
                         target.Cells(outRow, 18).Value = companyCode
                         target.Cells(outRow, 19).Value = _
                             CellString(sheet, row, map.CommentCol)
+
+                        ' A follow-up request often shows its own working: an
+                        ' SAP extract pasted under each sample naming the ZP the
+                        ' auditor picked. Capture it so the run can be checked
+                        ' against their answer rather than merely trusted.
+                        target.Cells(outRow, 22).Value = _
+                            AuditorZpBelow(sheet, row, map)
 
                         ' Where this row enters the chain. Blank for a normal
                         ' statement-driven sample, which is every auditor
@@ -729,4 +744,138 @@ Private Function DefaultRequestName(ByVal path As String) As String
     Loop
 
     DefaultRequestName = Trim$(name)
+End Function
+
+'-----------------------------------------------------------------------
+' The ZP the auditor picked, out of the extract they pasted below the row.
+'
+' A follow-up request shows its working. Under the sample table there is a
+' block per sample -- a heading repeating the sample's label, then a small
+' SAP line-item extract, and in it the ZP document the auditor selected as
+' the largest payment of that batch. That is the same document this macro
+' derives independently from FBL1N, so capturing it turns the run into
+' something checkable: two answers to the same question, from two routes.
+'
+' Read by caption, never by position. The columns are not in the same order
+' on every block -- in one April sample 'Clearing Document' is column M and
+' 'Document Header Text' is N, and two samples later they are the other way
+' round. A positional read would have quietly returned the clearing document
+' as though it were the payment.
+'
+' Returns "" whenever there is no such block, which is the normal case: an
+' ordinary statement extract has nothing pasted underneath it.
+'-----------------------------------------------------------------------
+Private Function AuditorZpBelow(ByVal sheet As Worksheet, ByVal row As Long, _
+                                ByRef map As ColumnMap) As String
+    Dim label As String
+    Dim blockRow As Long
+
+    label = SampleLabel(sheet, row, map)
+    If Len(label) = 0 Then Exit Function
+
+    blockRow = LastRowSaying(sheet, label)
+
+    ' The label's own row in the sample table is not a block. Only a later
+    ' occurrence is, because the blocks sit below the table.
+    If blockRow <= row Then Exit Function
+
+    AuditorZpBelow = ZpInBlock(sheet, blockRow)
+End Function
+
+' The label that identifies this sample -- 'April Sample 3'. It sits to the
+' left of the dated columns, so search the first few columns of the row for
+' something with a word and a number in it rather than assuming a column.
+Private Function SampleLabel(ByVal sheet As Worksheet, ByVal row As Long, _
+                             ByRef map As ColumnMap) As String
+    Dim col As Long
+    Dim text As String
+
+    For col = 1 To LesserOf(map.DateCol - 1, 6)
+        text = CellString(sheet, row, col)
+        If Len(text) >= 6 And Len(text) <= 40 Then
+            If InStr(1, text, "sample", vbTextCompare) > 0 Then
+                SampleLabel = text
+                Exit Function
+            End If
+        End If
+    Next col
+End Function
+
+' The LAST row carrying this exact text. The label appears twice -- once in
+' the sample table, once heading the block -- and the block is always the
+' later of the two.
+Private Function LastRowSaying(ByVal sheet As Worksheet, ByVal label As String) As Long
+    Dim row As Long, col As Long
+    Dim limit As Long
+
+    limit = LastRow(sheet)
+
+    For row = limit To 1 Step -1
+        For col = 1 To 8
+            If StrComp(CellString(sheet, row, col), label, vbTextCompare) = 0 Then
+                LastRowSaying = row
+                Exit Function
+            End If
+        Next col
+    Next row
+End Function
+
+' Walk down from the block heading: find its header row by caption, then read
+' the rows under it, and answer with the document number of the first ZP.
+Private Function ZpInBlock(ByVal sheet As Worksheet, ByVal blockRow As Long) As String
+    Dim row As Long, col As Long
+    Dim docCol As Long, typeCol As Long
+    Dim headerRow As Long
+    Dim caption As String
+    Dim wanted As String
+
+    wanted = FirstWord(modConfig.Setting("Payment document type"))
+    If Len(wanted) = 0 Then wanted = "ZP"
+
+    ' The header is within a few rows of the heading.
+    For row = blockRow To LesserOf(blockRow + 6, LastRow(sheet))
+        docCol = 0: typeCol = 0
+        For col = 1 To 20
+            caption = CellString(sheet, row, col)
+            If InStr(1, caption, "Document Number", vbTextCompare) > 0 Then docCol = col
+            If InStr(1, caption, "Document Type", vbTextCompare) > 0 Then typeCol = col
+        Next col
+        If docCol > 0 And typeCol > 0 Then
+            headerRow = row
+            Exit For
+        End If
+    Next row
+
+    If headerRow = 0 Then Exit Function
+
+    ' Then the rows under it, until the block runs out. Stop at the next
+    ' heading rather than running into the following sample's block.
+    For row = headerRow + 1 To LesserOf(headerRow + 30, LastRow(sheet))
+        If StrComp(Normalise(CellString(sheet, row, typeCol)), wanted, vbTextCompare) = 0 Then
+            ZpInBlock = OnlyDigitsOf(CellString(sheet, row, docCol))
+            Exit Function
+        End If
+        If InStr(1, CellString(sheet, row, 2), "sample", vbTextCompare) > 0 Then Exit Function
+    Next row
+End Function
+
+Private Function FirstWord(ByVal text As String) As String
+    Dim parts() As String
+
+    parts = Split(Replace(Trim$(text), ";", ","), ",")
+    FirstWord = Trim$(parts(LBound(parts)))
+End Function
+
+Private Function Normalise(ByVal text As String) As String
+    Normalise = UCase$(Trim$(text))
+End Function
+
+Private Function OnlyDigitsOf(ByVal text As String) As String
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch >= "0" And ch <= "9" Then OnlyDigitsOf = OnlyDigitsOf & ch
+    Next i
 End Function

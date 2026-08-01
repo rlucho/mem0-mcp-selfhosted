@@ -114,6 +114,12 @@ SetNote book, "Invoice document type", _
         "picked is not one of the types listed, the Log says so and takes it anyway. " & _
         "Blank to switch the cross-check off."
 
+AddSetting book, "Max rows for a settlement", 8, _
+    "A clearing document with no vendor payments and no more than this many " & _
+    "bookkeeping rows is a treasury, tax or FX settlement -- there is no invoice " & _
+    "behind it. Above it, the run assumes the document-type column was misread. " & _
+    "A real payment run here has held between 34 and 656 payments, never a handful."
+
 ' --- 1b. Samples sheet: the columns the importer writes ---------------------
 ' Appended at Q, R and S so the Control sheet's formulas over A:P are
 ' untouched. Existing rows are stamped with the request they came from --
@@ -124,6 +130,11 @@ AddSampleColumn book, 18, "Company code", 13
 AddSampleColumn book, 19, "Auditor's comment", 46
 AddSampleColumn book, 20, "Start document", 16
 AddSampleColumn book, 21, "Start at", 12
+' A follow-up request shows its working: an SAP extract under each sample
+' naming the ZP the auditor picked. Captured so the run can be checked
+' against their answer instead of merely trusted. Blank on every row whose
+' file showed no working, which is most of them.
+AddSampleColumn book, 22, "Auditor's ZP", 14
 StampExistingSamples book, "Paper Samples"
 
 ' --- 2. modules -------------------------------------------------------------

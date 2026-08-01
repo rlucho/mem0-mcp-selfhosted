@@ -38,6 +38,9 @@ Private Const COL_COMMENT As Long = 19
 ' statement: the document to enter the chain at, and which rung that is.
 Private Const COL_START_DOC As Long = 20
 Private Const COL_START_AT As Long = 21
+' The ZP the auditor picked, when their file showed its working. Nothing
+' selects on it -- it exists to be disagreed with.
+Private Const COL_EXPECTED_ZP As Long = 22
 
 ' The period's statement export, so each sample folder can be given a copy.
 Private mMonthStatementFile As String
@@ -63,6 +66,7 @@ Private Type Sample
     Comment As String          ' what the auditor asked for, in their words
     StartDocument As String    ' blank for a normal statement-driven sample
     StartAt As String          ' "", "CLEARING" or "PAYMENT"
+    ExpectedZp As String       ' the auditor's own pick, to check ours against
 End Type
 
 '-----------------------------------------------------------------------
@@ -302,6 +306,64 @@ End Function
 ' nothing, NO VENDOR PAYMENTS a treasury or FX settlement that settles against
 ' the bank statement rather than a supplier -- both have no invoice to fetch
 ' and never did. Everything else stopped somewhere short.
+'-----------------------------------------------------------------------
+' Compare the payment this run picked with the one the auditor picked.
+'
+' A follow-up request shows its working: under each sample the auditor pastes
+' the SAP extract they took, naming the ZP they treated as the largest payment
+' of the batch. That is the same question this macro answers independently --
+' export the batch from FBL1N, take the largest by value -- so the two can be
+' held against each other.
+'
+' Agreement is the useful thing to be able to state: the pack is not just
+' evidence, it is evidence that reaches the same document the auditor did.
+' Disagreement is more useful still, and must be loud rather than silent --
+' either the batch changed since they looked, or one of the two is reading a
+' different batch, and nobody would spot it by eye across 15 samples.
+'
+' Only ever annotates. Nothing about the run changes on the outcome, because
+' the auditor's pick is a second opinion, not an instruction.
+'-----------------------------------------------------------------------
+Private Sub CrossCheckAgainstAuditor(ByRef item As Sample, ByRef chain As ChainResult)
+    Dim expected As String, actual As String
+    Dim verdict As String
+
+    expected = OnlyDigits(item.ExpectedZp)
+    If Len(expected) = 0 Then Exit Sub
+
+    actual = OnlyDigits(chain.ZpPaymentDocument)
+
+    If Len(actual) = 0 Then
+        verdict = "The auditor's file names ZP " & item.ExpectedZp & " as the largest " & _
+                  "payment of this batch. This run did not reach a payment, so there is " & _
+                  "nothing to compare it with."
+        modLog.LogAction item.Idx, "Cross-check", verdict, "MANUAL", vbNullString
+    ElseIf StrComp(expected, actual, vbTextCompare) = 0 Then
+        verdict = "Agrees with the auditor: both reached ZP " & chain.ZpPaymentDocument & _
+                  " as the largest payment of the batch."
+        modLog.LogAction item.Idx, "Cross-check", verdict, "OK", vbNullString
+    Else
+        verdict = "DIFFERS from the auditor: their file names ZP " & item.ExpectedZp & _
+                  " as the largest payment of this batch, this run reached ZP " & _
+                  chain.ZpPaymentDocument & ". Both came from the same clearing " & _
+                  "document, so one of them is reading a different batch -- worth " & _
+                  "settling before the pack goes back."
+        modLog.LogAction item.Idx, "Cross-check", verdict, "MANUAL", vbNullString
+    End If
+
+    chain.Notes = chain.Notes & IIf(Len(chain.Notes) > 0, " ", "") & verdict
+End Sub
+
+Private Function OnlyDigits(ByVal text As String) As String
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch >= "0" And ch <= "9" Then OnlyDigits = OnlyDigits & ch
+    Next i
+End Function
+
 Private Function IsCompleteAnswer(ByVal status As String) As Boolean
     IsCompleteAnswer = (status = "DONE" Or status = "NO CLEARING" Or _
                         status = "NO VENDOR PAYMENTS")
@@ -452,6 +514,8 @@ Private Function ProcessSample(ByRef item As Sample, ByRef filesTotal As Long) A
     ' ended a run with twelve samples still to go. A sample that did not reach
     ' an invoice is a finding to read on the sheet, not a reason to abandon
     ' the other eleven.
+    CrossCheckAgainstAuditor item, chain
+
     If Not IsCompleteAnswer(chain.Status) Then mIncomplete = mIncomplete + 1
     ProcessSample = (chain.Status <> "ERROR")
     Exit Function
@@ -676,6 +740,7 @@ Private Function LoadSamplesWhere(ByRef samples() As Sample, _
             samples(count).Comment = Trim$(CStr(sheet.Cells(row, COL_COMMENT).Value))
             samples(count).StartDocument = Trim$(CStr(sheet.Cells(row, COL_START_DOC).Value))
             samples(count).StartAt = UCase$(Trim$(CStr(sheet.Cells(row, COL_START_AT).Value)))
+            samples(count).ExpectedZp = Trim$(CStr(sheet.Cells(row, COL_EXPECTED_ZP).Value))
 
             ' Columns C and D are formulas over the payment date. Fall back to
             ' deriving the range here if they have been cleared.
