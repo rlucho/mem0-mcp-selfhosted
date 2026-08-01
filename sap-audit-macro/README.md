@@ -250,7 +250,16 @@ be zipped and sent to the auditor as it stands.
 
 The report workbook carries the trail top to bottom — what the auditor asked for, the statement
 line it matched, the FI and clearing documents, the batch, the largest payment, the largest
-invoice — with each evidence file listed by name against the step it proves. Names, not paths:
+invoice — with each evidence file listed by name against the step it proves.
+
+Where a sample never reaches an invoice, it also carries **what the statement says the payment
+was**: the business partner, the note to payee, the posting text. `NO CLEARING` and
+`NO VENDOR PAYMENTS` say what a transaction is *not*, and an auditor asking "confirm the nature
+of this transaction" needs what it *is*. That was always in the statement export — one row out
+of two thousand — so the report lifts it out. Samples that do reach an invoice skip the section:
+there the invoice is the explanation.
+
+Names, not paths:
 the folder travels to whoever receives it, and a path from the machine that made it means
 nothing there.
 

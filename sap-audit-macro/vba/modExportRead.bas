@@ -1048,3 +1048,119 @@ Private Function OnlyDigits(ByVal text As String) As String
         If ch >= "0" And ch <= "9" Then OnlyDigits = OnlyDigits & ch
     Next i
 End Function
+
+'-----------------------------------------------------------------------
+' What the bank statement itself says about one line.
+'
+' A sample that reaches an invoice needs no explaining: the invoice is the
+' answer. A sample that stops at NO CLEARING or NO VENDOR PAYMENTS is the
+' one an auditor asks 'confirm the nature of the transaction' about, and the
+' answer is already in the statement -- the note to payee, the business
+' partner, the posting text. Sample 141's journal line read 'VAT Feb 26
+' Return', which settles the question outright.
+'
+' It was never hidden, just buried: the exported statement list is the whole
+' month, so reading it meant finding one row among two thousand. This lifts
+' that row out by document number, or by date and amount when the statement
+' line was never posted and so has no document.
+'
+' Returns caption and value separated by a tab, one field per line, empty
+' when the file or the row cannot be found -- the report simply omits the
+' section then, because a missing explanation must not cost a report.
+'-----------------------------------------------------------------------
+Public Function StatementLineFacts(ByVal sampleIdx As Long, ByVal path As String, _
+                                   ByVal documentNumber As String, _
+                                   ByVal amount As Double) As String
+    Dim wanted As Variant
+    Dim caption As Variant
+    Dim r As Long, c As Long
+    Dim hit As Long
+    Dim value As String
+    Dim facts As String
+
+    If Not modUtil.FileExists(path) Then Exit Function
+    If Not LoadExport(path, sampleIdx) Then Exit Function
+
+    hit = StatementRow(documentNumber, amount)
+    If hit = 0 Then Exit Function
+
+    ' Only the fields that say something about what the payment WAS. Amount,
+    ' dates and document numbers are already on the report from the chain.
+    wanted = Array("Business partner", "Customer", "Payment Notes", _
+                   "Posting text", "External transaction", "Bank reference")
+
+    For Each caption In wanted
+        c = ColumnHeaded(CStr(caption))
+        If c > 0 Then
+            value = Trim$(mCells(hit, c))
+            If Len(value) > 0 Then
+                facts = facts & IIf(Len(facts) > 0, vbLf, "") & CStr(caption) & vbTab & value
+            End If
+        End If
+    Next caption
+
+    StatementLineFacts = facts
+End Function
+
+' The row of the statement export this sample matched. The FI document number
+' is unique, so prefer it; fall back to the amount, which is what is left when
+' the line was never posted.
+Private Function StatementRow(ByVal documentNumber As String, ByVal amount As Double) As Long
+    Dim docCol As Long, amountCol As Long
+    Dim r As Long
+    Dim digits As String
+
+    digits = DigitsOnly(documentNumber)
+
+    If Len(digits) > 0 Then
+        docCol = ColumnHeaded("Document Number")
+        If docCol > 0 Then
+            For r = 2 To mRowCount
+                If DigitsOnly(mCells(r, docCol)) = digits Then
+                    StatementRow = r
+                    Exit Function
+                End If
+            Next r
+        End If
+    End If
+
+    amountCol = ColumnHeaded("Amount")
+    If amountCol = 0 Then Exit Function
+
+    For r = 2 To mRowCount
+        If Abs(Abs(modUtil.ParseSapAmount(mCells(r, amountCol))) - Abs(amount)) < 0.005 Then
+            StatementRow = r
+            Exit Function
+        End If
+    Next r
+End Function
+
+' The column whose heading is exactly this, on row 1 of the export. Exact
+' rather than 'contains', because 'Document Number' and 'Subledger
+' Doc.Number' sit side by side and a loose match takes whichever comes first.
+Private Function ColumnHeaded(ByVal caption As String) As Long
+    Dim c As Long
+
+    For c = 1 To mColCount
+        If StrComp(Trim$(mCells(1, c)), caption, vbTextCompare) = 0 Then
+            ColumnHeaded = c
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function DigitsOnly(ByVal text As String) As String
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(text)
+        ch = Mid$(text, i, 1)
+        If ch >= "0" And ch <= "9" Then DigitsOnly = DigitsOnly & ch
+    Next i
+
+    ' SAP writes the document with leading zeros in some lists and not in
+    ' others, so compare on the significant digits.
+    Do While Len(DigitsOnly) > 1 And Left$(DigitsOnly, 1) = "0"
+        DigitsOnly = Mid$(DigitsOnly, 2)
+    Loop
+End Function

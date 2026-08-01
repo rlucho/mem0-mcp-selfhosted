@@ -69,6 +69,7 @@ Public Function BuildSampleReport(ByVal sampleIdx As Long, ByVal monthTab As Str
     row = WriteHeader(sheet, sampleIdx, amount)
     row = WriteRequest(sheet, row, sampleIdx, monthTab, payDate, amount, party, reference)
     row = WriteTrail(sheet, row, match, chain)
+    row = WriteStatementDetail(sheet, row, sampleIdx, match, chain, folder)
     row = WriteOutcome(sheet, row, chain, folder)
     row = WriteFiles(sheet, row, folder, chain)
     row = WriteProvenance(sheet, row, monthTab)
@@ -175,6 +176,59 @@ Private Function WriteTrail(ByVal sheet As Worksheet, ByVal startRow As Long, _
                    IIf(Len(chain.InvoiceSupplier) > 0, "  " & chain.InvoiceSupplier, ""), "--"))
 
     WriteTrail = row + 1
+End Function
+
+'-----------------------------------------------------------------------
+' What the bank statement says this payment was.
+'
+' Only for samples that did not reach an invoice. Where there is an invoice
+' it IS the explanation, and reading two thousand statement rows per sample
+' to add nothing would be a poor trade.
+'
+' Everywhere else this is the section that answers the question actually
+' asked. 'Confirm the nature of the transaction' is not answered by 'no
+' vendor payments found' -- that says what it is not. The note to payee, the
+' business partner and the posting text say what it is, and they were in the
+' statement export all along, on one row out of two thousand.
+'
+' Silent when the row cannot be found: an explanation that will not build
+' must not cost the report the evidence list underneath it.
+'-----------------------------------------------------------------------
+Private Function WriteStatementDetail(ByVal sheet As Worksheet, ByVal startRow As Long, _
+                                      ByVal sampleIdx As Long, ByRef match As FebanMatch, _
+                                      ByRef chain As ChainResult, _
+                                      ByVal folder As String) As Long
+    Dim facts As String
+    Dim lines() As String
+    Dim parts() As String
+    Dim i As Long
+    Dim row As Long
+
+    WriteStatementDetail = startRow
+
+    If chain.Status = "DONE" Then Exit Function
+    If Not match.Found Then Exit Function
+
+    On Error Resume Next
+    facts = modExportRead.StatementLineFacts( _
+                sampleIdx, modUtil.JoinPath(folder, modUtil.FILE_FEBAN), _
+                chain.FiDocument, match.StatementAmount)
+    On Error GoTo 0
+
+    If Len(facts) = 0 Then Exit Function
+
+    row = Section(sheet, startRow, "What the statement says this was")
+
+    lines = Split(facts, vbLf)
+    For i = LBound(lines) To UBound(lines)
+        parts = Split(lines(i), vbTab)
+        If UBound(parts) >= 1 Then
+            row = Pair(sheet, row, parts(0), parts(1))
+            sheet.Cells(row - 1, COL_VALUE).WrapText = True
+        End If
+    Next i
+
+    WriteStatementDetail = row + 1
 End Function
 
 Private Function WriteOutcome(ByVal sheet As Worksheet, ByVal startRow As Long, _
