@@ -96,6 +96,16 @@ SMOKE_TEST_ACTIVITY_ID = 524
 # with the flag already set. Throwaway activity, delete it once checked.
 TEST_ACTIVITY_NAME = "ZZ TEST auto-assign (delete me)"
 
+# Open question: does a child activity inherit the assignments of a parent whose
+# toggle is on? The docs say the toggle assigns the team to "a given activity" and
+# describe the dynamic part as tracking project-team changes, not sub-activities --
+# but that is inference, not a test. 00e probes it: a child created under Francia
+# #525, which has the toggle ON and 25 assignments from a manual UI toggle.
+# If the child comes out with 25 assignments, the toggle can be set by hand on the
+# 14 systems (or the 5 countries) instead of the 90 leaves.
+INHERIT_TEST_PARENT_ID = 525
+INHERIT_TEST_NAME = "ZZ TEST child of Francia (delete me)"
+
 # Written to match the encoding of the ProjeQtor export (Espana carries an enye).
 OUTPUT_ENCODING = "cp1252"
 DELIMITER = ";"
@@ -484,6 +494,10 @@ def main() -> None:
         files.insert(2, ("00c_test_auto_assign_on_create.csv", cols_create,
                          [_create_row(args.mode, TEST_ACTIVITY_NAME,
                                       parent="", level="task")]))
+    if INHERIT_TEST_PARENT_ID:
+        files.insert(1, ("00e_test_child_inherits_assignment.csv", cols_create,
+                         [_create_row(args.mode, INHERIT_TEST_NAME,
+                                      parent=INHERIT_TEST_PARENT_ID, level="task")]))
     for filename, columns, rows in files:
         path = os.path.join(args.out, filename)
         write_csv(path, columns, rows)

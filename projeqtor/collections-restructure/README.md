@@ -135,8 +135,31 @@ that activity, and the assignment list re-syncs whenever an allocation changes �
 so nobody has to be assigned by hand, and new joiners are picked up automatically.
 Confirmed on this instance: switching it on assigned the whole Banking team.
 
-It applies to **one activity** and does **not** cascade to sub-activities, so if it
-is used at all it belongs on the 90 leaf tasks, not on the 5 countries.
+### Does a child inherit its parent's assignments? — UNTESTED
+
+The docs say the toggle assigns the team to "a given activity" and describe the
+dynamic part as tracking **project-team** changes, not sub-activities. That reads
+as no inheritance, but it is inference and has not been tested.
+
+It is worth settling, because it changes the amount of manual work by an order of
+magnitude:
+
+| If a child inherits | then |
+|---|---|
+| yes | toggle **14 systems** by hand (or maybe just the 5 countries, if it cascades further) and the 90 leaves follow |
+| no | the toggle has to be set on all **90 leaves** individually |
+
+`00e_test_child_inherits_assignment.csv` probes it: one child created under
+Francia **#525**, which currently has the toggle on and 25 assignments from a
+manual UI toggle. Open the new activity's Progress tab —
+
+- **25 resources** → inheritance works. Toggle the systems (or countries) by hand
+  after `02`, and `03` needs nothing.
+- **0 resources** → no inheritance, confirmed rather than assumed.
+
+Delete the test activity afterwards. Run this **before** deciding what to do about
+the leaves — and before clearing #525 with `00d`, since the probe needs #525's
+toggle left on.
 
 ### It cannot be set by import — tested, both paths
 
@@ -162,23 +185,20 @@ nobody is assigned — worse than off, because it reads as done. `build.py` has
 `AUTO_ASSIGN_COLUMN = None`; set it back to `"automaticAssignment"` only if a
 later ProjeQtor version fixes this.
 
-### First check whether assignments are needed at all
+### Assignments ARE required here — confirmed
 
-Before doing anything about the 90 leaves, open an existing Collections activity —
-say #80 `Sap P02` — on its Progress tab:
+Activity **#80 `Sap P02`** (Collections, wbs 2.2.1) carries the toggle **on** with
+all **25** resources, and real hours booked per person (Francisco Javier 105,25 h,
+Carlota 16,50 h, Cristina 3,00 h, ...). Every resource shows `assigned (h) = 0`,
+which is why the export reports `assigned work = 0,00` across all 477 activities
+while real work totals ~41 975 h: the instance uses assignments purely as
+"who may book against this", never for planning.
 
-- **Toggle off, assignment list empty** — yet it carries 169,26 h of real work.
-  That would mean this instance does not require assignments to book time, the
-  whole question is moot, and there is nothing to do.
-- **Toggle on with 25 resources** — assignments are how it works here, and the 90
-  leaves need them.
+So the existing Collections activities are auto-assigned to the whole team, and
+the 90 new leaves need the same treatment or nobody will be able to report time
+against them.
 
-Across all 477 activities `assigned work` is `0,00` and only 5 have a
-`responsible`, so the instance is clearly used for time capture rather than
-planning. That makes the first outcome plausible, but the export cannot show
-assignment records, so it has to be checked in the UI.
-
-### If they are needed
+### Getting the 90 leaves assigned
 
 - **Toggle the 90 leaves by hand.** Tedious, but it stays live — the assignment
   list re-syncs whenever an allocation changes, so new joiners are picked up.
