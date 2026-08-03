@@ -95,6 +95,14 @@ def main() -> None:
     ap.add_argument("--allocations", metavar="CSV",
                     help="fallback roster source when no Assignment list exists to "
                          "export: an Allocations export, scoped to --roster-project")
+    ap.add_argument("--resources", metavar="CSV",
+                    help="roster from a Resource export, filtered to --team. Keys by "
+                         "NUMERIC id, which sidesteps the double spaces in several "
+                         "real names.")
+    ap.add_argument("--team", default="Banking")
+    ap.add_argument("--exclude", default="211",
+                    help="resource ids to leave out, comma separated "
+                         "(default 211 = TEST DUMMY)")
     ap.add_argument("--roster-project", type=int, default=build.ID_PROJECT_COLLECTIONS,
                     help="project id to scope the allocations roster to")
     ap.add_argument("--activities", metavar="CSV")
@@ -173,8 +181,39 @@ def main() -> None:
                      + ", ".join(sorted({(r.get(proj_col) or '').strip()
                                          for r in source})[:10]))
         res_col = "idResource" if res_col.lower() == "idresource" else res_col
+    elif args.resources:
+        # Roster from a Resource export, keyed by NUMERIC id. Nine Banking names
+        # carry double spaces ("Alba  Fernandez Lopez"), which HTML collapses on
+        # screen -- matching by name would look right and silently miss. Ids cannot
+        # drift that way.
+        header, source = read_csv(args.resources)
+        id_col = pick(header, ("id",), "id")
+        team_col = pick(header, ("team", "idTeam"), "team")
+        name_col = pick(header, ("real name", "name"), "name")
+        closed_col = next((h for h in header if h.strip().lower() == "closed"), None)
+        excluded = {e.strip() for e in args.exclude.split(",") if e.strip()}
+        act_col, rate_col, res_col = "idActivity", "rate", "idResource"
+
+        scoped, dropped = [], []
+        for row in source:
+            if (row.get(team_col) or "").strip() != args.team:
+                continue
+            rid = (row.get(id_col) or "").strip()
+            name = " ".join((row.get(name_col) or "").split())
+            if rid in excluded:
+                dropped.append(f"{rid} {name} (--exclude)")
+            elif closed_col and (row.get(closed_col) or "").strip() == "1":
+                dropped.append(f"{rid} {name} (closed)")
+            else:
+                scoped.append({res_col: rid, "_name": name})
+        if not scoped:
+            sys.exit(f"ERROR: no resources on team '{args.team}' in {args.resources}. "
+                     f"Values seen: " + ", ".join(sorted(
+                         {(r.get(team_col) or '').strip() for r in source})[:10]))
+        scope_note = f"team '{args.team}'" + (
+            f", minus {len(dropped)} [{'; '.join(dropped)}]" if dropped else "")
     else:
-        sys.exit("ERROR: pass --assignments (preferred) or --allocations.")
+        sys.exit("ERROR: pass --assignments (preferred), --allocations or --resources.")
 
     resources, seen = [], set()
     for row in scoped:
