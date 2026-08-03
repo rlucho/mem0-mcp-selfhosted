@@ -247,13 +247,21 @@ preserves. Francia, España, Portugal and Marruecos appear with **no children at
 all**, which proves the timesheet lists only what a resource is assigned to: the
 one imported row reached one activity and nothing leaked.
 
-### 2024 rows at once is too many — split by country
+### 2024 rows: the response dies, the import does not
 
-A single 2024-row Assignment file **killed the import**: the page came back
-`dss-ib-dfs-228… didn't send any data` with no ProjeQtor error, which is the PHP
-process dying on `max_execution_time` or memory rather than the file being
-rejected. There is no partial-success report when that happens, so the row count
-has to stay small enough to finish.
+A single 2024-row Assignment file returned
+`dss-ib-dfs-228… didn't send any data` with no ProjeQtor error page — the PHP
+process dying on `max_execution_time` or memory. **The rows went in anyway.** The
+work is committed as it goes, so the crash cost the confirmation screen, not the
+import.
+
+So on that error, **check before re-importing** — the obvious reading ("it
+failed, run it again") is what actually causes damage here, since these rows
+carry no `id` and every one INSERTs. See the next section for the two canaries.
+
+The split files below were built as the fallback and were not needed. Keep them
+for the case where an import genuinely does not finish — or when a run needs to
+be resumable — but the 2024-row file is known to work on this instance.
 
 Country boundaries are the natural split — 300–600 rows each, and each file is
 independently verifiable, since a country is either fully assigned or it is not.
@@ -280,12 +288,14 @@ These rows carry no `id`, so the importer **inserts** every one — re-running a
 file that already went in duplicates assignments rather than updating them. After
 a crashed import, some rows may still have committed before the process died.
 
-So before importing, open a leaf's Progress tab and count:
+Two canaries, both on the Progress tab, and they answer different questions:
 
-- **#554** `Italia > SAP PP2 > Riba` — **1** assignment (Daniela only) means nothing
-  landed; 25 means the crashed run got at least that far.
-- **#634** `Marruecos > …` (the last leaf) — if it has 25, the run got all the way
-  through and only the response was lost.
+| Leaf | Meaning |
+|---|---|
+| **#554** `Italia > SAP PP2 > Riba` | **duplicates.** Expect exactly **25** — 24 imported plus the smoke row. 26+ means a file went in twice. 1 means nothing landed at all. |
+| **#634** `Marruecos > Navision > …` (last leaf) | **completeness.** 25 means the run reached the very end, so nothing is missing behind it. |
+
+25 on both is the finished state: the run completed and ran once.
 
 If anything did land, export the Assignment records and regenerate rather than
 guessing where it stopped — `--imported` is repeatable and drops every
