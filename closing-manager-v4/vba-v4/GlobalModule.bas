@@ -712,6 +712,29 @@ Private Function CM_CheckReportGroup(ByVal sess As Object, ByVal rg As String) A
 End Function
 
 
+'--- fill a selection screen's mandatory fields before testing a layout ------
+' Without this the screen answers a bare Enter with "Enter Transm. Group or
+' Comp. Code or Profit Center or Cost Center", which has nothing to do with the
+' layout - it was reported as a failure in earlier builds. Same fields the macro
+' itself fills. P_XMIT is explicitly cleared so nothing is transmitted.
+Private Sub CM_FillContext(ByVal sess As Object, ByVal tcode As String, _
+                           ByVal cc As String, ByVal mth As String, ByVal yr As String)
+    On Error Resume Next
+    Select Case UCase$(tcode)
+        Case "ZGLRME"
+            sess.findById("wnd[0]/usr/chkP_XMIT").Selected = False
+            sess.findById("wnd[0]/usr/ctxtS_BUKRS-LOW").Text = cc
+            sess.findById("wnd[0]/usr/txtP_MONAT").Text = mth
+            sess.findById("wnd[0]/usr/txtP_GJAHR").Text = yr
+        Case "ZGR215"
+            sess.findById("wnd[0]/usr/ctxtSBUKRS").Text = cc
+            sess.findById("wnd[0]/usr/txtSYEAR").Text = yr
+    End Select
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+
 '--- is a "/..." display layout present, and is the field still on the screen? -
 ' Two things are established here:
 '   1. the selection-screen field the macro drives still exists (definitive -
@@ -720,7 +743,9 @@ End Function
 ' Any SAP message is passed through verbatim, so a "fill in required fields"
 ' reply is visible as such rather than being mistaken for a missing layout.
 Private Function CM_CheckLayout(ByVal sess As Object, ByVal tcode As String, _
-                                ByVal fld As String, ByVal lay As String) As String
+                                ByVal fld As String, ByVal lay As String, _
+                                ByVal cc As String, ByVal mth As String, _
+                                ByVal yr As String) As String
     Dim o As Object
     On Error Resume Next
     CM_ClearPopups sess
@@ -732,6 +757,9 @@ Private Function CM_CheckLayout(ByVal sess As Object, ByVal tcode As String, _
         Exit Function
     End If
 
+    'give the selection screen what it needs, or it complains about that instead
+    CM_FillContext sess, tcode, cc, mth, yr
+
     Set o = Nothing
     Set o = sess.findById("wnd[0]/usr/ctxt" & fld)
     If o Is Nothing Or Err.Number <> 0 Then
@@ -741,6 +769,8 @@ Private Function CM_CheckLayout(ByVal sess As Object, ByVal tcode As String, _
     End If
 
     o.Text = lay
+    'Enter only - a selection-screen round trip that validates the fields.
+    'The report is NOT executed (no F8), so nothing is selected, written or posted.
     sess.findById("wnd[0]").sendVKey 0
     If Err.Number <> 0 Then
         Err.Clear: On Error GoTo 0
@@ -841,18 +871,19 @@ Public Function CM_SapAuthReport(ByVal sess As Object, _
         out = out & CM_Line(arr(i), CM_CheckReportGroup(sess, arr(i)), nBad)
     Next i
 
+    On Error Resume Next
+    cc = Trim$(CStr(Sheets("config").Range("B2").Value))
+    On Error GoTo 0
     out = out & "   Report layouts (the ""/..."" variants):" & vbCrLf
     arr = Split(CM_SAP_LAYOUTS, ";")
     For i = LBound(arr) To UBound(arr)
         prt = Split(arr(i), "|")
         out = out & CM_Line(prt(0) & " " & prt(2) & " (" & prt(1) & ")", _
-                            CM_CheckLayout(sess, CStr(prt(0)), CStr(prt(1)), CStr(prt(2))), nBad)
+                            CM_CheckLayout(sess, CStr(prt(0)), CStr(prt(1)), CStr(prt(2)), _
+                                           cc, CStr(Monthx), CStr(Yearx)), nBad)
     Next i
 
     If runData Then
-        On Error Resume Next
-        cc = Trim$(CStr(Sheets("config").Range("B2").Value))
-        On Error GoTo 0
         out = out & "   Company-code data access (ZGLRME, read-only):" & vbCrLf
         If cc = "" Then
             out = out & "     [~]  skipped - config!B2 (Company Code) is empty" & vbCrLf

@@ -230,9 +230,16 @@ ever added.
 
 **Layouts are checked too.** The `/default`, `/closing` and `/arek2` values are
 **ALV display layouts** (typed into `P_VARID` / `P_VARIE` / `P_ALV`), not
-selection-screen variants. For each one the sweep opens the transaction, confirms
-the selection-screen field still exists — a useful check in itself, since the macro
-drives that exact field — enters the layout, and reports SAP's reply verbatim.
+selection-screen variants. For each one the sweep opens the transaction, **fills the
+mandatory selection fields first** (`CM_FillContext` — company code and period, with
+`P_XMIT` cleared so nothing is transmitted), confirms the layout field still exists,
+enters the layout and presses **Enter only**. The report is never executed, so
+nothing is selected, written or posted.
+
+> Earlier builds skipped the context fields and pressed Enter on an empty selection
+> screen. ZGLRME answered *"Enter Transm. Group or Comp. Code or Profit Center or
+> Cost Center"* — a mandatory-field message, nothing to do with the layout — which
+> was reported as three false `[X]` failures. Fixed.
 
 **Company-code data access is checked too — behind a second, separate consent.**
 Reaching a transaction is not the same as being allowed to read a given company
