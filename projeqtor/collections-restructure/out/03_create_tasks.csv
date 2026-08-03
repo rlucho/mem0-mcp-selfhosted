@@ -1,91 +1,91 @@
 name;idProject;idActivity;activity type;status;planning mode
-Autobank;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Cheque;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Riba;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Emails;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Reportes;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Reuniones;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-Training;14;<<Italia > SAP E01>>;Task;recorded;as soon as possible
-FEBAN;14;<<Italia > SAP PP2>>;Task;recorded;as soon as possible
-Riba;14;<<Italia > SAP PP2>>;Task;recorded;as soon as possible
-Emails;14;<<Italia > SAP PP2>>;Task;recorded;as soon as possible
-Reuniones;14;<<Italia > SAP PP2>>;Task;recorded;as soon as possible
-Training;14;<<Italia > SAP PP2>>;Task;recorded;as soon as possible
-Autobank;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-Cheque/BOE;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-Emails;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-Reportes;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-Reuniones;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-Training;14;<<Francia > SAP E01>>;Task;recorded;as soon as possible
-FEBAN;14;<<Francia > SAP PER>>;Task;recorded;as soon as possible
-Emails;14;<<Francia > SAP PER>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Francia > SAP PER>>;Task;recorded;as soon as possible
-Reuniones;14;<<Francia > SAP PER>>;Task;recorded;as soon as possible
-Training;14;<<Francia > SAP PER>>;Task;recorded;as soon as possible
-FEBAN;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-Cheque;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-DD;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-Emails;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-Reuniones;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-Training;14;<<Francia > SAP P02>>;Task;recorded;as soon as possible
-FEBAN;14;<<Francia > Navision>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Francia > Navision>>;Task;recorded;as soon as possible
-Reuniones;14;<<Francia > Navision>>;Task;recorded;as soon as possible
-Training;14;<<Francia > Navision>>;Task;recorded;as soon as possible
-FEBAN;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-Cheque;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-DD;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-Emails;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-Reportes;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-Reuniones;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-Training;14;<<España > SAP E01>>;Task;recorded;as soon as possible
-FEBAN;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-Cheque;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-DD;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-Emails;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-Reportes;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-Reuniones;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-Training;14;<<España > SAP PER>>;Task;recorded;as soon as possible
-FEBAN;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-Cheque;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-DD;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-Emails;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-Reportes;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-Reuniones;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-Training;14;<<España > SAP P02>>;Task;recorded;as soon as possible
-FEBAN;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-DD;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-Emails;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-Reportes;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-Reuniones;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-Training;14;<<Portugal > SAP P02>>;Task;recorded;as soon as possible
-FEBAN;14;<<Portugal > SAP PER>>;Task;recorded;as soon as possible
-Emails;14;<<Portugal > SAP PER>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Portugal > SAP PER>>;Task;recorded;as soon as possible
-Reportes;14;<<Portugal > SAP PER>>;Task;recorded;as soon as possible
-Reuniones;14;<<Portugal > SAP PER>>;Task;recorded;as soon as possible
-Training;14;<<Portugal > SAP PER>>;Task;recorded;as soon as possible
-FEBAN;14;<<Portugal > SAP GP1>>;Task;recorded;as soon as possible
-Emails;14;<<Portugal > SAP GP1>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Portugal > SAP GP1>>;Task;recorded;as soon as possible
-Reuniones;14;<<Portugal > SAP GP1>>;Task;recorded;as soon as possible
-Training;14;<<Portugal > SAP GP1>>;Task;recorded;as soon as possible
-Autobank;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-Cheque/BOE/Encaissement;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-Emails;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-Reportes;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-Reuniones;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-Training;14;<<Marruecos > SAP E01>>;Task;recorded;as soon as possible
-FEBAN;14;<<Marruecos > SAP PER>>;Task;recorded;as soon as possible
-Emails;14;<<Marruecos > SAP PER>>;Task;recorded;as soon as possible
-Conciliaciones;14;<<Marruecos > SAP PER>>;Task;recorded;as soon as possible
-Reuniones;14;<<Marruecos > SAP PER>>;Task;recorded;as soon as possible
-Training;14;<<Marruecos > SAP PER>>;Task;recorded;as soon as possible
+Autobank;14;531;Task;recorded;as soon as possible
+Cheque;14;531;Task;recorded;as soon as possible
+Riba;14;531;Task;recorded;as soon as possible
+Emails;14;531;Task;recorded;as soon as possible
+Conciliaciones;14;531;Task;recorded;as soon as possible
+Reportes;14;531;Task;recorded;as soon as possible
+Reuniones;14;531;Task;recorded;as soon as possible
+Training;14;531;Task;recorded;as soon as possible
+FEBAN;14;532;Task;recorded;as soon as possible
+Riba;14;532;Task;recorded;as soon as possible
+Emails;14;532;Task;recorded;as soon as possible
+Reuniones;14;532;Task;recorded;as soon as possible
+Training;14;532;Task;recorded;as soon as possible
+Autobank;14;533;Task;recorded;as soon as possible
+Cheque/BOE;14;533;Task;recorded;as soon as possible
+Emails;14;533;Task;recorded;as soon as possible
+Conciliaciones;14;533;Task;recorded;as soon as possible
+Reportes;14;533;Task;recorded;as soon as possible
+Reuniones;14;533;Task;recorded;as soon as possible
+Training;14;533;Task;recorded;as soon as possible
+FEBAN;14;534;Task;recorded;as soon as possible
+Emails;14;534;Task;recorded;as soon as possible
+Conciliaciones;14;534;Task;recorded;as soon as possible
+Reuniones;14;534;Task;recorded;as soon as possible
+Training;14;534;Task;recorded;as soon as possible
+FEBAN;14;535;Task;recorded;as soon as possible
+Cheque;14;535;Task;recorded;as soon as possible
+DD;14;535;Task;recorded;as soon as possible
+Emails;14;535;Task;recorded;as soon as possible
+Conciliaciones;14;535;Task;recorded;as soon as possible
+Reuniones;14;535;Task;recorded;as soon as possible
+Training;14;535;Task;recorded;as soon as possible
+FEBAN;14;536;Task;recorded;as soon as possible
+Conciliaciones;14;536;Task;recorded;as soon as possible
+Reuniones;14;536;Task;recorded;as soon as possible
+Training;14;536;Task;recorded;as soon as possible
+FEBAN;14;537;Task;recorded;as soon as possible
+Cheque;14;537;Task;recorded;as soon as possible
+DD;14;537;Task;recorded;as soon as possible
+Emails;14;537;Task;recorded;as soon as possible
+Conciliaciones;14;537;Task;recorded;as soon as possible
+Reportes;14;537;Task;recorded;as soon as possible
+Reuniones;14;537;Task;recorded;as soon as possible
+Training;14;537;Task;recorded;as soon as possible
+FEBAN;14;538;Task;recorded;as soon as possible
+Cheque;14;538;Task;recorded;as soon as possible
+DD;14;538;Task;recorded;as soon as possible
+Emails;14;538;Task;recorded;as soon as possible
+Conciliaciones;14;538;Task;recorded;as soon as possible
+Reportes;14;538;Task;recorded;as soon as possible
+Reuniones;14;538;Task;recorded;as soon as possible
+Training;14;538;Task;recorded;as soon as possible
+FEBAN;14;539;Task;recorded;as soon as possible
+Cheque;14;539;Task;recorded;as soon as possible
+DD;14;539;Task;recorded;as soon as possible
+Emails;14;539;Task;recorded;as soon as possible
+Conciliaciones;14;539;Task;recorded;as soon as possible
+Reportes;14;539;Task;recorded;as soon as possible
+Reuniones;14;539;Task;recorded;as soon as possible
+Training;14;539;Task;recorded;as soon as possible
+FEBAN;14;540;Task;recorded;as soon as possible
+DD;14;540;Task;recorded;as soon as possible
+Emails;14;540;Task;recorded;as soon as possible
+Conciliaciones;14;540;Task;recorded;as soon as possible
+Reportes;14;540;Task;recorded;as soon as possible
+Reuniones;14;540;Task;recorded;as soon as possible
+Training;14;540;Task;recorded;as soon as possible
+FEBAN;14;541;Task;recorded;as soon as possible
+Emails;14;541;Task;recorded;as soon as possible
+Conciliaciones;14;541;Task;recorded;as soon as possible
+Reportes;14;541;Task;recorded;as soon as possible
+Reuniones;14;541;Task;recorded;as soon as possible
+Training;14;541;Task;recorded;as soon as possible
+FEBAN;14;542;Task;recorded;as soon as possible
+Emails;14;542;Task;recorded;as soon as possible
+Conciliaciones;14;542;Task;recorded;as soon as possible
+Reuniones;14;542;Task;recorded;as soon as possible
+Training;14;542;Task;recorded;as soon as possible
+Autobank;14;543;Task;recorded;as soon as possible
+Cheque/BOE/Encaissement;14;543;Task;recorded;as soon as possible
+Emails;14;543;Task;recorded;as soon as possible
+Conciliaciones;14;543;Task;recorded;as soon as possible
+Reportes;14;543;Task;recorded;as soon as possible
+Reuniones;14;543;Task;recorded;as soon as possible
+Training;14;543;Task;recorded;as soon as possible
+FEBAN;14;544;Task;recorded;as soon as possible
+Emails;14;544;Task;recorded;as soon as possible
+Conciliaciones;14;544;Task;recorded;as soon as possible
+Reuniones;14;544;Task;recorded;as soon as possible
+Training;14;544;Task;recorded;as soon as possible
