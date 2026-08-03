@@ -159,15 +159,38 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
         Exit Function
     End If
 
+    ' F2 is the route the recordings take and it works for almost every sample,
+    ' but not all -- two of the follow-up rows sat on a line-item detail where
+    ' it did nothing at all, and the run has no way to make it work from there.
+    ' It does not need to: the clearing document number is already read, and
+    ' FB03 opens a document by number without any cursor being anywhere. That
+    ' path is the one the invoice step has used all along, fiscal-year probing
+    ' included, so it is proven rather than new.
     If Not DrillWithF2(sampleIdx, "Doc.ClearingDocField", result.ClearingDocument) Then
-        Finish result, "PARTIAL", _
-               "F2 on the clearing document left the screen exactly as it was, so " & _
-               "clearing document " & result.ClearingDocument & " was never opened. " & _
-               "The run stops here rather than reading the batch off the line-item " & _
-               "detail it is still standing on -- that screen's Environment menu is " & _
-               "the G/L account master, and following it lands in FS03."
-        Walk = result
-        Exit Function
+        modLog.LogAction sampleIdx, "Step 5", _
+                     "F2 on the clearing document left the screen exactly as it was, so " & _
+                     "clearing document " & result.ClearingDocument & " did not open " & _
+                     "that way. Trying FB03 with the number instead.", _
+                     "MANUAL", vbNullString
+
+        If Not modFbl1n.OpenPaymentByDocument(sampleIdx, result.ClearingDocument, _
+                                              Format$(dateFrom, "yyyy")) Then
+            Finish result, "PARTIAL", _
+                   "Clearing document " & result.ClearingDocument & " could not be " & _
+                   "opened either way: F2 from the line-item detail left the screen " & _
+                   "exactly as it was, and FB03 would not take the number in the " & _
+                   "fiscal year of " & Format$(dateFrom, "yyyy") & " or either side " & _
+                   "of it. The run stops here rather than reading the batch off the " & _
+                   "screen it is still standing on -- that one's Environment menu is " & _
+                   "the G/L account master, and following it lands in FS03."
+            Walk = result
+            Exit Function
+        End If
+
+        modLog.LogAction sampleIdx, "Step 5", _
+                     "FB03 opened clearing document " & result.ClearingDocument & _
+                     " by number, so the chain carries on from there.", _
+                     "OK", vbNullString
     End If
 
     modLog.LogAction sampleIdx, "Chain", _
