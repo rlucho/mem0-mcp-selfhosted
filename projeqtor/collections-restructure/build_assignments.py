@@ -49,6 +49,14 @@ Leaves, one of:
                  filters on project Collections plus a 2.2 WBS prefix.
   --leaf-ids     explicit range, e.g. 545-634.
   --from-id      skip leaves below this id, to resume after manual toggling.
+
+Already imported:
+  --imported     one or more CSVs of rows that are already in the system; their
+                 (refId, idResource) pairs are dropped from the output. These
+                 rows carry no `id`, so the importer INSERTS every one of them --
+                 re-importing a row that already went in creates a second
+                 assignment for the same person on the same activity rather than
+                 updating the first. The smoke file is the record of exactly that.
 """
 
 from __future__ import annotations
@@ -184,6 +192,21 @@ def resolve_roster(args) -> tuple[list[str], str]:
     sys.exit("ERROR: pass --resources, --allocations or --assignments.")
 
 
+def resolve_imported(paths: list[str]) -> set[tuple[str, str]]:
+    """(refId, idResource) pairs that are already in the system."""
+    pairs = set()
+    for path in paths:
+        header, rows = read_csv(path)
+        act_col = pick(header, ACTIVITY_COLUMNS, "activity")
+        res_col = pick(header, RESOURCE_COLUMNS, "resource")
+        for row in rows:
+            aid = (row.get(act_col) or "").strip()
+            rid = (row.get(res_col) or "").strip()
+            if aid and rid:
+                pairs.add((aid, rid))
+    return pairs
+
+
 def _distinct(rows: list[dict], column: str) -> list[str]:
     out, seen = [], set()
     for row in rows:
@@ -219,6 +242,10 @@ def main() -> None:
     ap.add_argument("--activities", metavar="CSV")
     ap.add_argument("--leaf-ids", metavar="LO-HI")
     ap.add_argument("--from-id", type=int, default=0)
+    ap.add_argument("--imported", metavar="CSV", action="append", default=[],
+                    help="CSV of rows already imported; their (refId, idResource) "
+                         "pairs are dropped. Repeatable. Suppresses the smoke twin, "
+                         "which has by definition already been run.")
     ap.add_argument("--id-role", type=int,
                     help="idRole (function) to write on every row. Omit unless the "
                          "import complains that it is required -- the '?' screen "
@@ -248,9 +275,17 @@ def main() -> None:
              "rate": args.rate}
             for aid in leaves for person in roster]
 
+    imported = resolve_imported(args.imported)
+    if imported:
+        before = len(rows)
+        rows = [r for r in rows
+                if (str(r["refId"]), str(r["idResource"])) not in imported]
+        skipped = before - len(rows)
+        if skipped != len(imported):
+            print(f"NOTE: {len(imported)} imported pairs given, {skipped} matched "
+                  f"a generated row -- the rest are outside this leaf range.")
+
     write_csv(args.out, columns, rows)
-    smoke = args.out.replace(".csv", "_SMOKE_1row.csv")
-    write_csv(smoke, columns, rows[:1])
 
     print(f"columns:  {columns}   (refType={REF_TYPE!r})")
     print(f"roster:   {len(roster)} from {note}")
@@ -258,7 +293,13 @@ def main() -> None:
         print(f"skipped:  {len(done)} leaves already done by hand "
               f"(ids {min(done)}-{max(done)})")
     print(f"leaves:   {len(leaves)}   ids {min(leaves)}-{max(leaves)}")
-    print(f"\nwrote {smoke}  [1 row]      <- import this FIRST")
+    if imported:
+        print(f"imported: {len(imported)} pair(s) already in the system, dropped")
+    else:
+        # A smoke twin only makes sense before anything has gone in.
+        smoke = args.out.replace(".csv", "_SMOKE_1row.csv")
+        write_csv(smoke, columns, rows[:1])
+        print(f"\nwrote {smoke}  [1 row]      <- import this FIRST")
     print(f"wrote {args.out}  [{len(rows)} rows]")
 
 
