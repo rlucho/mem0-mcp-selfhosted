@@ -24,11 +24,17 @@ Usage
         [--out out/05_assign_team_to_leaves.csv]
 
   --assignments  export from the Assignments screen. Supplies the column layout
-                 and the roster: every resource currently assigned to a
-                 Collections activity. Filter it to Collections before exporting
-                 so the roster is the Banking team and not the whole company.
-  --activities   export from the Activities list, filtered to project Collections.
-                 Supplies the 90 leaf ids.
+                 and the roster. It does NOT need to be filtered -- the roster is
+                 taken from the rows pointing at one known Collections activity
+                 (--roster-activity, default #80 Sap P02, which carries all 25),
+                 so an export of the whole instance works fine.
+  --activities   OPTIONAL export from the Activities list; also fine unfiltered,
+                 since leaf resolution already filters on project Collections plus
+                 a 2.2 WBS prefix. Omit it to use --leaf-ids instead.
+  --leaf-ids     explicit id range for the 90 leaves, e.g. 545-634. Used when no
+                 activity export is given.
+  --from-id      skip leaves below this id, for resuming after manual toggling.
+                 e.g. --from-id 554 after having done up to 553 by hand.
 
 Import the result with element type Assignment. TEST WITH ONE ROW FIRST -- keep
 the header plus a single line, confirm it comes back "inserted" and shows up on
@@ -86,32 +92,64 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--assignments", required=True, metavar="CSV")
-    ap.add_argument("--activities", required=True, metavar="CSV")
+    ap.add_argument("--activities", metavar="CSV")
+    ap.add_argument("--leaf-ids", metavar="LO-HI",
+                    help="id range of the 90 leaves when --activities is omitted")
+    ap.add_argument("--from-id", type=int, default=0,
+                    help="skip leaves below this id (resume after manual toggling)")
+    ap.add_argument("--roster-activity", type=int, default=80,
+                    help="take the roster from assignments on this activity id")
     ap.add_argument("--out", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "out",
         "05_assign_team_to_leaves.csv"))
     args = ap.parse_args()
 
-    # --- the 90 leaves, straight out of the activity export
-    ids = build.resolve_ids(read_csv(args.activities)[1])
-    leaves = {k: v for k, v in ids.items() if len(k) == 3}
     target = sum(len(t) for _, ss in build.TREE for _, t in ss)
-    if len(leaves) != target:
-        missing = [" > ".join(k) for c, ss in build.TREE for s, ts in ss
-                   for t in ts if (k := (c, s, t)) not in leaves]
-        sys.exit(f"ERROR: found {len(leaves)} of {target} leaf tasks in the "
-                 f"activity export. Import 03_create_tasks.csv first.\n  missing: "
-                 + "; ".join(missing[:5]) + (" ..." if len(missing) > 5 else ""))
 
-    # --- the roster, straight out of the assignment export
+    # --- the 90 leaves: from an activity export, or from an explicit id range
+    if args.activities:
+        ids = build.resolve_ids(read_csv(args.activities)[1])
+        leaves = sorted(v for k, v in ids.items() if len(k) == 3)
+        if len(leaves) != target:
+            missing = [" > ".join(k) for c, ss in build.TREE for s, ts in ss
+                       for t in ts if (k := (c, s, t)) not in ids]
+            sys.exit(f"ERROR: found {len(leaves)} of {target} leaf tasks in the "
+                     f"activity export. Import 03_create_tasks.csv first.\n"
+                     f"  missing: " + "; ".join(missing[:5])
+                     + (" ..." if len(missing) > 5 else ""))
+    elif args.leaf_ids:
+        lo, _, hi = args.leaf_ids.partition("-")
+        leaves = list(range(int(lo), int(hi) + 1))
+        if len(leaves) != target:
+            sys.exit(f"ERROR: --leaf-ids {args.leaf_ids} spans {len(leaves)} ids "
+                     f"but the tree has {target} leaves.")
+    else:
+        sys.exit("ERROR: pass --activities or --leaf-ids.")
+
+    done = [i for i in leaves if i < args.from_id]
+    leaves = [i for i in leaves if i >= args.from_id]
+    if not leaves:
+        sys.exit(f"ERROR: --from-id {args.from_id} leaves nothing to assign.")
+
+    # --- the roster, from the assignment export
     header, assignments = read_csv(args.assignments)
     res_col = pick(header, RESOURCE_COLUMNS, "resource")
     act_col = pick(header, ACTIVITY_COLUMNS, "activity")
     rate_col = next((h for h in header
                      if h.strip().lower() in {c.lower() for c in RATE_COLUMNS}), None)
 
+    # An unfiltered export covers the whole instance, so narrow to the rows for one
+    # activity known to carry the full Banking team. Numeric activity columns are
+    # matched by id; a name column cannot be trusted (other projects reuse names
+    # like "Sap P02"), so fall back to every row and say so.
+    scoped = [r for r in assignments
+              if (r.get(act_col) or "").strip() == str(args.roster_activity)]
+    scope_note = f"assignments on activity #{args.roster_activity}"
+    if not scoped:
+        scoped, scope_note = assignments, "ALL rows in the export (unscoped)"
+
     resources, seen = [], set()
-    for row in assignments:
+    for row in scoped:
         value = (row.get(res_col) or "").strip()
         if value and value not in seen:
             seen.add(value)
@@ -125,7 +163,7 @@ def main() -> None:
 
     columns = [res_col, act_col] + ([rate_col] if rate_col else [])
     rows = [{res_col: person, act_col: aid, **({rate_col: rate} if rate_col else {})}
-            for aid in sorted(leaves.values())
+            for aid in leaves
             for person in resources]
 
     buf = io.StringIO(newline="")
@@ -145,8 +183,12 @@ def main() -> None:
                  .encode(OUTPUT_ENCODING, errors="replace"))
 
     print(f"columns taken from your export: {columns}")
-    print(f"resources: {len(resources)}  ({', '.join(resources[:3])}, ...)")
-    print(f"leaves:    {len(leaves)}   ids {min(leaves.values())}-{max(leaves.values())}")
+    print(f"roster:    {len(resources)} from {scope_note}"
+          f"  ({', '.join(resources[:3])}, ...)")
+    if done:
+        print(f"skipped:   {len(done)} leaves already done by hand "
+              f"(ids {min(done)}-{max(done)})")
+    print(f"leaves:    {len(leaves)}   ids {min(leaves)}-{max(leaves)}")
     print(f"\nwrote {smoke}  [1 row]      <- import this FIRST")
     print(f"wrote {args.out}  [{len(rows)} rows]")
     if not rate_col:
