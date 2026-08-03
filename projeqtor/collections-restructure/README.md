@@ -149,17 +149,22 @@ magnitude:
 | yes | toggle **14 systems** by hand (or maybe just the 5 countries, if it cascades further) and the 90 leaves follow |
 | no | the toggle has to be set on all **90 leaves** individually |
 
-`00e_test_child_inherits_assignment.csv` probes it: one child created under
-Francia **#525**, which currently has the toggle on and 25 assignments from a
-manual UI toggle. Open the new activity's Progress tab —
+**Tested with `00e` — there is no inheritance.** A child created under Francia
+#525, whose toggle was on with 25 assignments, came out with **zero**. The toggle
+is strictly per-activity, so it has to be set on all 90 leaves.
 
-- **25 resources** → inheritance works. Toggle the systems (or countries) by hand
-  after `02`, and `03` needs nothing.
-- **0 resources** → no inheritance, confirmed rather than assumed.
+The same test showed how the timesheet decides what to display: the child was
+**invisible** on the team's timesheet until the toggle was set on it by hand, at
+which point it appeared. Sub-activities show only where the resource is assigned —
+consistent with #80 carrying 25 assignments and real hours.
 
-Delete the test activity afterwards. Run this **before** deciding what to do about
-the leaves — and before clearing #525 with `00d`, since the probe needs #525's
-toggle left on.
+It also produced a false alarm worth recording. With the child present but
+unassigned, Francia rendered as an expanded group with nothing visible under it,
+and the following siblings looked indented — as if España, Portugal and Marruecos
+had been created inside Francia. They had not: `01b` carried an empty `idActivity`
+on every row, and the WBS read `2.2.13`, `2.2.14`, `2.2.15`, `2.2.16`, i.e.
+siblings. Once the child became visible the display corrected itself. **When the
+timesheet and the WBS disagree, the WBS is right.**
 
 ### It cannot be set by import — tested, both paths
 
@@ -200,12 +205,25 @@ against them.
 
 ### Getting the 90 leaves assigned
 
-- **Toggle the 90 leaves by hand.** Tedious, but it stays live — the assignment
-  list re-syncs whenever an allocation changes, so new joiners are picked up.
-- **Import `Assignment` records** (its own element type in the same dropdown).
-  25 resources x 90 leaves = 2 250 rows, nothing for a CSV, but it is a static
-  snapshot that will not follow team changes. Needs the resource list and the
-  column names from the `?` button with `Assignment` selected.
+Neither the import column nor parent inheritance works, so it comes down to:
+
+- **Toggle the 90 leaves by hand.** Proven — it is what worked on the `00e` child.
+  Tedious, but it stays live: the assignment list re-syncs whenever an allocation
+  changes, so new joiners are picked up automatically.
+- **Import `Assignment` records** — its own element type in the same dropdown, so a
+  different code path from the `automaticAssignment` column that failed. 25
+  resources x 90 leaves = 2 250 rows, nothing for a CSV, but a static snapshot
+  that will not follow team changes. Needs the resource list and the column names
+  from the `?` button with `Assignment` selected. **Test with one row first** —
+  the same discipline that caught the `automaticAssignment` problem on row 1
+  instead of row 90.
+
+Decide after `03`: the activity ids have to exist either way.
+
+One thing to watch at that point: the 5 country and 14 system rows are grouping
+rows, and group activities still render with editable cells on the timesheet.
+Check whether they show up for a team member once the leaves exist, so time does
+not land on a group row instead of rolling up from its children.
 
 ### Cleanup from the tests
 
