@@ -356,9 +356,29 @@ panel — so setting it does not go through the status workflow at all.
 
 Every row carries an `id`, so all of these update and none can insert.
 
-After the smoke row, check #521 `Mailbox`: the `closed` toggle should be on, and
-it should drop off the timesheet. If `idle` alone does not remove it from time
-entry, fall back to the status route — read the allowed transitions off the
+#### The `idle` smoke came back "No change to update on Activity #521"
+
+No error, and the header rendered as **closed**, so the column mapped to a real
+field — ProjeQtor simply decided nothing needed changing. Two readings, needing
+opposite fixes:
+
+1. **`idle` is already 1** on #521, so writing 1 is a no-op. The old activities
+   are already flagged closed and something else keeps them on timesheets.
+2. **`idle` is not writable** through the import — ignored as a derived field,
+   leaving only `name` in the row, which already matches.
+
+`00f_probe_idle_writable.csv` writes the **opposite** value (`521;Mailbox;0`) to
+tell them apart:
+
+| Result | Meaning | Next |
+|---|---|---|
+| `Activity #521 updated` | writable, and it *was* already 1 | reading 1 — re-import `04b` smoke to set it back, then chase what actually drives timesheet visibility |
+| `No change to update` again | ignored by the importer | reading 2 — `idle` is a dead end, use the status route |
+
+Reading the panel is quicker than either: if #521's **closed** toggle is already
+on, that is reading 1 with no import at all.
+
+If `idle` turns out to be a dead end, fall back to the status route — read the allowed transitions off the
 status dropdown on an open activity, since that dropdown lists exactly what the
 workflow permits from its current status.
 

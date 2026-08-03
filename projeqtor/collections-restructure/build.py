@@ -534,6 +534,13 @@ def main() -> None:
         # 04b closes via the `idle` field instead, smoke row first.
         ("04b_close_via_idle_SMOKE_1row.csv", ["id", "name", IDLE_COLUMN],
          rows_close_idle()[:1]),
+        # The smoke row returned "No change to update on Activity #521" -- no
+        # error, and the header rendered as "closed", so the column mapped to a
+        # real field. Either idle is already 1, or the importer ignores it.
+        # Writing the OPPOSITE value separates the two: "updated" means idle is
+        # writable and was already 1; "no change" again means it is ignored.
+        ("00f_probe_idle_writable.csv", ["id", "name", IDLE_COLUMN],
+         [{**rows_close_idle()[0], IDLE_COLUMN: 0}]),
         ("04b_close_via_idle.csv", ["id", "name", IDLE_COLUMN],
          rows_close_idle()),
         ("04c_close_via_status_with_mandatory_fields.csv",
