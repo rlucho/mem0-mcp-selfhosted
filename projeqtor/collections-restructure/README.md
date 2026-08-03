@@ -53,10 +53,15 @@ resolves to two different ids.
 ## Files
 
 Every file goes in through `Tools > Import` with **element type = `Activity`** and
-**file format = `CSV`**. Not `Task` (that is an activity *type*, carried in the
-`activity type` column, not a separate element in that dropdown), not `Milestone`,
-not `Meeting`, and **not `Project`** — the countries and systems are activities,
-not sub-projects.
+**file format = `csv file (comma separated)`**. Not `Task` (that is an activity
+*type*, carried in the `activity type` column, not a separate element in that
+dropdown), not `Milestone`, not `Meeting`, and **not `Project`** — the countries
+and systems are activities, not sub-projects.
+
+The `comma separated` label is a misnomer: ProjeQtor's CSV reader expects `;`,
+which is what these files use and what its own exports produce. Confirmed on this
+instance — the smoke test parsed into the right columns and returned
+`Activity #524 inserted`.
 
 | File | Rows | Element type | Purpose |
 |---|---|---|---|
@@ -69,6 +74,12 @@ not sub-projects.
 Files `02` and `03` ship with `<<Italia>>` / `<<Italia > SAP E01>>` placeholders in
 `idActivity`. They are deliberately **not importable** in that state — re-run
 `build.py --export` to fill in the real ids.
+
+`build.py --export` also **leaves out anything the export already contains**, so
+the files only ever hold what is still missing. Re-running a pass cannot create
+duplicates, and an interrupted run can simply be re-exported and resumed. It
+matches nodes by WBS ancestry, not by name, so the four different `SAP E01`
+branches never get confused with each other.
 
 Encoding is **Windows-1252**, delimiter `;`, CRLF — matching your own ProjeQtor
 export. If `España` lands as `Espa?a`, re-save as UTF-8 and re-import that row.
@@ -85,7 +96,8 @@ format once (see *Reference ids* below) rather than 109 times. If it succeeds,
 delete the `Italia` it created, or skip step 1's first row.
 
 **1. Countries.** Import `01_create_countries.csv` (element type `Activity`) → 5
-new activities under Collections.
+new activities under Collections. If the smoke test already created `Italia`,
+re-run `build.py --export` first and the file drops to the 4 that are missing.
 
 **2. Re-export.** Activities list → filter to project `Collections` → export to CSV.
 
@@ -97,6 +109,12 @@ python3 build.py --export /path/to/export_Activity_<date>.csv
 
 **4. Re-export again** and re-run the same command. `out/03_create_tasks.csv` now
 carries real system ids. Import it.
+
+Steps 2–4 are the same two commands repeated, and each rebuild only emits what is
+still missing — so if a pass half-fails, re-export and run it again rather than
+hand-editing anything. `build.py --export` on a finished tree prints
+`still to create: 0 countries + 0 systems + 0 tasks`, which is the signal that the
+structure is complete and you can move to step 5.
 
 **5. Verify** the tree in ProjeQtor before closing anything. WBS should read
 `2.2.12`, `2.2.12.1`, `2.2.12.1.1`, … (the old activities still hold `2.2.1`–`2.2.11`).

@@ -172,8 +172,10 @@ def placeholder(*parts: str) -> str:
     return "<<" + " > ".join(parts) + ">>"
 
 
-def rows_countries(mode: str) -> list[dict]:
-    return [_create_row(mode, name, parent="") for name, _ in TREE]
+def rows_countries(mode: str, ids: dict) -> list[dict]:
+    """Countries not already present in the export."""
+    return [_create_row(mode, name, parent="")
+            for name, _ in TREE if (name,) not in ids]
 
 
 def rows_systems(mode: str, ids: dict) -> list[dict]:
@@ -181,7 +183,8 @@ def rows_systems(mode: str, ids: dict) -> list[dict]:
     for country, systems in TREE:
         parent = ids.get((country,), placeholder(country))
         for system, _ in systems:
-            out.append(_create_row(mode, system, parent=parent))
+            if (country, system) not in ids:
+                out.append(_create_row(mode, system, parent=parent))
     return out
 
 
@@ -191,7 +194,8 @@ def rows_tasks(mode: str, ids: dict) -> list[dict]:
         for system, tasks in systems:
             parent = ids.get((country, system), placeholder(country, system))
             for task in tasks:
-                out.append(_create_row(mode, task, parent=parent))
+                if (country, system, task) not in ids:
+                    out.append(_create_row(mode, task, parent=parent))
     return out
 
 
@@ -247,44 +251,79 @@ def read_export(path: str) -> list[dict]:
 
 
 def resolve_ids(export_rows: list[dict]) -> dict:
-    """Map ('Italia',) -> id and ('Italia', 'SAP E01') -> id.
+    """Map every already-imported node of TREE to its ProjeQtor id.
 
-    Only rows inside Collections (id 14) count: project name 'Collections' AND a
-    wbs under 2.2. That is what keeps Q2C's Collections (id 17, wbs 3.3) out.
+        ('Italia',)                        -> 524
+        ('Italia', 'SAP E01')              -> 529
+        ('Italia', 'SAP E01', 'Autobank')  -> 543
+
+    Ancestry comes from the WBS, not from the `parent activity` name column:
+    `SAP E01` appears under four countries, so a name alone cannot say which
+    branch a row belongs to, whereas `2.2.12.1` unambiguously sits under
+    `2.2.12`. Depth under Collections is the level: 3 = country, 4 = system,
+    5 = task.
+
+    Only rows inside Collections (id 14) count -- project name 'Collections'
+    AND a wbs under 2.2 -- which is what keeps Q2C's Collections (id 17,
+    wbs 3.3) out.
+
+    Everything found here is treated as already done and is left out of the
+    generated files, so each pass can be re-run safely without creating
+    duplicates.
     """
-    scoped = [r for r in export_rows
-              if (r.get("project") or "").strip() == "Collections"
-              and (r.get("wbs") or "").strip().startswith("2.2")]
+    scoped = {}
+    for row in export_rows:
+        wbs = (row.get("wbs") or "").strip()
+        if (row.get("project") or "").strip() != "Collections":
+            continue
+        if not wbs.startswith("2.2."):
+            continue
+        scoped[wbs] = row
+
+    if not scoped:
+        return {}
 
     countries = {c for c, _ in TREE}
+    systems_of = {c: {s for s, _ in ss} for c, ss in TREE}
+    tasks_of = {(c, s): set(t) for c, ss in TREE for s, t in ss}
+
     ids: dict = {}
+    key_by_wbs: dict = {}
     dupes: list[str] = []
 
-    for row in scoped:
-        name = (row.get("name") or "").strip()
-        parent = (row.get("parent activity") or "").strip()
+    def claim(wbs: str, key: tuple, row: dict) -> None:
         try:
             rid = int((row.get("id") or "").strip())
         except ValueError:
-            continue
-
-        key = None
-        if not parent and name in countries:
-            key = (name,)
-        elif parent in countries:
-            systems = dict(TREE)[parent]
-            if name in {s for s, _ in systems}:
-                key = (parent, name)
-
-        if key is None:
-            continue
+            return
         if key in ids and ids[key] != rid:
             dupes.append(f"{' > '.join(key)}: ids {ids[key]} and {rid}")
-        ids.setdefault(key, rid)
+            return
+        ids[key] = rid
+        key_by_wbs[wbs] = key
+
+    # Depth 3 -> country, 4 -> system, 5 -> task. Shallowest first, so each pass
+    # can look its parent up in key_by_wbs.
+    for depth in (3, 4, 5):
+        for wbs, row in scoped.items():
+            if wbs.count(".") + 1 != depth:
+                continue
+            name = (row.get("name") or "").strip()
+            if depth == 3:
+                if name in countries:
+                    claim(wbs, (name,), row)
+                continue
+            parent_key = key_by_wbs.get(wbs.rsplit(".", 1)[0])
+            if parent_key is None or len(parent_key) != depth - 3:
+                continue
+            if depth == 4 and name in systems_of[parent_key[0]]:
+                claim(wbs, parent_key + (name,), row)
+            elif depth == 5 and name in tasks_of.get(parent_key, ()):
+                claim(wbs, parent_key + (name,), row)
 
     if dupes:
-        sys.exit("ERROR: ambiguous parents in the export -- fix in ProjeQtor "
-                 "before continuing:\n  " + "\n  ".join(dupes))
+        sys.exit("ERROR: the same node exists twice in Collections -- delete the "
+                 "duplicate in ProjeQtor before continuing:\n  " + "\n  ".join(dupes))
     return ids
 
 
@@ -377,13 +416,21 @@ def main() -> None:
     cols_create = COLS_IDS_CREATE if args.mode == "ids" else COLS_LABELS_CREATE
     cols_close = COLS_IDS_CLOSE if args.mode == "ids" else COLS_LABELS_CLOSE
 
-    countries = rows_countries(args.mode)
+    countries = rows_countries(args.mode, ids)
     systems = rows_systems(args.mode, ids)
     tasks = rows_tasks(args.mode, ids)
     close = rows_close(args.mode)
 
+    if ids:
+        n_c = sum(1 for k in ids if len(k) == 1)
+        n_s = sum(1 for k in ids if len(k) == 2)
+        n_t = sum(1 for k in ids if len(k) == 3)
+        print(f"found in the export, so left out of the files below: "
+              f"{n_c} countries, {n_s} systems, {n_t} tasks\n")
+
     files = [
-        ("00_smoke_test_one_activity.csv", cols_create, countries[:1]),
+        ("00_smoke_test_one_activity.csv", cols_create,
+         rows_countries(args.mode, {})[:1]),
         ("01_create_countries.csv", cols_create, countries),
         ("02_create_systems.csv", cols_create, systems),
         ("03_create_tasks.csv", cols_create, tasks),
@@ -401,8 +448,11 @@ def main() -> None:
     print(f"wrote {structure_md}")
 
     total = len(countries) + len(systems) + len(tasks)
-    print(f"\nmode={args.mode}  structure={len(countries)} countries + "
-          f"{len(systems)} systems + {len(tasks)} tasks = {total} activities")
+    target = len(TREE) + sum(len(ss) for _, ss in TREE) + \
+        sum(len(t) for _, ss in TREE for _, t in ss)
+    print(f"\nmode={args.mode}  still to create: {len(countries)} countries + "
+          f"{len(systems)} systems + {len(tasks)} tasks = {total} activities "
+          f"(target tree is {target})")
     print(f"closing {len(close)} existing activities in project "
           f"{ID_PROJECT_COLLECTIONS} (Banking > Collections)")
     if not ids:
