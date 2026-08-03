@@ -1,0 +1,139 @@
+# Target structure — Banking > Collections (project id 14, WBS 2.2)
+
+Generated from `build.py::TREE` — edit there, not here.
+
+Decisions applied: **1A** flat 3 levels · **2A** normalised spellings · **3A** plain system names.
+
+`5` countries + `14` systems + `76` tasks = **95 activities**, all with `idProject = 14`.
+
+```
+Banking
+└── Collections                    (project id 14, wbs 2.2)
+    ├── Italia
+    │   ├── SAP E01
+    │   │   ├── Autobank
+    │   │   ├── Cheque
+    │   │   ├── Riba
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   ├── Reportes
+    │   │   └── Reuniones
+    │   └── SAP PP2
+    │       ├── FEBAN
+    │       ├── Riba
+    │       ├── Emails
+    │       └── Reuniones
+    ├── Francia
+    │   ├── SAP E01
+    │   │   ├── Autobank
+    │   │   ├── Cheque/BOE
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   ├── Reportes
+    │   │   └── Reuniones
+    │   ├── SAP PER
+    │   │   ├── FEBAN
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   └── Reuniones
+    │   ├── SAP P02
+    │   │   ├── FEBAN
+    │   │   ├── Cheque
+    │   │   ├── DD
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   └── Reuniones
+    │   └── Navision
+    │       ├── FEBAN
+    │       ├── Conciliaciones
+    │       └── Reuniones
+    ├── España
+    │   ├── SAP E01
+    │   │   ├── FEBAN
+    │   │   ├── Cheque
+    │   │   ├── DD
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   ├── Reportes
+    │   │   └── Reuniones
+    │   ├── SAP PER
+    │   │   ├── FEBAN
+    │   │   ├── Cheque
+    │   │   ├── DD
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   ├── Reportes
+    │   │   └── Reuniones
+    │   └── SAP P02
+    │       ├── FEBAN
+    │       ├── Cheque
+    │       ├── DD
+    │       ├── Emails
+    │       ├── Conciliaciones
+    │       ├── Reportes
+    │       └── Reuniones
+    ├── Portugal
+    │   ├── SAP P02
+    │   │   ├── FEBAN
+    │   │   ├── DD
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   ├── Reportes
+    │   │   └── Reuniones
+    │   ├── SAP PER
+    │   │   ├── FEBAN
+    │   │   ├── Emails
+    │   │   ├── Conciliaciones
+    │   │   ├── Reportes
+    │   │   └── Reuniones
+    │   └── SAP GP1
+    │       ├── FEBAN
+    │       ├── Emails
+    │       ├── Conciliaciones
+    │       └── Reuniones
+    └── Marruecos
+        ├── SAP E01
+        │   ├── Autobank
+        │   ├── Cheque/BOE/Encaissement
+        │   ├── Emails
+        │   ├── Conciliaciones
+        │   ├── Reportes
+        │   └── Reuniones
+        └── SAP PER
+            ├── FEBAN
+            ├── Emails
+            ├── Conciliaciones
+            └── Reuniones
+```
+
+## Spelling normalisations applied (decision 2A)
+
+| Country | System | Time_Pro.md | Imported as |
+|---|---|---|---|
+| Francia | SAP PER | `Email` | `Emails` |
+| Francia | SAP P02 | `Cheques` | `Cheque` |
+| Francia | SAP P02 | `Email` | `Emails` |
+| España | SAP E01 | `Reporte` | `Reportes` |
+| España | SAP P02 | `Cheques` | `Cheque` |
+| España | SAP P02 | `Email` | `Emails` |
+
+To go back to the verbatim `.md` spellings, edit `TREE` in `build.py` and re-run it.
+
+## Activities being closed
+
+The 11 activities currently sitting flat under Collections, ordered by descending id —
+the order `04_close_old_collections.csv` uses.
+
+| id | reference | name | current WBS |
+|---|---|---|---|
+| 521 | `-TAS-528` | Mailbox | 2.2.11 |
+| 520 | `-TAS-527` | Riba | 2.2.10 |
+| 519 | `-TAS-526` | SAP E01 | 2.2.9 |
+| 356 | `-TAS-363` | Project - Robotic | 2.2.8 |
+| 177 | `-TAS-184` | Direct Debit | 2.2.7 |
+| 85 | `-TAS-92` | Check process | 2.2.6 |
+| 84 | `-TAS-91` | Navision FR | 2.2.5 |
+| 83 | `-TAS-90` | Sap GP1 | 2.2.4 |
+| 82 | `-TAS-89` | Sap PER | 2.2.3 |
+| 81 | `-TAS-88` | Sap PP2 IT | 2.2.2 |
+| 80 | `-TAS-87` | Sap P02 | 2.2.1 |
