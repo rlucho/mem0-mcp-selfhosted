@@ -91,7 +91,12 @@ def pick(header: list[str], candidates: tuple[str, ...], what: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--assignments", required=True, metavar="CSV")
+    ap.add_argument("--assignments", metavar="CSV")
+    ap.add_argument("--allocations", metavar="CSV",
+                    help="fallback roster source when no Assignment list exists to "
+                         "export: an Allocations export, scoped to --roster-project")
+    ap.add_argument("--roster-project", type=int, default=build.ID_PROJECT_COLLECTIONS,
+                    help="project id to scope the allocations roster to")
     ap.add_argument("--activities", metavar="CSV")
     ap.add_argument("--leaf-ids", metavar="LO-HI",
                     help="id range of the 90 leaves when --activities is omitted")
@@ -131,22 +136,45 @@ def main() -> None:
     if not leaves:
         sys.exit(f"ERROR: --from-id {args.from_id} leaves nothing to assign.")
 
-    # --- the roster, from the assignment export
-    header, assignments = read_csv(args.assignments)
-    res_col = pick(header, RESOURCE_COLUMNS, "resource")
-    act_col = pick(header, ACTIVITY_COLUMNS, "activity")
-    rate_col = next((h for h in header
-                     if h.strip().lower() in {c.lower() for c in RATE_COLUMNS}), None)
-
-    # An unfiltered export covers the whole instance, so narrow to the rows for one
-    # activity known to carry the full Banking team. Numeric activity columns are
-    # matched by id; a name column cannot be trusted (other projects reuse names
-    # like "Sap P02"), so fall back to every row and say so.
-    scoped = [r for r in assignments
-              if (r.get(act_col) or "").strip() == str(args.roster_activity)]
-    scope_note = f"assignments on activity #{args.roster_activity}"
-    if not scoped:
-        scoped, scope_note = assignments, "ALL rows in the export (unscoped)"
+    # --- the roster and the column layout
+    if args.assignments:
+        # Preferred: the real Assignment export dictates the exact column names,
+        # and ProjeQtor's own exports are re-importable.
+        header, source = read_csv(args.assignments)
+        res_col = pick(header, RESOURCE_COLUMNS, "resource")
+        act_col = pick(header, ACTIVITY_COLUMNS, "activity")
+        rate_col = next((h for h in header
+                         if h.strip().lower() in {c.lower() for c in RATE_COLUMNS}),
+                        None)
+        # An unfiltered export covers the whole instance, so narrow to the rows for
+        # one activity known to carry the full Banking team. Numeric activity
+        # columns are matched by id; a name column cannot be trusted (other
+        # projects reuse names like "Sap P02"), so fall back to every row and say so.
+        scoped = [r for r in source
+                  if (r.get(act_col) or "").strip() == str(args.roster_activity)]
+        scope_note = f"assignments on activity #{args.roster_activity}"
+        if not scoped:
+            scoped, scope_note = source, "ALL rows in the export (unscoped)"
+    elif args.allocations:
+        # Fallback when there is no Assignment list to export from. Allocations are
+        # resource-to-project, so scoping to project 14 gives exactly the Banking
+        # team. Column names then come from the forum-documented trio rather than
+        # from an export -- which is why the one-row smoke file matters here.
+        header, source = read_csv(args.allocations)
+        res_col = pick(header, RESOURCE_COLUMNS, "resource")
+        proj_col = pick(header, ("idProject", "project"), "project")
+        act_col, rate_col = "idActivity", "rate"
+        scoped = [r for r in source
+                  if (r.get(proj_col) or "").strip() == str(args.roster_project)]
+        scope_note = f"allocations on project {args.roster_project}"
+        if not scoped:
+            sys.exit(f"ERROR: no allocations for project {args.roster_project} in "
+                     f"column '{proj_col}'. Values seen: "
+                     + ", ".join(sorted({(r.get(proj_col) or '').strip()
+                                         for r in source})[:10]))
+        res_col = "idResource" if res_col.lower() == "idresource" else res_col
+    else:
+        sys.exit("ERROR: pass --assignments (preferred) or --allocations.")
 
     resources, seen = [], set()
     for row in scoped:
@@ -158,7 +186,8 @@ def main() -> None:
         sys.exit(f"ERROR: no resources found in column '{res_col}' of "
                  f"{args.assignments}.")
 
-    rates = {(r.get(rate_col) or "").strip() for r in assignments} if rate_col else set()
+    rates = {v for r in scoped if (v := (r.get(rate_col) or "").strip())} \
+        if rate_col else set()
     rate = rates.pop() if len(rates) == 1 else "100"
 
     columns = [res_col, act_col] + ([rate_col] if rate_col else [])
