@@ -141,6 +141,7 @@ AddSampleColumn book, 21, "Start at", 12
 ' file showed no working, which is most of them.
 AddSampleColumn book, 22, "Auditor's ZP", 14
 StampExistingSamples book, "Paper Samples"
+ApplyIncludeValidation book
 
 ' --- 2. modules -------------------------------------------------------------
 vbaOk = False
@@ -299,6 +300,33 @@ Sub AddSetting(wb, settingName, value, note)
 End Sub
 
 ' Add a heading to the Samples sheet if the column is not already there.
+' The Yes/No dropdown on Include, over every sample row.
+'
+' The workbook builder applied it once, to the 56 rows that existed then, so
+' every row imported since has been plain free text. That is not cosmetic: the
+' run tests this cell for "No", so a typo silently includes a sample that was
+' meant to be left out, and nothing anywhere reports it.
+'
+' Here as well as in the importer because a sheet with every request already
+' imported would otherwise never see the repair -- there is no next import to
+' carry it.
+Sub ApplyIncludeValidation(wb)
+    Dim sheet, lastUsed, area
+
+    On Error Resume Next
+    Set sheet = wb.Worksheets("Samples")
+    lastUsed = sheet.Cells(sheet.Rows.Count, 5).End(-4162).Row   ' xlUp
+    If lastUsed < 5 Then Exit Sub
+
+    Set area = sheet.Range(sheet.Cells(5, 16), sheet.Cells(lastUsed, 16))
+    area.Validation.Delete
+    area.Validation.Add 3, 1, 1, "Yes,No"     ' xlValidateList, Stop, Between
+    area.Validation.IgnoreBlank = True
+    area.Validation.InCellDropdown = True
+    area.HorizontalAlignment = -4108          ' xlCenter
+    On Error GoTo 0
+End Sub
+
 Sub AddSampleColumn(wb, col, title, width)
     Dim sheet
     Set sheet = wb.Worksheets("Samples")

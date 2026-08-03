@@ -924,6 +924,12 @@ Public Sub ExcludeFinishedSamples()
     Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
     lastUsed = sheet.Cells(sheet.Rows.Count, COL_PAY_DATE).End(xlUp).row
 
+    ' Any button that touches this column also repairs its dropdown, because a
+    ' workbook with every request already imported has no next import to carry
+    ' the repair -- and free text in a column the run reads as Yes/No is how a
+    ' sample gets included that was meant to be left out.
+    modImport.ApplyIncludeDropdown sheet
+
     For row = modConfig.SAMPLES_FIRST_ROW To lastUsed
         If IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then
             status = UCase$(Trim$(CStr(sheet.Cells(row, COL_STATUS).Value)))
@@ -957,6 +963,8 @@ Private Sub SetIncludeAll(ByVal value As String)
 
     Set sheet = ThisWorkbook.Worksheets(modConfig.SHEET_SAMPLES)
     lastUsed = sheet.Cells(sheet.Rows.Count, COL_PAY_DATE).End(xlUp).row
+
+    modImport.ApplyIncludeDropdown sheet
 
     For row = modConfig.SAMPLES_FIRST_ROW To lastUsed
         If IsDate(sheet.Cells(row, COL_PAY_DATE).Value) Then

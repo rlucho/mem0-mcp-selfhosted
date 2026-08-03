@@ -403,7 +403,7 @@ End Function
 ' Re-applied across every sample row rather than just the new ones, so one
 ' import repairs a sheet that has been drifting for several.
 '-----------------------------------------------------------------------
-Private Sub ApplyIncludeDropdown(ByVal target As Worksheet)
+Public Sub ApplyIncludeDropdown(ByVal target As Worksheet)
     Dim lastUsed As Long
     Dim area As Range
 
