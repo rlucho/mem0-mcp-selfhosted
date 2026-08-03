@@ -356,7 +356,47 @@ panel — so setting it does not go through the status workflow at all.
 
 Every row carries an `id`, so all of these update and none can insert.
 
-#### The `idle` smoke came back "No change to update on Activity #521"
+#### `idle` is a dead end — CONFIRMED
+
+The smoke returned **`No change to update on Activity #521`** — no error, and the
+header rendered as **closed**, so the column mapped to a real field. #521's closed
+flag was checked directly and is **off**, so the value genuinely differed and
+ProjeQtor still wrote nothing: the importer accepts `idle` and silently ignores
+it. It is derived from the status, not settable on its own.
+
+Note the toggle labelled `closed` in the **Assignment** panel header, next to the
+count badge (`25` on #521, `1` on #554), is not this flag — it filters closed
+*assignments*. Do not read the activity's state off it.
+
+So closing has to go through the status, and the status workflow refuses
+`recorded -> closed` directly.
+
+#### Stepping through the workflow: `--close-via`
+
+A workflow permits a *path*, not necessarily a leap. `--close-via` walks the
+intermediate statuses in order, one import per step:
+
+```
+python3 build.py --close-via "in progress,done,closed" --close-responsible ID
+```
+
+writes `04d_1_set_status_<status>.csv` … one file per step, plus a **one-row smoke
+twin for step 1** — if the workflow rejects the path it rejects it on row 1, and
+11 red boxes say nothing that 1 does not.
+
+**The status names are the part that has to come from the instance, not from a
+guess.** Open any of the 11 and click the status badge (`recorded`, orange, top of
+the panel): that dropdown lists exactly the transitions the workflow permits from
+where the activity sits. Two statuses are already confirmed to exist — `recorded`
+(current) and `closed` (the import resolved it before the workflow refused it) —
+so what is missing is only what lies between.
+
+`responsible` is mandatory for `closed` and is currently **unset** on these
+activities, which is why it errored. It needs a numeric resource id, and it is a
+real ownership decision rather than a technical one — a Manager is the obvious
+choice over a Developer.
+
+#### The `idle` probe, if it is ever needed again
 
 No error, and the header rendered as **closed**, so the column mapped to a real
 field — ProjeQtor simply decided nothing needed changing. Two readings, needing

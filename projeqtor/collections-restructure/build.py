@@ -224,6 +224,14 @@ def placeholder(*parts: str) -> str:
     return "<<" + " > ".join(parts) + ">>"
 
 
+def slugify(name: str) -> str:
+    """Status label -> filename fragment. 'in progress' must not put a space in a
+    path, and accented statuses must not put a non-ASCII byte in one."""
+    swaps = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n", "ü": "u"}
+    out = "".join(swaps.get(c, c) for c in name.lower())
+    return "".join(c if c.isalnum() else "-" for c in out).strip("-")
+
+
 def rows_countries(mode: str, ids: dict) -> list[dict]:
     """Countries not already present in the export."""
     return [_create_row(mode, name, parent="", level="country")
@@ -301,6 +309,22 @@ def rows_close_idle() -> list[dict]:
     top-right of the activity panel -- not a status, so no workflow applies.
     """
     return [{"id": aid, "name": name, IDLE_COLUMN: 1}
+            for aid, _ref, name, _wbs in CURRENT_COLLECTIONS_ACTIVITIES]
+
+
+def rows_close_step(status: str, responsible, result: str) -> list[dict]:
+    """One pass of a stepped status change, for a workflow that refuses the jump.
+
+    #521 sits at `recorded` and the target is `closed`; the workflow rejected that
+    transition outright. A workflow permits a *path*, not necessarily a leap, so
+    --close-via walks the intermediate statuses in order, one import each.
+
+    `responsible` and `result` ride along on every step: they are mandatory for
+    `closed`, harmless to set earlier, and an intermediate status may demand them
+    too -- cheaper than discovering that one import at a time.
+    """
+    return [{"id": aid, "name": name, "status": status,
+             "responsible": responsible, "result": result}
             for aid, _ref, name, _wbs in CURRENT_COLLECTIONS_ACTIVITIES]
 
 
@@ -497,6 +521,12 @@ def main() -> None:
     ap.add_argument("--export", metavar="CSV",
                     help="fresh ProjeQtor activity export, used to fill parent ids")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "out"))
+    ap.add_argument("--close-via", metavar="STATUS[,STATUS...]",
+                    help="statuses to step through to reach 'closed', in order, "
+                         "e.g. --close-via 'in progress,done,closed'. One file per "
+                         "step. Read the allowed values off the status dropdown on "
+                         "an open activity -- it lists exactly what the workflow "
+                         "permits from where that activity currently sits.")
     ap.add_argument("--close-responsible", metavar="ID",
                     help="numeric resource id for the mandatory 'responsible' "
                          "field in 04c. Left as a placeholder when unset, so the "
@@ -549,6 +579,20 @@ def main() -> None:
              args.close_responsible or placeholder("responsible resource id"),
              CLOSE_RESULT_TEXT)),
     ]
+    if args.close_via:
+        responsible = args.close_responsible or placeholder("responsible resource id")
+        steps = [s.strip() for s in args.close_via.split(",") if s.strip()]
+        for n, status in enumerate(steps, 1):
+            rows = rows_close_step(status, responsible, CLOSE_RESULT_TEXT)
+            files.append((f"04d_{n}_set_status_{slugify(status)}.csv",
+                          ["id", "name", "status", "responsible", "result"], rows))
+            # A one-row twin for the first step only: if the workflow rejects the
+            # path, it rejects it on row 1, and 11 red boxes say nothing 1 does not.
+            if n == 1:
+                files.append((f"04d_{n}_set_status_{slugify(status)}_SMOKE_1row.csv",
+                              ["id", "name", "status", "responsible", "result"],
+                              rows[:1]))
+
     if AUTO_ASSIGN_COLUMN and SMOKE_TEST_ACTIVITY_ID:
         files.insert(1, ("00b_test_auto_assign_column.csv",
                          ["id", AUTO_ASSIGN_COLUMN],
