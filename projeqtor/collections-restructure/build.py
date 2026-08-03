@@ -62,6 +62,24 @@ ID_ACTIVITY_PLANNING_MODE_ASAP = None
 ID_STATUS_NEW = None
 ID_STATUS_CLOSED = None
 
+# "automatic assignment of the project team" -- the per-activity toggle on the
+# Progress tab. When on, every resource allocated to the project is assigned to
+# THAT activity, and the assignment list re-syncs whenever an allocation changes.
+# It applies to one activity only; it does not cascade to sub-activities. So it
+# goes on the 90 leaf tasks (where time is booked) and stays off the countries and
+# systems (which are grouping rows nobody should book against).
+#
+# VERIFY the column name against the "?" button next to `element type to import`
+# with Activity selected -- it lists the valid column names for the object. Set to
+# None to leave the column out entirely and toggle by hand.
+AUTO_ASSIGN_COLUMN = "automaticAssignment"
+AUTO_ASSIGN_LEVELS = {"task"}          # of: country, system, task
+
+# Activity #524 (Italia), created by the smoke test. Used to emit a one-row file
+# that flips the toggle on an EXISTING record, so the column name can be proven
+# without creating a throwaway activity to clean up afterwards.
+SMOKE_TEST_ACTIVITY_ID = 524
+
 # Written to match the encoding of the ProjeQtor export (Espana carries an enye).
 OUTPUT_ENCODING = "cp1252"
 DELIMITER = ";"
@@ -174,7 +192,7 @@ def placeholder(*parts: str) -> str:
 
 def rows_countries(mode: str, ids: dict) -> list[dict]:
     """Countries not already present in the export."""
-    return [_create_row(mode, name, parent="")
+    return [_create_row(mode, name, parent="", level="country")
             for name, _ in TREE if (name,) not in ids]
 
 
@@ -184,7 +202,7 @@ def rows_systems(mode: str, ids: dict) -> list[dict]:
         parent = ids.get((country,), placeholder(country))
         for system, _ in systems:
             if (country, system) not in ids:
-                out.append(_create_row(mode, system, parent=parent))
+                out.append(_create_row(mode, system, parent=parent, level="system"))
     return out
 
 
@@ -195,13 +213,13 @@ def rows_tasks(mode: str, ids: dict) -> list[dict]:
             parent = ids.get((country, system), placeholder(country, system))
             for task in tasks:
                 if (country, system, task) not in ids:
-                    out.append(_create_row(mode, task, parent=parent))
+                    out.append(_create_row(mode, task, parent=parent, level="task"))
     return out
 
 
-def _create_row(mode: str, name: str, parent) -> dict:
+def _create_row(mode: str, name: str, parent, level: str) -> dict:
     if mode == "ids":
-        return {
+        row = {
             "name": name,
             "idProject": ID_PROJECT_COLLECTIONS,
             "idActivity": parent,
@@ -210,14 +228,18 @@ def _create_row(mode: str, name: str, parent) -> dict:
             "idActivityPlanningMode": _require(
                 ID_ACTIVITY_PLANNING_MODE_ASAP, "ID_ACTIVITY_PLANNING_MODE_ASAP"),
         }
-    return {
-        "name": name,
-        "idProject": ID_PROJECT_COLLECTIONS,
-        "idActivity": parent,
-        "activity type": LABEL_ACTIVITY_TYPE,
-        "status": LABEL_STATUS_NEW,
-        "planning mode": LABEL_PLANNING_MODE,
-    }
+    else:
+        row = {
+            "name": name,
+            "idProject": ID_PROJECT_COLLECTIONS,
+            "idActivity": parent,
+            "activity type": LABEL_ACTIVITY_TYPE,
+            "status": LABEL_STATUS_NEW,
+            "planning mode": LABEL_PLANNING_MODE,
+        }
+    if AUTO_ASSIGN_COLUMN:
+        row[AUTO_ASSIGN_COLUMN] = 1 if level in AUTO_ASSIGN_LEVELS else 0
+    return row
 
 
 def rows_close(mode: str) -> list[dict]:
@@ -413,8 +435,10 @@ def main() -> None:
     ids = resolve_ids(read_export(args.export)) if args.export else {}
     os.makedirs(args.out, exist_ok=True)
 
-    cols_create = COLS_IDS_CREATE if args.mode == "ids" else COLS_LABELS_CREATE
+    cols_create = list(COLS_IDS_CREATE if args.mode == "ids" else COLS_LABELS_CREATE)
     cols_close = COLS_IDS_CLOSE if args.mode == "ids" else COLS_LABELS_CLOSE
+    if AUTO_ASSIGN_COLUMN:
+        cols_create.append(AUTO_ASSIGN_COLUMN)
 
     countries = rows_countries(args.mode, ids)
     systems = rows_systems(args.mode, ids)
@@ -436,6 +460,10 @@ def main() -> None:
         ("03_create_tasks.csv", cols_create, tasks),
         ("04_close_old_collections.csv", cols_close, close),
     ]
+    if AUTO_ASSIGN_COLUMN and SMOKE_TEST_ACTIVITY_ID:
+        files.insert(1, ("00b_test_auto_assign_column.csv",
+                         ["id", AUTO_ASSIGN_COLUMN],
+                         [{"id": SMOKE_TEST_ACTIVITY_ID, AUTO_ASSIGN_COLUMN: 1}]))
     for filename, columns, rows in files:
         path = os.path.join(args.out, filename)
         write_csv(path, columns, rows)

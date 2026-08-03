@@ -66,6 +66,7 @@ instance — the smoke test parsed into the right columns and returned
 | File | Rows | Element type | Purpose |
 |---|---|---|---|
 | `00_smoke_test_one_activity.csv` | 1 | Activity | Import this first. Creates `Italia` only — proves the column format is accepted before you touch 109 rows. |
+| `00b_test_auto_assign_column.csv` | 1 | Activity | Proves the `automaticAssignment` column name. Has an `id`, so it **updates** activity #524 rather than creating anything — watch the toggle flip on its Progress tab, then re-import with the value set back to `0`. |
 | `01_create_countries.csv` | 5 | Activity | Italia, Francia, España, Portugal, Marruecos — no parent. |
 | `02_create_systems.csv` | 14 | Activity | SAP E01 / PP2 / PER / P02 / GP1 / Navision, `idActivity` = country id. |
 | `03_create_tasks.csv` | 90 | Activity | The leaf activities, `idActivity` = system id. |
@@ -121,8 +122,44 @@ structure is complete and you can move to step 5.
 
 **6. Close the old ones.** Import `04_close_old_collections.csv`.
 
-**7. Reallocate** — resources are allocated to the *project*, not to activities, so
-allocations on project 14 carry over untouched. Nothing to redo.
+**7. Allocations** — resources are allocated to the *project*, not to activities,
+so allocations on project 14 carry over untouched. Nothing to redo.
+
+---
+
+## Team assignment
+
+Each activity has an **automatic assignment of the project team** toggle on its
+Progress tab. With it on, every resource allocated to the project is assigned to
+that activity, and the assignment list re-syncs whenever an allocation changes —
+so nobody has to be assigned by hand, and new joiners are picked up automatically.
+Confirmed on this instance: switching it on assigned the whole Banking team.
+
+It applies to **one activity** and does **not** cascade to sub-activities. So the
+files set it deliberately:
+
+| Level | File | `automaticAssignment` | Why |
+|---|---|---|---|
+| Country | `01` | `0` | grouping row — nobody should book time here |
+| System | `02` | `0` | grouping row |
+| Task | `03` | **`1`** | where time is actually booked, all 90 leaves |
+
+Turning it on at country level would assign the team to those 5 rows only and
+leave all 90 leaves unassigned — the opposite of what is wanted. Keeping it off on
+the parents also stops time landing on a group row instead of rolling up from its
+children.
+
+The column name is the one thing left to confirm. `automaticAssignment` is the
+expected object-class field name, and ProjeQtor accepts either the object-class
+name or the on-screen label with spaces (spaces are stripped when matching). The
+authoritative list is behind the **`?` button** next to `element type to import`
+with `Activity` selected — it prints the valid column names for the object. Import
+`00b_test_auto_assign_column.csv` to prove it end to end: it updates #524, so the
+toggle either flips on its Progress tab or it does not.
+
+If the column turns out to be named something else, change `AUTO_ASSIGN_COLUMN` at
+the top of `build.py` and re-run — or set it to `None` to leave the column out and
+toggle the 90 leaves by hand.
 
 ---
 

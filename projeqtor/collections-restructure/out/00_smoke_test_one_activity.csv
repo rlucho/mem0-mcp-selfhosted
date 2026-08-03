@@ -1,2 +1,2 @@
-name;idProject;idActivity;activity type;status;planning mode
-Italia;14;;Task;recorded;as soon as possible
+name;idProject;idActivity;activity type;status;planning mode;automaticAssignment
+Italia;14;;Task;recorded;as soon as possible;0
