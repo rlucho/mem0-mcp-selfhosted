@@ -104,6 +104,12 @@ CONTROL_SETTINGS = [
      "the next sample."),
     ("Max seconds to wait per screen", 60,
      "Guards against an indefinite hang when SAP is slow."),
+    ("Payment usage menu text", "Payment usage",
+     "What Environment > Payment Usage is CALLED on your system. The macro finds the "
+     "command by this name and only falls back to the recorded menu position when the "
+     "name is not on the menu bar -- a position that exists on the wrong screen is not "
+     "the right command, and selecting one blind sent a run into FS03. Translate it if "
+     "your SAP is not in English."),
     ("Max rows for a settlement", 8,
      "A clearing document with no vendor payments and no more than this many "
      "bookkeeping rows is a treasury, tax or FX settlement -- there is no invoice "

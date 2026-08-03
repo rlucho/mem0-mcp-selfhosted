@@ -385,8 +385,45 @@ Private Function Commit(ByVal book As Workbook, ByVal requestName As String, _
         End If
     Next sheet
 
+    ApplyIncludeDropdown target
+
     Commit = added
 End Function
+
+'-----------------------------------------------------------------------
+' Put the Yes/No dropdown back on the Include column.
+'
+' The workbook builder applied it once, over the rows that existed then --
+' the original 56. Every row imported since has been plain free text, so the
+' column reads as a dropdown at the top of the sheet and as anything you like
+' further down. That matters more than it looks: the run tests the cell for
+' 'No', so a typo there silently includes a sample the operator meant to
+' leave out, and nothing anywhere reports it.
+'
+' Re-applied across every sample row rather than just the new ones, so one
+' import repairs a sheet that has been drifting for several.
+'-----------------------------------------------------------------------
+Private Sub ApplyIncludeDropdown(ByVal target As Worksheet)
+    Dim lastUsed As Long
+    Dim area As Range
+
+    lastUsed = target.Cells(target.Rows.Count, 5).End(xlUp).row
+    If lastUsed < modConfig.SAMPLES_FIRST_ROW Then Exit Sub
+
+    Set area = target.Range(target.Cells(modConfig.SAMPLES_FIRST_ROW, 16), _
+                            target.Cells(lastUsed, 16))
+
+    ' Never fatal. A sheet that will not take validation -- protected, or an
+    ' Excel build that objects -- still imports perfectly well.
+    On Error Resume Next
+    area.Validation.Delete
+    area.Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+                        Operator:=xlBetween, Formula1:="Yes,No"
+    area.Validation.IgnoreBlank = True
+    area.Validation.InCellDropdown = True
+    area.HorizontalAlignment = xlCenter
+    On Error GoTo 0
+End Sub
 
 '-----------------------------------------------------------------------
 ' Which rung of the chain a SAP document row belongs on, and which document

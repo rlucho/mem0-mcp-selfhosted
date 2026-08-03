@@ -114,7 +114,16 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
         Exit Function
     End If
 
-    DrillWithF2 "Feban.Detail.DocNumber"
+    If Not DrillWithF2(sampleIdx, "Feban.Detail.DocNumber", result.FiDocument) Then
+        Finish result, "PARTIAL", _
+               "F2 on the FI document number left the screen exactly as it was, so " & _
+               "document " & result.FiDocument & " was never opened. The cursor did " & _
+               "not take, which is what happens when the field is not where the " & _
+               "Screen Map says -- check Feban.Detail.DocNumber against this screen."
+        Walk = result
+        Exit Function
+    End If
+
     modLog.LogAction sampleIdx, "Chain", _
                  "Step 3: opened FI document " & result.FiDocument, "OK", vbNullString
 
@@ -150,7 +159,17 @@ Public Function Walk(ByVal sampleIdx As Long, ByRef match As FebanMatch, _
         Exit Function
     End If
 
-    DrillWithF2 "Doc.ClearingDocField"
+    If Not DrillWithF2(sampleIdx, "Doc.ClearingDocField", result.ClearingDocument) Then
+        Finish result, "PARTIAL", _
+               "F2 on the clearing document left the screen exactly as it was, so " & _
+               "clearing document " & result.ClearingDocument & " was never opened. " & _
+               "The run stops here rather than reading the batch off the line-item " & _
+               "detail it is still standing on -- that screen's Environment menu is " & _
+               "the G/L account master, and following it lands in FS03."
+        Walk = result
+        Exit Function
+    End If
+
     modLog.LogAction sampleIdx, "Chain", _
                  "Step 5: opened clearing document " & result.ClearingDocument, _
                  "OK", vbNullString
@@ -1061,11 +1080,59 @@ End Function
 
 ' The recordings drill in by focusing a field and pressing F2 -- choose/
 ' display, a read action, which the guard allows.
-Private Sub DrillWithF2(ByVal mapKey As String)
-    modSapConnect.Element(modConfig.ElementId(mapKey)).SetFocus
+'-----------------------------------------------------------------------
+' F2 into whatever field this key names, and say whether it actually went
+' anywhere.
+'
+' Two corrections, both learned elsewhere in this project and never applied
+' here. SetFocus on its own does NOT move SAP's cursor -- caretPosition is
+' what registers, which is why modFbl1n sets it before every drill. And F2
+' acts on wherever the cursor really is, so when the focus does not take, it
+' silently re-opens the screen already in front of us.
+'
+' That is what sent a run into FS03. Step 5 believed it had opened the
+' clearing document; the cursor had never left the line-item detail, so F2
+' redisplayed that, and on THAT screen the Payment Usage menu position is the
+' G/L account master. SAP answered 'You are not authorized to use transaction
+' FS03' and the run walked on for three more steps before anything looked
+' wrong.
+'
+' The screen signature is the test: if it did not change, nothing happened.
+' A changed screen that does not show the expected document is reported but
+' not treated as failure -- the number is not on every follow-on screen, and
+' a false negative here would break the samples that work.
+'-----------------------------------------------------------------------
+Private Function DrillWithF2(ByVal sampleIdx As Long, ByVal mapKey As String, _
+                             ByVal expected As String) As Boolean
+    Dim elementId As String
+    Dim before As String
+
+    elementId = modConfig.ElementId(mapKey)
+    before = modSapConnect.ScreenSignature()
+
+    On Error Resume Next
+    modSapConnect.Element(elementId).SetFocus
+    modSapConnect.Element(elementId).caretPosition = 1
+    On Error GoTo 0
+
     modSafety.GuardedSendVKey "wnd[0]", 2
     modSafety.AssertPopupKnown
-End Sub
+
+    If modSapConnect.ScreenSignature() = before Then Exit Function
+
+    DrillWithF2 = True
+
+    If Len(expected) > 0 Then
+        If Not modSapConnect.ScreenShowsNumber(expected) Then
+            modLog.LogAction sampleIdx, "Drill", _
+                         "F2 on " & elementId & " moved to another screen, but " & _
+                         expected & " is not written on it. Carrying on, because the " & _
+                         "number is not shown on every follow-on screen -- but if this " & _
+                         "sample ends somewhere odd, this is where it turned.", _
+                         "MANUAL", vbNullString
+        End If
+    End If
+End Function
 
 '-----------------------------------------------------------------------
 ' Step 4 -- the first line with the wanted posting key AND a clearing doc.
@@ -1165,19 +1232,64 @@ Private Sub OpenPaymentUsage(ByVal sampleIdx As Long)
     Dim anchorId As String
     Dim menuId As String
 
-    menuId = modConfig.ElementId("PaymentUsage.Menu")
+    Dim mappedId As String
+    Dim caption As String
 
-    ' Remember what this menu entry is CALLED on this system, before selecting
-    ' it. Step 10 needs the same command from a different screen, where the
-    ' menu sits at a different index -- menu[5]/menu[3] here, menu[4]/menu[3]
-    ' in the recordings. Matching on the caption read from this system at run
-    ' time finds it wherever it moved to, without hardcoding a translation.
+    mappedId = modConfig.ElementId("PaymentUsage.Menu")
+
+    ' Remember what this menu entry is CALLED on this system. Step 10 needs the
+    ' same command from a different screen, where the menu sits at a different
+    ' index -- menu[5]/menu[3] here, menu[4]/menu[3] in the recordings.
+    ' Seeded from the Control sheet so the very first sample of a run already
+    ' has a name to look for, then confirmed against this system.
+    If Len(mUsageMenuText) = 0 Then
+        mUsageMenuText = modConfig.SettingOrBlank("Payment usage menu text")
+    End If
+
     On Error Resume Next
-    mUsageMenuText = modSapConnect.Element(menuId).Text
+    caption = modSapConnect.Element(mappedId).Text
     On Error GoTo 0
+
+    ' FindUsageMenu says it above and step 6 was not listening: a mapped index
+    ' that happens to EXIST on this screen is not evidence it is the right
+    ' command. Sample 141 reached this point from a line-item detail rather
+    ' than the document overview, where menu[5]/menu[3] is the G/L account
+    ' master -- so SAP answered 'You are not authorized to use transaction
+    ' FS03' and the run carried on as though Payment Usage had opened, failing
+    ' three steps later as an export problem. Where caption and index
+    ' disagree, the caption is the one that was read off this system.
+    If Len(mUsageMenuText) > 0 And Len(caption) > 0 Then
+        If StrComp(Trim$(caption), Trim$(mUsageMenuText), vbTextCompare) <> 0 Then
+            menuId = MenuWithCaption("wnd[0]/mbar", mUsageMenuText, 0)
+            If Len(menuId) > 0 Then
+                modLog.LogAction sampleIdx, "Step 6", _
+                             "The mapped menu " & mappedId & " reads """ & caption & _
+                             """ on this screen, not """ & mUsageMenuText & """, so " & _
+                             "Payment Usage was taken from " & menuId & " by its name " & _
+                             "instead of its position.", "OK", vbNullString
+            End If
+        End If
+    End If
+
+    If Len(menuId) = 0 Then
+        menuId = mappedId
+        If Len(caption) > 0 Then mUsageMenuText = caption
+    End If
 
     modSapConnect.Element(menuId).Select
     modSapConnect.WaitForSap
+
+    ' SAP refuses a command it will not run with an ordinary message and stays
+    ' exactly where it was, which is indistinguishable from success until
+    ' something downstream falls over.
+    If modSapConnect.StatusBarType() = "E" Or modSapConnect.StatusBarType() = "A" Then
+        modLog.LogAction sampleIdx, "Step 6", _
+                     "SAP refused " & IIf(Len(caption) > 0, """" & caption & """", menuId) & _
+                     ": " & modSapConnect.StatusBarText() & " -- so that entry is not " & _
+                     "Payment Usage on this screen.", "ERROR", vbNullString
+        Exit Sub
+    End If
+
     modSafety.AssertPopupKnown
 
     ' SAP announces this step with an informational window titled after the

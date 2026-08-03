@@ -73,6 +73,14 @@ Public Function Setting(ByVal label As String) As String
     Setting = Trim$(CStr(found.Offset(0, 1).Value))
 End Function
 
+' Same, for a setting a workbook made before it existed will not have. Never
+' raises: the caller has a sensible default or the feature simply stays off.
+Public Function SettingOrBlank(ByVal label As String) As String
+    On Error Resume Next
+    SettingOrBlank = Setting(label)
+    On Error GoTo 0
+End Function
+
 Public Function SettingNumber(ByVal label As String, ByVal fallback As Double) As Double
     Dim raw As String
     raw = Setting(label)

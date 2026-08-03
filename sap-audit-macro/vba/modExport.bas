@@ -208,6 +208,12 @@ Private Function SearchForGrid(ByVal elementId As String, ByVal depth As Long) A
     If depth > 10 Then Exit Function
     If Not modSapConnect.Exists(elementId) Then Exit Function
 
+    ' The title bar carries a shell of its own, and it answers RowCount, so it
+    ' passes for a grid. Sample 141 exported wnd[0]/titl/shellcont[1]/shell --
+    ' the title bar -- and reported an export failure, when what had actually
+    ' gone wrong was three steps earlier and nothing was on screen to export.
+    If InStr(1, elementId, "/titl/", vbTextCompare) > 0 Then Exit Function
+
     Set control = modSapConnect.Element(elementId)
 
     On Error Resume Next

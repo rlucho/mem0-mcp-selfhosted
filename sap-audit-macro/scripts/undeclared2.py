@@ -61,6 +61,7 @@ Visible Font Color Bold Interior Caption OnAction Top Width Height Placement Cha
 vbNullString vbCrLf vbCr vbLf vbTab vbYes vbNo vbOK vbCancel vbYesNo vbOKCancel vbQuestion
 vbInformation vbExclamation vbCritical vbDefaultButton1 vbDefaultButton2 vbTextCompare
 vbBinaryCompare vbObjectError VbMsgBoxResult xlUp xlWhole xlSheetVeryHidden xlValidateList
+xlValidAlertStop xlBetween xlCenter Formula1 Operator AlertStyle
 xlOpenXMLWorkbookMacroEnabled VBA7 Win64 SaveChanges fileName UpdateLinks ReadOnly What
 xlTop xlOpenXMLWorkbook FileFormat After Before Link DisplayAsIcon IconLabel
 IconFileName Anchor Address TextToDisplay SubAddress ScreenTip Left Top Width Height

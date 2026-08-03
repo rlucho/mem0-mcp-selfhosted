@@ -114,6 +114,11 @@ SetNote book, "Invoice document type", _
         "picked is not one of the types listed, the Log says so and takes it anyway. " & _
         "Blank to switch the cross-check off."
 
+AddSetting book, "Payment usage menu text", "Payment usage", _
+    "What Environment > Payment Usage is CALLED on your system. The macro finds " & _
+    "the command by this name and only falls back to the recorded menu position " & _
+    "when the name is not on the menu bar. Translate it if your SAP is not in English."
+
 AddSetting book, "Max rows for a settlement", 8, _
     "A clearing document with no vendor payments and no more than this many " & _
     "bookkeeping rows is a treasury, tax or FX settlement -- there is no invoice " & _
