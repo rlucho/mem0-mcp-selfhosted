@@ -69,10 +69,20 @@ ID_STATUS_CLOSED = None
 # goes on the 90 leaf tasks (where time is booked) and stays off the countries and
 # systems (which are grouping rows nobody should book against).
 #
-# VERIFY the column name against the "?" button next to `element type to import`
-# with Activity selected -- it lists the valid column names for the object. Set to
-# None to leave the column out entirely and toggle by hand.
-AUTO_ASSIGN_COLUMN = "automaticAssignment"
+# DISABLED -- the column is accepted but does not do the job. Tested both paths on
+# the live instance:
+#   00b  update #524 with automaticAssignment=1  -> "Activity #524 updated",
+#        toggle shows on, assignment table EMPTY (0 resources)
+#   00c  create #529 with automaticAssignment=1  -> "Activity #529 inserted",
+#        toggle shows on, assignment table EMPTY (0 resources)
+# The same toggle flipped by hand in the UI on #525 populated all 25 resources.
+# Copying the project allocations into the assignment table is work the UI action
+# does; the importer takes the plain save path and writes the column only.
+#
+# Leaving the column in would be worse than useless: 90 activities would display
+# "automatic assignment of the project team" as ON while nobody is assigned to
+# them. Off is at least honest. See README.md, "Team assignment".
+AUTO_ASSIGN_COLUMN = None
 AUTO_ASSIGN_LEVELS = {"task"}          # of: country, system, task
 
 # Activity #524 (Italia), created by the smoke test. Used to emit a one-row file

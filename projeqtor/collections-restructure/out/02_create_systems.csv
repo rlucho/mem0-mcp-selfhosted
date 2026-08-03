@@ -1,15 +1,15 @@
-name;idProject;idActivity;activity type;status;planning mode;automaticAssignment
-SAP E01;14;<<Italia>>;Task;recorded;as soon as possible;0
-SAP PP2;14;<<Italia>>;Task;recorded;as soon as possible;0
-SAP E01;14;<<Francia>>;Task;recorded;as soon as possible;0
-SAP PER;14;<<Francia>>;Task;recorded;as soon as possible;0
-SAP P02;14;<<Francia>>;Task;recorded;as soon as possible;0
-Navision;14;<<Francia>>;Task;recorded;as soon as possible;0
-SAP E01;14;<<España>>;Task;recorded;as soon as possible;0
-SAP PER;14;<<España>>;Task;recorded;as soon as possible;0
-SAP P02;14;<<España>>;Task;recorded;as soon as possible;0
-SAP P02;14;<<Portugal>>;Task;recorded;as soon as possible;0
-SAP PER;14;<<Portugal>>;Task;recorded;as soon as possible;0
-SAP GP1;14;<<Portugal>>;Task;recorded;as soon as possible;0
-SAP E01;14;<<Marruecos>>;Task;recorded;as soon as possible;0
-SAP PER;14;<<Marruecos>>;Task;recorded;as soon as possible;0
+name;idProject;idActivity;activity type;status;planning mode
+SAP E01;14;<<Italia>>;Task;recorded;as soon as possible
+SAP PP2;14;<<Italia>>;Task;recorded;as soon as possible
+SAP E01;14;<<Francia>>;Task;recorded;as soon as possible
+SAP PER;14;<<Francia>>;Task;recorded;as soon as possible
+SAP P02;14;<<Francia>>;Task;recorded;as soon as possible
+Navision;14;<<Francia>>;Task;recorded;as soon as possible
+SAP E01;14;<<España>>;Task;recorded;as soon as possible
+SAP PER;14;<<España>>;Task;recorded;as soon as possible
+SAP P02;14;<<España>>;Task;recorded;as soon as possible
+SAP P02;14;<<Portugal>>;Task;recorded;as soon as possible
+SAP PER;14;<<Portugal>>;Task;recorded;as soon as possible
+SAP GP1;14;<<Portugal>>;Task;recorded;as soon as possible
+SAP E01;14;<<Marruecos>>;Task;recorded;as soon as possible
+SAP PER;14;<<Marruecos>>;Task;recorded;as soon as possible

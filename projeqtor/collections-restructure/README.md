@@ -135,49 +135,64 @@ that activity, and the assignment list re-syncs whenever an allocation changes �
 so nobody has to be assigned by hand, and new joiners are picked up automatically.
 Confirmed on this instance: switching it on assigned the whole Banking team.
 
-It applies to **one activity** and does **not** cascade to sub-activities. So the
-files set it deliberately:
+It applies to **one activity** and does **not** cascade to sub-activities, so if it
+is used at all it belongs on the 90 leaf tasks, not on the 5 countries.
 
-| Level | File | `automaticAssignment` | Why |
+### It cannot be set by import — tested, both paths
+
+`automaticAssignment` is a valid import column (preview header
+`[colAutomaticAssignment]`, bracketed only because the field has no display
+label), and it does write the flag. What it does **not** do is generate the
+assignment rows:
+
+| Test | Result | Toggle | Assignments |
 |---|---|---|---|
-| Country | `01` | `0` | grouping row — nobody should book time here |
-| System | `02` | `0` | grouping row |
-| Task | `03` | **`1`** | where time is actually booked, all 90 leaves |
+| `00b` — update #524 with `=1` | `Activity #524 updated` | on | **0** |
+| `00c` — create #529 with `=1` | `Activity #529 inserted` | on | **0** |
+| toggled by hand in the UI on #525 | — | on | **25** |
 
-Turning it on at country level would assign the team to those 5 rows only and
-leave all 90 leaves unassigned — the opposite of what is wanted. Keeping it off on
-the parents also stops time landing on a group row instead of rolling up from its
-children.
+Copying the project allocations into the assignment table is work the UI control
+does when you flip it; the importer takes the plain save path and writes the
+column only. Create and update behave identically, so recreating an activity with
+the flag pre-set does not help.
 
-### The column name is right; the side effect may not fire
+**The column is therefore left out of the files.** Keeping it would leave 90
+activities displaying "automatic assignment of the project team" as ON while
+nobody is assigned — worse than off, because it reads as done. `build.py` has
+`AUTO_ASSIGN_COLUMN = None`; set it back to `"automaticAssignment"` only if a
+later ProjeQtor version fixes this.
 
-`automaticAssignment` **is** accepted — `00b` returned `Activity #524 updated`
-(preview header `[colAutomaticAssignment]`, bracketed only because the field has
-no display label) and the toggle showed on afterwards.
+### First check whether assignments are needed at all
 
-But **the assignment table stayed empty**: #524 shows the toggle on with 0
-resources, while #525, toggled by hand in the UI, shows all 25. So on the update
-path the import writes the column without running whatever generates the
-assignment rows.
+Before doing anything about the 90 leaves, open an existing Collections activity —
+say #80 `Sap P02` — on its Progress tab:
 
-What is still unknown is whether a row **created** with the flag already set
-behaves the same. `00c_test_auto_assign_on_create.csv` settles it — one throwaway
-activity, `ZZ TEST auto-assign (delete me)`, created with the flag on:
+- **Toggle off, assignment list empty** — yet it carries 169,26 h of real work.
+  That would mean this instance does not require assignments to book time, the
+  whole question is moot, and there is nothing to do.
+- **Toggle on with 25 resources** — assignments are how it works here, and the 90
+  leaves need them.
 
-- **Assignments populate** → keep the column, `03` works as designed and all 90
-  leaves come out assigned to the team.
-- **Still empty** → the flag cannot be set usefully by import. Set
-  `AUTO_ASSIGN_COLUMN = None` in `build.py`, and either toggle the 90 leaves in the
-  UI or import `Assignment` records directly (own element type in the same
-  dropdown). The toggle is worth the manual effort where possible: it re-syncs as
-  allocations change, whereas imported assignments are a fixed snapshot that will
-  not pick up new joiners.
+Across all 477 activities `assigned work` is `0,00` and only 5 have a
+`responsible`, so the instance is clearly used for time capture rather than
+planning. That makes the first outcome plausible, but the export cannot show
+assignment records, so it has to be checked in the UI.
 
-Delete the throwaway once checked.
+### If they are needed
 
-Note that `00b`/`00c` were run against **country** rows, which by design should end
-up with the toggle **off** — `00d_revert_auto_assign_countries.csv` puts #524 and
-#525 back to `0`.
+- **Toggle the 90 leaves by hand.** Tedious, but it stays live — the assignment
+  list re-syncs whenever an allocation changes, so new joiners are picked up.
+- **Import `Assignment` records** (its own element type in the same dropdown).
+  25 resources x 90 leaves = 2 250 rows, nothing for a CSV, but it is a static
+  snapshot that will not follow team changes. Needs the resource list and the
+  column names from the `?` button with `Assignment` selected.
+
+### Cleanup from the tests
+
+- delete activity **#529** `ZZ TEST auto-assign (delete me)`
+- import `00d_revert_auto_assign_countries.csv` to put #524 and #525 back to `0`
+  (both are country rows; #525 also has 25 real assignments from the manual
+  toggle, which should be cleared so a group row is not on 25 timesheets)
 
 ---
 
