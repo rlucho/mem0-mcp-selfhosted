@@ -54,6 +54,14 @@ LABEL_PLANNING_MODE = "as soon as possible"
 LABEL_STATUS_NEW = "recorded"
 LABEL_STATUS_CLOSED = "closed"  # VERIFY: exact name of the closing status
 
+# The `idle` field -- int(1), labelled "closed" on the "?" schema screen, with a
+# companion `idleDate` ("closed date"). It is a field in its own right, not a
+# status, so setting it does not go through the status workflow that rejected
+# 04. This is the toggle at the top right of the activity panel.
+IDLE_COLUMN = "idle"
+CLOSE_RESULT_TEXT = ("Superseded by the Country > System > Task tree "
+                     "(Collections restructure, 2026-08).")
+
 # Numeric reference ids (used by --mode ids). These are instance-specific and are
 # NOT present in the activity export -- read them off the Administration screens
 # before using this mode. See README.md, "Reference ids you must confirm".
@@ -275,6 +283,39 @@ def rows_close(mode: str) -> list[dict]:
             for aid, _ref, name, _wbs in CURRENT_COLLECTIONS_ACTIVITIES]
 
 
+def rows_close_idle() -> list[dict]:
+    """Close via the `idle` flag instead of a status change.
+
+    Setting `status = closed` was rejected on all 11 rows with three errors:
+
+        the field 'responsible' is mandatory
+        the field 'result' is mandatory
+        the workflow does not allow you to move this item to this status
+
+    The first two are field requirements attached to the target status; the third
+    is the status workflow refusing the transition outright, which no extra column
+    can satisfy -- it needs an allowed intermediate status, or an admin change.
+
+    `idle` sidesteps all three. The "?" schema lists it as its own int(1) field
+    labelled "closed" (with `idleDate`, "closed date"), which is the toggle in the
+    top-right of the activity panel -- not a status, so no workflow applies.
+    """
+    return [{"id": aid, "name": name, IDLE_COLUMN: 1}
+            for aid, _ref, name, _wbs in CURRENT_COLLECTIONS_ACTIVITIES]
+
+
+def rows_close_status_full(responsible, result: str) -> list[dict]:
+    """The status route, with the two mandatory fields supplied.
+
+    Only useful if the workflow actually permits the transition -- the third error
+    is independent of these columns. Kept so that the moment an allowed target
+    status is known, the file is one flag away.
+    """
+    return [{"id": aid, "name": name, "status": LABEL_STATUS_CLOSED,
+             "responsible": responsible, "result": result}
+            for aid, _ref, name, _wbs in CURRENT_COLLECTIONS_ACTIVITIES]
+
+
 def _require(value, label):
     if value is None:
         sys.exit(f"ERROR: --mode ids needs {label} set at the top of build.py. "
@@ -456,6 +497,10 @@ def main() -> None:
     ap.add_argument("--export", metavar="CSV",
                     help="fresh ProjeQtor activity export, used to fill parent ids")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "out"))
+    ap.add_argument("--close-responsible", metavar="ID",
+                    help="numeric resource id for the mandatory 'responsible' "
+                         "field in 04c. Left as a placeholder when unset, so the "
+                         "file cannot be imported half-configured.")
     args = ap.parse_args()
 
     ids = resolve_ids(read_export(args.export)) if args.export else {}
@@ -485,6 +530,17 @@ def main() -> None:
         ("02_create_systems.csv", cols_create, systems),
         ("03_create_tasks.csv", cols_create, tasks),
         ("04_close_old_collections.csv", cols_close, close),
+        # The status route above was rejected on every row (see rows_close_idle).
+        # 04b closes via the `idle` field instead, smoke row first.
+        ("04b_close_via_idle_SMOKE_1row.csv", ["id", "name", IDLE_COLUMN],
+         rows_close_idle()[:1]),
+        ("04b_close_via_idle.csv", ["id", "name", IDLE_COLUMN],
+         rows_close_idle()),
+        ("04c_close_via_status_with_mandatory_fields.csv",
+         ["id", "name", "status", "responsible", "result"],
+         rows_close_status_full(
+             args.close_responsible or placeholder("responsible resource id"),
+             CLOSE_RESULT_TEXT)),
     ]
     if AUTO_ASSIGN_COLUMN and SMOKE_TEST_ACTIVITY_ID:
         files.insert(1, ("00b_test_auto_assign_column.csv",
@@ -500,8 +556,18 @@ def main() -> None:
                                       parent=INHERIT_TEST_PARENT_ID, level="task")]))
     for filename, columns, rows in files:
         path = os.path.join(args.out, filename)
-        write_csv(path, columns, rows)
         pending = sum(1 for r in rows if str(r.get("idActivity", "")).startswith("<<"))
+        # Re-running without --export regenerates 02/03 with <<placeholders>> and
+        # would overwrite the resolved ids of files that have already been
+        # imported -- destroying the only record of which parent each row got.
+        # Regenerating an unrelated file must not cost that.
+        if pending and os.path.exists(path):
+            with open(path, "rb") as fh:
+                if b"<<" not in fh.read():
+                    print(f"KEPT  {path}  [resolved ids on disk; "
+                          f"pass --export to regenerate]")
+                    continue
+        write_csv(path, columns, rows)
         note = f"  ({pending} parent ids still unresolved)" if pending else ""
         print(f"wrote {path}  [{len(rows)} rows]{note}")
 

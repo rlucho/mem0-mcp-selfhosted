@@ -320,6 +320,48 @@ After each file, spot-check one of its leaves for 25 assignments — say **#558*
 Francia, España, Portugal and Marruecos should have children where they were
 empty.
 
+### Closing the old 11: the status route is blocked, use `idle`
+
+`04_close_old_collections.csv` (`id;name;status` → `closed`) was **rejected on all
+11 rows**, with three errors each:
+
+```
+the field 'responsible' is mandatory
+the field 'result' is mandatory
+the workflow does not allow you to move this item to this status
+```
+
+The first two are field requirements attached to the target status, and a column
+each would fix them. The third is the status **workflow** refusing the transition
+outright — no column satisfies that. It needs either an allowed intermediate
+status to step through, or an admin change to the workflow.
+
+The `?` schema screen gives a way around it. `closed` is not only a status:
+
+| field | type | label |
+|---|---|---|
+| `idStatus` | int(12) | status |
+| **`idle`** | **int(1)** | **closed** |
+| `idleDate` | date | closed date |
+
+`idle` is a field in its own right — the toggle at the top right of the activity
+panel — so setting it does not go through the status workflow at all.
+
+| File | Rows | Element type | Purpose |
+|---|---|---|---|
+| `04b_close_via_idle_SMOKE_1row.csv` | 1 | Activity | `521;Mailbox;1`. **Import this first.** |
+| `04b_close_via_idle.csv` | 11 | Activity | All 11, descending id so leaves close before parents. |
+| `04c_close_via_status_with_mandatory_fields.csv` | 11 | Activity | The status route with `responsible` + `result` supplied. Only worth trying if the workflow is opened up; ships with a `<<placeholder>>` responsible, so it is **not importable** until `--close-responsible ID` is passed. |
+| `04_close_old_collections.csv` | 11 | Activity | The original. Kept as the record of what was rejected — do not import. |
+
+Every row carries an `id`, so all of these update and none can insert.
+
+After the smoke row, check #521 `Mailbox`: the `closed` toggle should be on, and
+it should drop off the timesheet. If `idle` alone does not remove it from time
+entry, fall back to the status route — read the allowed transitions off the
+status dropdown on an open activity, since that dropdown lists exactly what the
+workflow permits from its current status.
+
 ### Cleanup from the tests
 
 - delete activity **#529** `ZZ TEST auto-assign (delete me)`
