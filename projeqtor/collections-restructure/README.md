@@ -149,17 +149,35 @@ leave all 90 leaves unassigned — the opposite of what is wanted. Keeping it of
 the parents also stops time landing on a group row instead of rolling up from its
 children.
 
-The column name is the one thing left to confirm. `automaticAssignment` is the
-expected object-class field name, and ProjeQtor accepts either the object-class
-name or the on-screen label with spaces (spaces are stripped when matching). The
-authoritative list is behind the **`?` button** next to `element type to import`
-with `Activity` selected — it prints the valid column names for the object. Import
-`00b_test_auto_assign_column.csv` to prove it end to end: it updates #524, so the
-toggle either flips on its Progress tab or it does not.
+### The column name is right; the side effect may not fire
 
-If the column turns out to be named something else, change `AUTO_ASSIGN_COLUMN` at
-the top of `build.py` and re-run — or set it to `None` to leave the column out and
-toggle the 90 leaves by hand.
+`automaticAssignment` **is** accepted — `00b` returned `Activity #524 updated`
+(preview header `[colAutomaticAssignment]`, bracketed only because the field has
+no display label) and the toggle showed on afterwards.
+
+But **the assignment table stayed empty**: #524 shows the toggle on with 0
+resources, while #525, toggled by hand in the UI, shows all 25. So on the update
+path the import writes the column without running whatever generates the
+assignment rows.
+
+What is still unknown is whether a row **created** with the flag already set
+behaves the same. `00c_test_auto_assign_on_create.csv` settles it — one throwaway
+activity, `ZZ TEST auto-assign (delete me)`, created with the flag on:
+
+- **Assignments populate** → keep the column, `03` works as designed and all 90
+  leaves come out assigned to the team.
+- **Still empty** → the flag cannot be set usefully by import. Set
+  `AUTO_ASSIGN_COLUMN = None` in `build.py`, and either toggle the 90 leaves in the
+  UI or import `Assignment` records directly (own element type in the same
+  dropdown). The toggle is worth the manual effort where possible: it re-syncs as
+  allocations change, whereas imported assignments are a fixed snapshot that will
+  not pick up new joiners.
+
+Delete the throwaway once checked.
+
+Note that `00b`/`00c` were run against **country** rows, which by design should end
+up with the toggle **off** — `00d_revert_auto_assign_countries.csv` puts #524 and
+#525 back to `0`.
 
 ---
 

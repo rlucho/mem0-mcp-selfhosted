@@ -80,6 +80,12 @@ AUTO_ASSIGN_LEVELS = {"task"}          # of: country, system, task
 # without creating a throwaway activity to clean up afterwards.
 SMOKE_TEST_ACTIVITY_ID = 524
 
+# Setting the flag on an EXISTING activity by import (00b) turned the toggle on
+# but left the assignment table empty -- the import writes the column without
+# running whatever populates assignments. 00c tests the other path: a row CREATED
+# with the flag already set. Throwaway activity, delete it once checked.
+TEST_ACTIVITY_NAME = "ZZ TEST auto-assign (delete me)"
+
 # Written to match the encoding of the ProjeQtor export (Espana carries an enye).
 OUTPUT_ENCODING = "cp1252"
 DELIMITER = ";"
@@ -464,6 +470,10 @@ def main() -> None:
         files.insert(1, ("00b_test_auto_assign_column.csv",
                          ["id", AUTO_ASSIGN_COLUMN],
                          [{"id": SMOKE_TEST_ACTIVITY_ID, AUTO_ASSIGN_COLUMN: 1}]))
+    if AUTO_ASSIGN_COLUMN:
+        files.insert(2, ("00c_test_auto_assign_on_create.csv", cols_create,
+                         [_create_row(args.mode, TEST_ACTIVITY_NAME,
+                                      parent="", level="task")]))
     for filename, columns, rows in files:
         path = os.path.join(args.out, filename)
         write_csv(path, columns, rows)
