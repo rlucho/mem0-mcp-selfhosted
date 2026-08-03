@@ -192,6 +192,25 @@ def resolve_roster(args) -> tuple[list[str], str]:
     sys.exit("ERROR: pass --resources, --allocations or --assignments.")
 
 
+def country_ranges(first_leaf_id: int) -> list[tuple[str, int, int]]:
+    """(country, first leaf id, last leaf id). Leaf ids run in TREE order, which
+    holds because 03 created them in that order -- the same assumption --from-id
+    already relies on."""
+    out, n = [], first_leaf_id - 1
+    for country, systems in build.TREE:
+        lo = n + 1
+        for _, tasks in systems:
+            n += len(tasks)
+        out.append((country, lo, n))
+    return out
+
+
+def slug(name: str) -> str:
+    """ASCII filename fragment -- 'España' must not put a non-ASCII byte in a path."""
+    swaps = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n", "ü": "u"}
+    return "".join(swaps.get(c, c) for c in name.lower()).replace(" ", "-")
+
+
 def resolve_imported(paths: list[str]) -> set[tuple[str, str]]:
     """(refId, idResource) pairs that are already in the system."""
     pairs = set()
@@ -242,6 +261,9 @@ def main() -> None:
     ap.add_argument("--activities", metavar="CSV")
     ap.add_argument("--leaf-ids", metavar="LO-HI")
     ap.add_argument("--from-id", type=int, default=0)
+    ap.add_argument("--split-countries", action="store_true",
+                    help="write one file per country (300-600 rows each) instead "
+                         "of one big one. 2024 rows at once kills the import.")
     ap.add_argument("--imported", metavar="CSV", action="append", default=[],
                     help="CSV of rows already imported; their (refId, idResource) "
                          "pairs are dropped. Repeatable. Suppresses the smoke twin, "
@@ -256,7 +278,8 @@ def main() -> None:
         "05_assign_team_to_leaves.csv"))
     args = ap.parse_args()
 
-    leaves = resolve_leaves(args)
+    all_leaves = resolve_leaves(args)
+    leaves = all_leaves
     done = [i for i in leaves if i < args.from_id]
     leaves = [i for i in leaves if i >= args.from_id]
     if not leaves:
@@ -284,6 +307,34 @@ def main() -> None:
         if skipped != len(imported):
             print(f"NOTE: {len(imported)} imported pairs given, {skipped} matched "
                   f"a generated row -- the rest are outside this leaf range.")
+
+    if args.split_countries:
+        # 2024 rows in one file killed the import server-side ("didn't send any
+        # data" = the PHP process died, no error page). Country boundaries split it
+        # into 300-600 row files that are each independently verifiable: either a
+        # country is fully assigned or it is not.
+        base, ext = os.path.splitext(args.out)
+        written = []
+        for n, (country, lo, hi) in enumerate(country_ranges(all_leaves[0]), 1):
+            part = [r for r in rows if lo <= int(r["refId"]) <= hi]
+            if not part:
+                continue
+            path = f"{base}_{n:02d}_{slug(country)}{ext}"
+            write_csv(path, columns, part)
+            written.append((path, country, lo, hi, part))
+
+        print(f"columns:  {columns}   (refType={REF_TYPE!r})")
+        print(f"roster:   {len(roster)} from {note}")
+        if imported:
+            print(f"imported: {len(imported)} pair(s) already in the system, dropped")
+        print(f"\nsplit {len(rows)} rows into {len(written)} files, "
+              f"import in this order:\n")
+        for n, (path, country, lo, hi, part) in enumerate(written, 1):
+            actual = sorted({int(r["refId"]) for r in part})
+            print(f"  {n}. {os.path.basename(path):48s} {len(part):4d} rows  "
+                  f"{country} ({len(actual)} leaves, ids {actual[0]}-{actual[-1]})")
+        assert sum(len(p[4]) for p in written) == len(rows), "split lost rows"
+        return
 
     write_csv(args.out, columns, rows)
 
