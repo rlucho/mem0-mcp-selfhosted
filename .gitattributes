@@ -1,0 +1,4 @@
+# Windows-hosted sources: VBA modules are imported by the Excel VBE and .vbs is
+# run by wscript/cscript. Keep them CRLF in the working tree on every platform.
+*.bas text eol=crlf
+*.vbs text eol=crlf
