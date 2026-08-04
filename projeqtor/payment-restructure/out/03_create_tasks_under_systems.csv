@@ -1,67 +1,67 @@
 name;idProject;idActivity;activity type;status;planning mode
-Payment Run;35;<<IB > P02>>;Task;recorded;as soon as possible
-Manual & Unplanned Payments;35;<<IB > P02>>;Task;recorded;as soon as possible
-Invoice check;35;<<IB > P02>>;Task;recorded;as soon as possible
-Other Processes;35;<<IB > P02>>;Task;recorded;as soon as possible
-Project - Robotic;35;<<IB > P02>>;Task;recorded;as soon as possible
-Mailbox;35;<<IB > P02>>;Task;recorded;as soon as possible
-Payment Run Issues;35;<<IB > P02>>;Task;recorded;as soon as possible
-Banks Issues;35;<<IB > P02>>;Task;recorded;as soon as possible
-On Boarding;35;<<IB > P02>>;Task;recorded;as soon as possible
-Audit;35;<<IB > P02>>;Task;recorded;as soon as possible
-Proof of payment;35;<<IB > P02>>;Task;recorded;as soon as possible
-Payment Run;35;<<IB > PER>>;Task;recorded;as soon as possible
-Manual & Unplanned Payments;35;<<IB > PER>>;Task;recorded;as soon as possible
-Invoice check;35;<<IB > PER>>;Task;recorded;as soon as possible
-Other Processes;35;<<IB > PER>>;Task;recorded;as soon as possible
-Project - Robotic;35;<<IB > PER>>;Task;recorded;as soon as possible
-Mailbox;35;<<IB > PER>>;Task;recorded;as soon as possible
-Payment Run Issues;35;<<IB > PER>>;Task;recorded;as soon as possible
-Banks Issues;35;<<IB > PER>>;Task;recorded;as soon as possible
-On Boarding;35;<<IB > PER>>;Task;recorded;as soon as possible
-Audit;35;<<IB > PER>>;Task;recorded;as soon as possible
-Proof of payment;35;<<IB > PER>>;Task;recorded;as soon as possible
-Payment Run;36;<<UK > P02>>;Task;recorded;as soon as possible
-Manual & Unplanned Payments;36;<<UK > P02>>;Task;recorded;as soon as possible
-Invoice check;36;<<UK > P02>>;Task;recorded;as soon as possible
-Other Processes;36;<<UK > P02>>;Task;recorded;as soon as possible
-Project - Robotic;36;<<UK > P02>>;Task;recorded;as soon as possible
-Mailbox;36;<<UK > P02>>;Task;recorded;as soon as possible
-Payment Run Issues;36;<<UK > P02>>;Task;recorded;as soon as possible
-Banks Issues;36;<<UK > P02>>;Task;recorded;as soon as possible
-On Boarding;36;<<UK > P02>>;Task;recorded;as soon as possible
-Audit;36;<<UK > P02>>;Task;recorded;as soon as possible
-Proof of payment;36;<<UK > P02>>;Task;recorded;as soon as possible
-Payment Run;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Manual & Unplanned Payments;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Invoice check;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Other Processes;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Project - Robotic;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Mailbox;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Payment Run Issues;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Banks Issues;36;<<UK > Navision>>;Task;recorded;as soon as possible
-On Boarding;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Audit;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Proof of payment;36;<<UK > Navision>>;Task;recorded;as soon as possible
-Payment Run;37;<<FR > P02>>;Task;recorded;as soon as possible
-Manual & Unplanned Payments;37;<<FR > P02>>;Task;recorded;as soon as possible
-Invoice check;37;<<FR > P02>>;Task;recorded;as soon as possible
-Other Processes;37;<<FR > P02>>;Task;recorded;as soon as possible
-Project - Robotic;37;<<FR > P02>>;Task;recorded;as soon as possible
-Mailbox;37;<<FR > P02>>;Task;recorded;as soon as possible
-Payment Run Issues;37;<<FR > P02>>;Task;recorded;as soon as possible
-Banks Issues;37;<<FR > P02>>;Task;recorded;as soon as possible
-On Boarding;37;<<FR > P02>>;Task;recorded;as soon as possible
-Audit;37;<<FR > P02>>;Task;recorded;as soon as possible
-Proof of payment;37;<<FR > P02>>;Task;recorded;as soon as possible
-Payment Run;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Manual & Unplanned Payments;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Invoice check;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Other Processes;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Project - Robotic;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Mailbox;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Payment Run Issues;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Banks Issues;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-On Boarding;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Audit;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
-Proof of payment;37;<<FR > QUALIAC>>;Task;recorded;as soon as possible
+Payment Run;35;661;Task;recorded;as soon as possible
+Manual & Unplanned Payments;35;661;Task;recorded;as soon as possible
+Invoice check;35;661;Task;recorded;as soon as possible
+Other Processes;35;661;Task;recorded;as soon as possible
+Project - Robotic;35;661;Task;recorded;as soon as possible
+Mailbox;35;661;Task;recorded;as soon as possible
+Payment Run Issues;35;661;Task;recorded;as soon as possible
+Banks Issues;35;661;Task;recorded;as soon as possible
+On Boarding;35;661;Task;recorded;as soon as possible
+Audit;35;661;Task;recorded;as soon as possible
+Proof of payment;35;661;Task;recorded;as soon as possible
+Payment Run;35;662;Task;recorded;as soon as possible
+Manual & Unplanned Payments;35;662;Task;recorded;as soon as possible
+Invoice check;35;662;Task;recorded;as soon as possible
+Other Processes;35;662;Task;recorded;as soon as possible
+Project - Robotic;35;662;Task;recorded;as soon as possible
+Mailbox;35;662;Task;recorded;as soon as possible
+Payment Run Issues;35;662;Task;recorded;as soon as possible
+Banks Issues;35;662;Task;recorded;as soon as possible
+On Boarding;35;662;Task;recorded;as soon as possible
+Audit;35;662;Task;recorded;as soon as possible
+Proof of payment;35;662;Task;recorded;as soon as possible
+Payment Run;36;663;Task;recorded;as soon as possible
+Manual & Unplanned Payments;36;663;Task;recorded;as soon as possible
+Invoice check;36;663;Task;recorded;as soon as possible
+Other Processes;36;663;Task;recorded;as soon as possible
+Project - Robotic;36;663;Task;recorded;as soon as possible
+Mailbox;36;663;Task;recorded;as soon as possible
+Payment Run Issues;36;663;Task;recorded;as soon as possible
+Banks Issues;36;663;Task;recorded;as soon as possible
+On Boarding;36;663;Task;recorded;as soon as possible
+Audit;36;663;Task;recorded;as soon as possible
+Proof of payment;36;663;Task;recorded;as soon as possible
+Payment Run;36;664;Task;recorded;as soon as possible
+Manual & Unplanned Payments;36;664;Task;recorded;as soon as possible
+Invoice check;36;664;Task;recorded;as soon as possible
+Other Processes;36;664;Task;recorded;as soon as possible
+Project - Robotic;36;664;Task;recorded;as soon as possible
+Mailbox;36;664;Task;recorded;as soon as possible
+Payment Run Issues;36;664;Task;recorded;as soon as possible
+Banks Issues;36;664;Task;recorded;as soon as possible
+On Boarding;36;664;Task;recorded;as soon as possible
+Audit;36;664;Task;recorded;as soon as possible
+Proof of payment;36;664;Task;recorded;as soon as possible
+Payment Run;37;665;Task;recorded;as soon as possible
+Manual & Unplanned Payments;37;665;Task;recorded;as soon as possible
+Invoice check;37;665;Task;recorded;as soon as possible
+Other Processes;37;665;Task;recorded;as soon as possible
+Project - Robotic;37;665;Task;recorded;as soon as possible
+Mailbox;37;665;Task;recorded;as soon as possible
+Payment Run Issues;37;665;Task;recorded;as soon as possible
+Banks Issues;37;665;Task;recorded;as soon as possible
+On Boarding;37;665;Task;recorded;as soon as possible
+Audit;37;665;Task;recorded;as soon as possible
+Proof of payment;37;665;Task;recorded;as soon as possible
+Payment Run;37;666;Task;recorded;as soon as possible
+Manual & Unplanned Payments;37;666;Task;recorded;as soon as possible
+Invoice check;37;666;Task;recorded;as soon as possible
+Other Processes;37;666;Task;recorded;as soon as possible
+Project - Robotic;37;666;Task;recorded;as soon as possible
+Mailbox;37;666;Task;recorded;as soon as possible
+Payment Run Issues;37;666;Task;recorded;as soon as possible
+Banks Issues;37;666;Task;recorded;as soon as possible
+On Boarding;37;666;Task;recorded;as soon as possible
+Audit;37;666;Task;recorded;as soon as possible
+Proof of payment;37;666;Task;recorded;as soon as possible
