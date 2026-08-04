@@ -178,10 +178,11 @@ Outside Payment, and untouched by the above:
 
 | Name | Count | Where |
 |---|---|---|
-| `On boarding` | 9 | PS, BE, IT, DE, IB, UK, FR (the AP projects, wbs 1.x), Help Desk, Cross Tasks |
-| `Onboarding` | 1 | Human Resources |
+| `On boarding` | 10 | IB #68, FR #69, UK #70, DE #71, BE #72, PS #73, IT #74 (the AP projects, wbs 1.x), PMS-TMS #417, Help Desk #456, Cross Tasks #489 |
+| `Onboarding` | 1 | Human Resources #397 |
 
-So `On Boarding` is a third spelling. Making all 15 agree is one command —
+So `On Boarding` is a third spelling, and the instance now holds 16 of them
+across three. Making them all agree is one command —
 `--rename-scope "" --rename-loose --rename "On Boarding=On Boarding"` — but it
 reaches projects well outside Banking > Payment, so it is a deliberate decision
 rather than part of this restructure.
