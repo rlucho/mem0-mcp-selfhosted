@@ -76,13 +76,24 @@ TASKS = [
     "Mailbox",
     "Payment Run Issues",
     "Banks Issues",
-    "Boarding",
+    # Source document says "Boarding"; renamed on request before first import, so
+    # no activity was ever created under the short name. Note the instance
+    # already carries two other spellings elsewhere -- "On boarding" (9, on the
+    # AP projects, Help Desk and Cross Tasks) and "Onboarding" (1, Human
+    # Resources) -- neither of which this matches. See --rename.
+    "On Boarding",
     "Audit",
     "Proof of payment",
 ]
 
 # Tasks hang directly off the project.
 FLAT_PROJECTS = ["PS", "BE", "IT", "DE", "PMS-TMS"]
+
+# Earlier names that still count as "already there", so a task is not recreated
+# under its new name while an export taken before the rename is in hand. Without
+# this, generating between the rename file and its import emits 5 rows that would
+# insert `On Boarding` alongside the `Boarding` rows about to become it.
+RENAMED_FROM = {"On Boarding": ["Boarding"]}
 
 # Tasks hang off a system activity, which hangs off the project. Order matters
 # only for readability; P02 is listed first everywhere in the source document.
@@ -153,16 +164,46 @@ def row(name: str, project: str, parent="") -> dict:
 # Row builders
 # ---------------------------------------------------------------------------
 
-def rows_flat_additions() -> list[dict]:
-    """The 5 tasks per flat project that do not exist yet.
+def rows_flat_additions(ids: dict) -> list[dict]:
+    """The tasks per flat project that do not exist yet.
 
-    Driven by EXISTING rather than by a count, so re-running after a partial
-    import emits only what is still missing and cannot create duplicates.
+    EXISTING is only the 2026-08-03 baseline. Anything imported since is known
+    only to a fresh export, so `ids` is consulted too -- without it, re-running
+    re-emits rows that already went in.
+
+    That is not hypothetical: the 1-row smoke is row 1 of this file, so importing
+    the smoke and then the full file created `Payment Run Issues` twice under PS
+    (#635 and #636). Rows here carry no `id`, so every one INSERTs. Pass --export
+    and the file only ever holds what is genuinely missing.
     """
     out = []
     for project in FLAT_PROJECTS:
-        have = EXISTING.get(project, {})
-        out += [row(t, project) for t in TASKS if t not in have]
+        have = set(EXISTING.get(project, {})) | {
+            key[1] for key in ids if len(key) == 2 and key[0] == project}
+        out += [row(t, project) for t in TASKS
+                if t not in have
+                and not any(o in have for o in RENAMED_FROM.get(t, ()))]
+    return out
+
+
+def rows_rename(rows: list[dict], mapping: list[tuple[str, str]],
+                scope: str, loose: bool) -> list[dict]:
+    """id;name rows renaming every activity matching `old` to `new`.
+
+    `name` is a plain field with no workflow attached, unlike `status`, so a
+    rename is a straight update -- and every row carries an `id`, so it can only
+    update, never insert.
+    """
+    norm = (lambda s: "".join(s.split()).lower()) if loose else (lambda s: s)
+    out = []
+    for old, new in mapping:
+        hits = [r for r in rows
+                if (r.get("wbs") or "").strip().startswith(scope)
+                and norm((r.get("name") or "").strip()) == norm(old)
+                and (r.get("name") or "").strip() != new]
+        for r in sorted(hits, key=lambda r: int(r["id"])):
+            out.append({"id": r["id"], "name": new,
+                        "_from": r["name"], "_project": r["project"]})
     return out
 
 
@@ -231,29 +272,40 @@ def resolve_ids(rows: list[dict]) -> dict:
     with Payment's. Depth tells the two apart: a system sits at 2.1.p.s, a task
     under it at 2.1.p.s.t.
     """
-    wanted = set(SYSTEMS)
     out, seen = {}, {}
     for r in rows:
         wbs = (r.get("wbs") or "").strip()
         project = (r.get("project") or "").strip()
         name = (r.get("name") or "").strip()
-        if not wbs.startswith("2.1.") or project not in wanted:
+        if not wbs.startswith("2.1.") or project not in PAYMENT_PROJECTS:
             continue
         depth = len(wbs.split("."))
-        systems = SYSTEMS[project]
-        if depth == 4 and name in systems:
+        systems = SYSTEMS.get(project, [])
+        # Depth 4 is anything sitting directly in the project: a system under
+        # IB/UK/FR, a task under the flat ones. Both are keyed (project, name) --
+        # no collision, since no system shares a name with a task.
+        if depth == 4:
             key = (project, name)
         elif depth == 5:
             parent_wbs = wbs.rsplit(".", 1)[0]
             system = seen.get(parent_wbs)
-            if system is None or name not in TASKS:
+            if system is None or system not in systems or name not in TASKS:
                 continue
             key = (project, system, name)
         else:
             continue
         if key in out and out[key] != r["id"]:
-            sys.exit(f"ERROR: {' > '.join(key)} resolves to both #{out[key]} and "
-                     f"#{r['id']}. Resolve the duplicate before importing.")
+            where = " > ".join(key)
+            # A duplicated SYSTEM is fatal: it is a parent, and the next pass
+            # would hang 11 tasks off whichever id happened to win. A duplicated
+            # task is a mess to tidy but blocks nothing, so it must not stop an
+            # unrelated branch from being generated.
+            if len(key) == 2 and name in systems:
+                sys.exit(f"ERROR: system {where} resolves to both #{out[key]} and "
+                         f"#{r['id']}. Delete one before importing 03, or its "
+                         f"tasks will hang off an ambiguous parent.")
+            print(f"WARNING: {where} exists twice, #{out[key]} and #{r['id']}. "
+                  f"Not fatal -- it is a leaf -- but delete one.")
         out[key] = r["id"]
         if depth == 4:
             seen[wbs] = name
@@ -278,11 +330,46 @@ def main() -> None:
                     help="fresh ProjeQtor activity export, used to fill in the "
                          "system ids that 03 needs")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
+    ap.add_argument("--rename", metavar="OLD=NEW", action="append", default=[],
+                    help="rename every activity called OLD to NEW. Repeatable. "
+                         "Needs --export, since a rename updates by id.")
+    ap.add_argument("--rename-scope", default="2.1.", metavar="WBS",
+                    help="wbs prefix a rename is confined to (default 2.1. = "
+                         "Payment). Pass '' to reach the whole instance.")
+    ap.add_argument("--rename-loose", action="store_true",
+                    help="match the old name ignoring case and spaces, so "
+                         "'On boarding' and 'Onboarding' both match 'onboarding'")
     args = ap.parse_args()
 
-    ids = resolve_ids(read_export(args.export)) if args.export else {}
+    export_rows = read_export(args.export) if args.export else []
+    ids = resolve_ids(export_rows) if export_rows else {}
 
-    flat = rows_flat_additions()
+    if args.rename:
+        if not export_rows:
+            sys.exit("ERROR: --rename needs --export; it updates activities by id.")
+        mapping = []
+        for pair in args.rename:
+            if "=" not in pair:
+                sys.exit(f"ERROR: --rename wants OLD=NEW, got {pair!r}")
+            old, _, new = pair.partition("=")
+            mapping.append((old.strip(), new.strip()))
+        hits = rows_rename(export_rows, mapping, args.rename_scope, args.rename_loose)
+        if not hits:
+            sys.exit("No activity matched -- nothing to rename.")
+        slug = "".join(c if c.isalnum() else "-" for c in mapping[0][1].lower()).strip("-")
+        # An instance-wide rename reaches well beyond Payment, so it must not
+        # land on the scoped file's name and be imported by mistake.
+        suffix = "" if args.rename_scope else "_INSTANCE_WIDE"
+        path = os.path.join(args.out, f"05_rename_{slug}{suffix}.csv")
+        write_csv(path, ["id", "name"],
+                  [{"id": h["id"], "name": h["name"]} for h in hits])
+        scope = args.rename_scope or "the whole instance"
+        print(f"wrote {path}  [{len(hits)} rows]   scope: {scope}\n")
+        for h in hits:
+            print(f"  #{h['id']:>4}  {h['_project']:14s} {h['_from']!r} -> {h['name']!r}")
+        return
+
+    flat = rows_flat_additions(ids)
     systems = rows_systems(ids)
     system_tasks = rows_system_tasks(ids)
     close = rows_close_superseded()
@@ -296,9 +383,14 @@ def main() -> None:
     ]
 
     if ids:
+        # Depth 4 is a system under IB/UK/FR but a task under the flat projects,
+        # so counting every (project, name) key as a system overstates it wildly.
+        found_systems = sum(1 for k in ids
+                            if len(k) == 2 and k[1] in SYSTEMS.get(k[0], []))
         print(f"found in the export, so left out of the files below: "
-              f"{sum(1 for k in ids if len(k) == 2)} systems, "
-              f"{sum(1 for k in ids if len(k) == 3)} tasks\n")
+              f"{found_systems} systems, "
+              f"{sum(1 for k in ids if len(k) == 2) - found_systems} flat tasks, "
+              f"{sum(1 for k in ids if len(k) == 3)} tasks under systems\n")
 
     for filename, columns, rows in files:
         path = os.path.join(args.out, filename)

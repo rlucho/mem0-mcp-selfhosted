@@ -96,10 +96,18 @@ import emits only what is still missing — a pass cannot create duplicates.
 **1. Smoke.** Import `00_smoke_test_one_task.csv` → one `Payment Run Issues` under
 PS. If it lands, the shape is right.
 
-**2. Flat tasks.** Import `01_add_missing_tasks_flat.csv` (24 remaining rows, or
-re-run `build.py` after updating `EXISTING` to drop the smoke row). PS, BE, IT, DE
-and PMS-TMS are then complete at 11 tasks each, and **that half of the job is
-done** — it does not depend on anything below.
+**2. Flat tasks.** Import `01_add_missing_tasks_flat.csv`. **Re-run `build.py
+--export` first if the smoke went in** — the smoke row *is* row 1 of this file,
+and these rows carry no `id`, so every one INSERTs. Importing both created
+`Payment Run Issues` twice under PS (#635 and #636); with `--export` the file only
+holds what is genuinely missing.
+
+PS, BE, IT, DE and PMS-TMS are then complete at 11 tasks each, and **that half of
+the job is done** — it does not depend on anything below.
+
+**Done (2026-08-04):** all five are at 11 tasks. PS carried the duplicate above;
+#636 is the one to delete — both are identical, 0 real work and no responsible, so
+keeping the lower id leaves the WBS contiguous.
 
 **3. Systems.** Import `02_create_systems.csv` → 6 new activities under IB, UK, FR.
 
@@ -141,6 +149,42 @@ Note also: closing is currently **blocked instance-wide**. The Collections kit h
 `recorded -> closed`, and `idle` turned out not to be writable through the import.
 Whatever unblocks it there unblocks it here. See
 [`../collections-restructure/README.md`](../collections-restructure/README.md).
+
+---
+
+## Renaming: `--rename`
+
+`name` is a plain field with no workflow attached, unlike `status`, so a rename is
+a straight update. Every row carries an `id`, so the file can only update.
+
+```
+python3 build.py --export EXPORT_Activity.csv --rename "Boarding=On Boarding"
+```
+
+writes `out/05_rename_on-boarding.csv` and prints every row it matched, with its
+project and old name, so the file can be checked before it is imported.
+
+`--rename-scope` confines it (default `2.1.` = Payment); `--rename-scope ""`
+reaches the whole instance and marks the file `_INSTANCE_WIDE` so it cannot be
+mistaken for the scoped one. `--rename-loose` matches ignoring case and spaces,
+which is what catches `On boarding` and `Onboarding` together.
+
+**Done (2026-08-04):** `Boarding` -> `On Boarding` on #638, #643, #648, #653, #658,
+and `TASKS` now carries the new name so nothing recreates the old one.
+
+### The instance already had two other spellings
+
+Outside Payment, and untouched by the above:
+
+| Name | Count | Where |
+|---|---|---|
+| `On boarding` | 9 | PS, BE, IT, DE, IB, UK, FR (the AP projects, wbs 1.x), Help Desk, Cross Tasks |
+| `Onboarding` | 1 | Human Resources |
+
+So `On Boarding` is a third spelling. Making all 15 agree is one command —
+`--rename-scope "" --rename-loose --rename "On Boarding=On Boarding"` — but it
+reaches projects well outside Banking > Payment, so it is a deliberate decision
+rather than part of this restructure.
 
 ---
 
