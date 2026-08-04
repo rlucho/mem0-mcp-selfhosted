@@ -95,6 +95,15 @@ Four things that are easy to get wrong and cost real debugging time:
    uninitialised. So risky properties are read one per statement into their own
    variable, and collection counts are captured *before* the `For`.
 
+5. **`Enum` is a reserved word — in both languages.** A local named `eNum` (an
+   obvious shorthand for "error number") *is* the keyword `Enum`, because both
+   languages are case-insensitive. It costs a bare `Compile error: Syntax error`
+   on the `Dim` line. Imported code keeps its original casing, so the VBE never
+   recapitalises it to `Enum` and gives the game away — the variable just looks
+   fine. VBScript reserves `Enum` too, even though it has no `Enum` statement.
+   Hence `errNum`. Same trap waits behind `Date`, `Error`, `Len`, `Line`,
+   `Name`, `String`, `Text`, `Type` and `Module`.
+
 Also: keep the `.vbs` saved **without a BOM** — `cscript` rejects a UTF-8 BOM
 with "Invalid character" at (1,1). `.gitattributes` checks both files out with
 CRLF endings.

@@ -130,7 +130,7 @@ End Function
 ' Returns the GuiApplication, trying both monikers. Nothing + gErrMsg on failure.
 '-------------------------------------------------------------------------------
 Function GetSapApp()
-    Dim order, i, guiAuto, app, eNum, seen
+    Dim order, i, guiAuto, app, errNum, seen
 
     Set GetSapApp = Nothing
     seen = ""
@@ -143,26 +143,26 @@ Function GetSapApp()
 
     For i = LBound(order) To UBound(order)
         Set guiAuto = Nothing
-        eNum = 0
+        errNum = 0
         On Error Resume Next
         Set guiAuto = GetObject(CStr(order(i)))
-        eNum = Err.Number
+        errNum = Err.Number
         On Error GoTo 0
 
         If guiAuto Is Nothing Then
-            Say "    moniker " & order(i) & " -> not registered (error " & eNum & ")"
-            seen = seen & CStr(order(i)) & "=" & eNum & " "
+            Say "    moniker " & order(i) & " -> not registered (error " & errNum & ")"
+            seen = seen & CStr(order(i)) & "=" & errNum & " "
         Else
             Set app = Nothing
-            eNum = 0
+            errNum = 0
             On Error Resume Next
             Set app = guiAuto.GetScriptingEngine
-            eNum = Err.Number
+            errNum = Err.Number
             On Error GoTo 0
 
             If app Is Nothing Then
-                Say "    moniker " & order(i) & " -> found, but GetScriptingEngine failed (error " & eNum & ")"
-                seen = seen & CStr(order(i)) & "=engine" & eNum & " "
+                Say "    moniker " & order(i) & " -> found, but GetScriptingEngine failed (error " & errNum & ")"
+                seen = seen & CStr(order(i)) & "=engine" & errNum & " "
             Else
                 gMoniker = CStr(order(i))
                 Say "    moniker " & gMoniker & " -> OK"

@@ -69,7 +69,7 @@ Public Sub Test_SAP_PER_FBL1N()
     Dim sbarText As String
     Dim sbarType As String
     Dim popups   As Integer
-    Dim eNum     As Long
+    Dim errNum   As Long
     Dim eDesc    As String
 
     mLog = ""
@@ -123,11 +123,11 @@ Public Sub Test_SAP_PER_FBL1N()
     Exit Sub
 
 Fail:
-    eNum = Err.Number
+    errNum = Err.Number
     eDesc = Err.Description
     Say ""
     Say "FAIL - " & eDesc
-    Say "       (error " & eNum & ")"
+    Say "       (error " & errNum & ")"
     Finish
 End Sub
 
@@ -141,7 +141,7 @@ Private Function GetSapApp() As Object
     Dim i       As Integer
     Dim guiAuto As Object
     Dim app     As Object
-    Dim eNum    As Long
+    Dim errNum  As Long
     Dim seen    As String
 
     ' Try the moniker that worked last time first - a workbook with many
@@ -154,26 +154,26 @@ Private Function GetSapApp() As Object
 
     For i = LBound(order) To UBound(order)
         Set guiAuto = Nothing
-        eNum = 0
+        errNum = 0
         On Error Resume Next
         Set guiAuto = GetObject(CStr(order(i)))
-        eNum = Err.Number
+        errNum = Err.Number
         On Error GoTo 0
 
         If guiAuto Is Nothing Then
-            Say "    moniker " & order(i) & " -> not registered (error " & eNum & ")"
-            seen = seen & CStr(order(i)) & "=" & eNum & " "
+            Say "    moniker " & order(i) & " -> not registered (error " & errNum & ")"
+            seen = seen & CStr(order(i)) & "=" & errNum & " "
         Else
             Set app = Nothing
-            eNum = 0
+            errNum = 0
             On Error Resume Next
             Set app = guiAuto.GetScriptingEngine
-            eNum = Err.Number
+            errNum = Err.Number
             On Error GoTo 0
 
             If app Is Nothing Then
-                Say "    moniker " & order(i) & " -> found, but GetScriptingEngine failed (error " & eNum & ")"
-                seen = seen & CStr(order(i)) & "=engine" & eNum & " "
+                Say "    moniker " & order(i) & " -> found, but GetScriptingEngine failed (error " & errNum & ")"
+                seen = seen & CStr(order(i)) & "=engine" & errNum & " "
             Else
                 mMoniker = CStr(order(i))
                 Say "    moniker " & mMoniker & " -> OK"
