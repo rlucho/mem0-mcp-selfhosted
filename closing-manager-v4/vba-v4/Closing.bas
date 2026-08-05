@@ -1731,7 +1731,11 @@ Do Until strim.EOS
             n = InStr(1, line, "  ", vbBinaryCompare)
         Loop
         arr = Split(line, " ")
-        Am = Round(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 2)
+        'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+        'PC's Windows regional format, so a mismatch with the SAP user's decimal
+        'notation raised "Run-time error 13: Type mismatch" on the whole column.
+        Am = Round(CM_Amount(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _
+                   "reading an amount from the AA02 report group"), 2)
         If Round(Am, 2) <> 0 Then
             EmptRow = FindLastRow(1, 2, 1, 0, "Errors")
             Sheets("Errors").Cells(EmptRow, 2) = arr(1)

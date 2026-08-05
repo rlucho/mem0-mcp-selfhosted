@@ -53,12 +53,19 @@ Public Const CM_SAP_TABLES  As String = "T001,T001B,T001Z,SKB1,ZCCOD,ZGXMIT"
 Public Const CM_SAP_RGROUPS As String = "AA02,EIS4,GIS4,GTB1"
 
 ' The "/..." display layouts the close types into selection-screen fields.
-' Format:  tcode | selection-screen field | layout name   (entries separated by ;)
+' Format:  [~] tcode | selection-screen field | layout name   (entries by ;)
 ' These are ALV display layouts (P_VARID / P_VARIE / P_ALV), not selection
 ' variants - the macro types them in and expects them to already exist.
+'
+' A leading "~" marks an entry as INFORMATIONAL: it is still attempted, but a
+' negative answer is reported as [~] and never fails the preflight. ZGR215's
+' /arek2 is one of these - the close reaches that layout field only after the
+' document-number popup, so it cannot honestly be tested from a cold selection
+' screen, and reporting [X] there sent people looking for a problem that was
+' not real.
 Public Const CM_SAP_LAYOUTS As String = _
     "ZGLRME|P_VARID|/default;ZGLRME|P_VARIE|/closing;" & _
-    "ZGLRME|P_VARIE|/default;ZGR215|P_ALV|/arek2"
+    "ZGLRME|P_VARIE|/default;~ZGR215|P_ALV|/arek2"
 '----------------------------------------------------------------------------
 
 ' Breadcrumb: the plain-language description of what the macro is doing right
@@ -491,7 +498,7 @@ Public Sub PreflightCheck()
     Dim g As Object, eng As Object, sapOK As Boolean
     Dim sapSess As Object, sapBlocked As Boolean, runData As Boolean
     Dim cc As String, dst As String, winPrn As String
-    Dim pdfOK As Boolean, prtBlocked As Boolean
+    Dim pdfOK As Boolean, prtBlocked As Boolean, ans As VbMsgBoxResult
     Set fso = CreateObject("Scripting.FileSystemObject")
     okAll = True
 
@@ -605,21 +612,25 @@ Public Sub PreflightCheck()
     End If
 
     ' 8) Print + merge rehearsal (optional - it really prints, so it asks) -----
-    If pdfOK And winPrn <> "" And Not IsUrlPath(ThisWorkbook.Path) Then
-        If MsgBox("Test printing and merging for real?" & vbCrLf & vbCrLf & _
-                  "This prints two small test pages to PDFCreator, then merges them" & vbCrLf & _
-                  "with GiosPSMC.exe - the exact chain that produces the report pack." & vbCrLf & _
-                  "It is the only way to prove PDFCreator is saving automatically" & vbCrLf & _
-                  "into " & CM_BASE_DRIVE & "pdf\temp and that the merger works." & vbCrLf & vbCrLf & _
-                  "It writes only test files under " & CM_BASE_DRIVE & "pdf\ and deletes them" & vbCrLf & _
-                  "afterwards. If SAP is available the pages come from SE16/T001 -" & vbCrLf & _
-                  "a display only, which creates a temporary print job and no data." & vbCrLf & _
-                  "Allow up to two minutes.", _
-                  vbYesNo + vbQuestion, "Closing Manager - Preflight") = vbYes Then
-            msg = msg & CM_PrintMergeTest(sapSess, prtBlocked)
-            If prtBlocked Then okAll = False
-        Else
+    If Not IsUrlPath(ThisWorkbook.Path) Then
+        ans = MsgBox("Test printing and merging for real?" & vbCrLf & vbCrLf & _
+              "YES     print two test pages, then merge them." & vbCrLf & _
+              "        Proves the whole chain: SAP -> PDFCreator -> " & CM_BASE_DRIVE & "pdf\temp" & vbCrLf & _
+              "        -> GiosPSMC.exe. Allow up to two minutes." & vbCrLf & vbCrLf & _
+              "NO      test the PDF merger only." & vbCrLf & _
+              "        Uses two built-in test pages, so nothing is printed and" & vbCrLf & _
+              "        PDFCreator is not involved. Takes a few seconds." & vbCrLf & vbCrLf & _
+              "CANCEL  skip this check." & vbCrLf & vbCrLf & _
+              "Either test writes only under " & CM_BASE_DRIVE & "pdf\ and clears up after" & vbCrLf & _
+              "itself. Printing uses SE16/T001 - a display, so no data is created" & vbCrLf & _
+              "or changed in SAP.", _
+              vbYesNoCancel + vbQuestion, "Closing Manager - Preflight")
+
+        If ans = vbCancel Then
             msg = msg & "[~] Print/merge not tested (skipped)." & vbCrLf
+        Else
+            msg = msg & CM_PrintMergeTest(sapSess, prtBlocked, (ans = vbYes))
+            If prtBlocked Then okAll = False
         End If
     End If
 
@@ -886,6 +897,7 @@ Public Function CM_SapAuthReport(ByVal sess As Object, _
                                  ByRef anyBlocked As Boolean, _
                                  ByVal runData As Boolean) As String
     Dim out As String, arr As Variant, prt As Variant, i As Long, nBad As Long
+    Dim info As Boolean, res As String
     Dim cc As String
     anyBlocked = False
     nBad = 0
@@ -917,10 +929,16 @@ Public Function CM_SapAuthReport(ByVal sess As Object, _
     out = out & "   Report layouts (the ""/..."" variants):" & vbCrLf
     arr = Split(CM_SAP_LAYOUTS, ";")
     For i = LBound(arr) To UBound(arr)
+        info = (Left$(arr(i), 1) = "~")
+        If info Then arr(i) = Mid$(arr(i), 2)
         prt = Split(arr(i), "|")
-        out = out & CM_Line(prt(0) & " " & prt(2) & " (" & prt(1) & ")", _
-                            CM_CheckLayout(sess, CStr(prt(0)), CStr(prt(1)), CStr(prt(2)), _
-                                           cc, CStr(Monthx), CStr(Yearx)), nBad)
+        res = CM_CheckLayout(sess, CStr(prt(0)), CStr(prt(1)), CStr(prt(2)), _
+                             cc, CStr(Monthx), CStr(Yearx))
+        If info And Left$(res, 2) <> "OK" Then
+            'informational: the close picks this layout up later in the dialogue
+            res = "?|only reachable after the document-number popup - not a fault"
+        End If
+        out = out & CM_Line(prt(0) & " " & prt(2) & " (" & prt(1) & ")", res, nBad)
     Next i
 
     If runData Then
@@ -1240,8 +1258,8 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
         parts = Split(errDesc, "|")
         kind = "DATA"
         what = "SAP sent an amount the macro could not read as a number." & vbCrLf & _
-               "        The value was:  " & parts(1) & vbCrLf & _
-               "        On data row:    " & parts(2)
+               "        The value was:  [" & parts(1) & "]"
+        If Val(parts(2)) > 0 Then what = what & vbCrLf & "        On data row:    " & parts(2)
         why = "Almost always the number format. SAP writes amounts using the" & vbCrLf & _
               "        SAP user's decimal notation, and this PC reads them using its" & vbCrLf & _
               "        Windows regional settings. If one uses 1.234,56 and the other" & vbCrLf & _
@@ -1360,8 +1378,9 @@ End Function
 ' or its print dialog does not appear, it falls back to printing a page from
 ' Excel and says so - that still proves PDFCreator and the merger.
 '============================================================================
-Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean) As String
-    Dim fso As Object, out As String, route As String, why As String
+Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean, _
+                                  ByVal doPrint As Boolean) As String
+    Dim fso As Object, out As String, route As String, why As String, src As String
     Dim tmp As String, work As String, exePath As String, merged As String
     Dim p As String, n As Long, i As Long
 
@@ -1373,8 +1392,16 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
     exePath = CM_BASE_DRIVE & "pdf\merger\GiosPSMC.exe"
     merged  = work & "merged.pdf"
 
+    On Error Resume Next
+    fso.DeleteFolder work, True
+    Err.Clear
+    On Error GoTo 0
+    fso.CreateFolder work
+
+    If Not doPrint Then GoTo DoMerge
+
     'the close picks up whatever is sitting in \temp, so leftovers are a fault
-    'in their own right - and they would make this test meaningless
+    'in their own right - and they would make the print test meaningless
     n = CM_CountFiles(fso, tmp)
     If n > 0 Then
         If MsgBox(n & " leftover file(s) are sitting in" & vbCrLf & tmp & vbCrLf & vbCrLf & _
@@ -1389,18 +1416,11 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
             out = out & "[OK] Cleared " & n & " leftover file(s) from \pdf\temp." & vbCrLf
         Else
             blocked = True
-            CM_PrintMergeTest = out & "[X] " & n & " leftover file(s) in " & tmp & _
-                                " - clear them before closing." & vbCrLf
-            CM_Done
-            Exit Function
+            out = out & "[X] " & n & " leftover file(s) in " & tmp & _
+                        " - printing not tested." & vbCrLf
+            GoTo DoMerge
         End If
     End If
-
-    On Error Resume Next
-    fso.DeleteFolder work, True
-    Err.Clear
-    On Error GoTo 0
-    fso.CreateFolder work
 
     Call SetPDFCreator          'same launch the close does
 
@@ -1422,7 +1442,7 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
         If why <> "" Then
             blocked = True
             out = out & "[X] Could not send test page " & i & " to PDFCreator - " & why & "." & vbCrLf
-            GoTo CleanUp
+            GoTo DoMerge
         End If
 
         p = CM_WaitForFile(fso, tmp, 90, "test page " & i)
@@ -1434,7 +1454,7 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
                         "       PDFCreator is not saving automatically to that folder," & vbCrLf & _
                         "       or it is waiting on a dialog. This is what makes the" & vbCrLf & _
                         "       close appear to freeze." & vbCrLf
-            GoTo CleanUp
+            GoTo DoMerge
         End If
 
         On Error Resume Next
@@ -1443,7 +1463,7 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
             Err.Clear: On Error GoTo 0
             blocked = True
             out = out & "[X] The test PDF was created but could not be moved out of \pdf\temp." & vbCrLf
-            GoTo CleanUp
+            GoTo DoMerge
         End If
         On Error GoTo 0
 
@@ -1451,23 +1471,45 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
                     " and saved as PDF (" & CM_KB(fso, work & "t" & i & ".pdf") & " KB)." & vbCrLf
     Next i
 
-    'now the merge, using the same command line the close uses
+DoMerge:
+    'The merger is tested whether or not the printing worked. If we did not get
+    'two printed PDFs, two built-in one-page PDFs are written straight to disk,
+    'so GiosPSMC.exe is proved on its own and a broken PDFCreator cannot hide a
+    'broken merger (or the other way round).
+    src = "the 2 printed test pages"
+    If Not (fso.FileExists(work & "t1.pdf") And fso.FileExists(work & "t2.pdf")) Then
+        On Error Resume Next
+        fso.DeleteFile work & "*.*", True
+        Err.Clear
+        On Error GoTo 0
+        If CM_SeedPdf(work & "t1.pdf", "PDF merge test page 1") And _
+           CM_SeedPdf(work & "t2.pdf", "PDF merge test page 2") Then
+            src = "2 built-in test pages"
+        Else
+            blocked = True
+            out = out & "[X] Could not write the built-in test pages to " & work & _
+                        " - merge not tested." & vbCrLf
+            GoTo CleanUp
+        End If
+    End If
+
     If Not fso.FileExists(exePath) Then
         blocked = True
         out = out & "[X] PDF merger not present at " & exePath & " - merge not tested." & vbCrLf
         GoTo CleanUp
     End If
 
-    CM_Step = "preflight: merging the two test pages"
+    CM_Step = "preflight: merging " & src
     CM_Paint ""
     On Error Resume Next
+    Err.Clear
     CreateObject("WScript.Shell").Run "%COMSPEC% /c " & exePath & " " & _
         Chr$(34) & work & "t1.pdf" & Chr$(34) & " " & _
         Chr$(34) & work & "t2.pdf" & Chr$(34) & " output " & merged, 0, False
     If Err.Number <> 0 Then
         Err.Clear: On Error GoTo 0
         blocked = True
-        out = out & "[X] The PDF merger would not start." & vbCrLf
+        out = out & "[X] The PDF merger would not start: " & exePath & vbCrLf
         GoTo CleanUp
     End If
     On Error GoTo 0
@@ -1475,22 +1517,111 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
     If Not CM_WaitForPath(fso, merged, 60, "the merged test file") Then
         blocked = True
         out = out & "[X] The merger ran but produced no merged file within 60 seconds." & vbCrLf & _
-                    "       " & exePath & vbCrLf
-    ElseIf CM_KB(fso, merged) <= 0 Then
+                    "       " & exePath & vbCrLf & _
+                    "       Check the file is a real GiosPSMC.exe and is not blocked by" & vbCrLf & _
+                    "       Windows (Properties > Unblock) or by antivirus." & vbCrLf
+    ElseIf CM_KB(fso, merged) < 0 Then
         blocked = True
-        out = out & "[X] The merger produced an empty file." & vbCrLf
+        out = out & "[X] The merger produced an unreadable file." & vbCrLf
+    ElseIf Not CM_LooksLikePdf(merged) Then
+        blocked = True
+        out = out & "[X] The merger produced a file that is not a PDF." & vbCrLf
     Else
-        out = out & "[OK] Merge works (" & CM_KB(fso, merged) & " KB from 2 pages)." & vbCrLf
+        out = out & "[OK] PDF merge works: " & src & " -> 1 file (" & _
+                    CM_KB(fso, merged) & " KB)." & vbCrLf
     End If
 
 CleanUp:
     On Error Resume Next
     fso.DeleteFolder work, True
-    fso.DeleteFile tmp & "*.*", True
+    If doPrint Then fso.DeleteFile tmp & "*.*", True
     Err.Clear
     On Error GoTo 0
     CM_Done
     CM_PrintMergeTest = out
+End Function
+
+
+'--- a real PDF starts with %PDF- and ends with %%EOF ------------------------
+Private Function CM_LooksLikePdf(ByVal path As String) As Boolean
+    Dim f As Integer, head As String * 5, sz As Long, tail As String * 6
+    On Error Resume Next
+    f = FreeFile
+    Open path For Binary Access Read As #f
+    sz = LOF(f)
+    If sz > 32 Then
+        Get #f, 1, head
+        Get #f, sz - 5, tail
+    End If
+    Close #f
+    If Err.Number = 0 Then
+        CM_LooksLikePdf = (head = "%PDF-") And (InStr(tail, "%%EOF") > 0)
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'============================================================================
+' A BUILT-IN ONE-PAGE PDF
+'----------------------------------------------------------------------------
+' So the merger can be tested on its own, with no printer involved. This writes
+' a minimal but fully valid PDF 1.4 - catalog, page tree, one A4 page, one
+' Helvetica text block - with a correct cross-reference table, because a merger
+' will refuse a file whose xref offsets are wrong.
+'
+' Everything written is 7-bit ASCII and the line ending is LF, so the byte
+' length of the string equals its character length and the offsets below are
+' exact on any Windows regional setting.
+'============================================================================
+Private Function CM_SeedPdf(ByVal path As String, ByVal caption As String) As Boolean
+    Dim NL As String, body As String, out As String
+    Dim o(1 To 5) As String, offs(1 To 5) As Long
+    Dim i As Long, xrefAt As Long, f As Integer
+    Dim b() As Byte
+
+    NL = Chr$(10)
+    body = "BT" & NL & _
+           "/F1 16 Tf" & NL & _
+           "60 760 Td" & NL & _
+           "(Closing Manager - preflight test) Tj" & NL & _
+           "0 -28 Td" & NL & _
+           "(" & caption & ") Tj" & NL & _
+           "ET" & NL
+
+    o(1) = "<< /Type /Catalog /Pages 2 0 R >>"
+    o(2) = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
+    o(3) = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] " & _
+           "/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>"
+    o(4) = "<< /Length " & Len(body) & " >>" & NL & "stream" & NL & body & "endstream"
+    o(5) = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+
+    out = "%PDF-1.4" & NL
+    For i = 1 To 5
+        offs(i) = Len(out)
+        out = out & i & " 0 obj" & NL & o(i) & NL & "endobj" & NL
+    Next i
+
+    xrefAt = Len(out)
+    out = out & "xref" & NL & "0 6" & NL & "0000000000 65535 f " & NL
+    For i = 1 To 5
+        out = out & Format$(offs(i), "0000000000") & " 00000 n " & NL
+    Next i
+    out = out & "trailer" & NL & _
+                "<< /Size 6 /Root 1 0 R >>" & NL & _
+                "startxref" & NL & xrefAt & NL & "%%EOF" & NL
+
+    On Error Resume Next
+    If Dir(path) <> "" Then Kill path
+    Err.Clear
+    b = StrConv(out, vbFromUnicode)
+    f = FreeFile
+    Open path For Binary Access Write As #f
+    Put #f, 1, b
+    Close #f
+    If Err.Number = 0 Then CM_SeedPdf = True
+    Err.Clear
+    On Error GoTo 0
 End Function
 
 

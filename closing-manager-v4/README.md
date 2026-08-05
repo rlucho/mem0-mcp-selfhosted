@@ -117,8 +117,9 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 11 | **Bounded print waits** — the ten “wait for the printed PDF” loops now use `CM_WaitForPrint`: `Dir`-based, capped at 240 s + 180 s, `DoEvents` every second. | `Printing` | **The freeze.** The old loop rebuilt a `Shell.Application` on every pass *with no pause*, so an empty temp folder became a tight spin — Excel “Not Responding”, and eventually `-2147417848 (80010108) Method 'NameSpace' of object 'IShellDispatch6' failed`. |
 | 12 | **Live progress** — `CM_Begin` / `CM_Note` / `CM_Done` report the current stage (`[14/27] printing ZGE1174 … running 06:12 — press Esc to stop`) on Excel's status bar; every wait ticks a counter. | `GlobalModule`, `Closing` | “Is it working or has it hung?” — previously indistinguishable. |
 | 13 | **Plain-language failure dialog** — `CM_Explain` classifies the failure as DATA / FILE / SAP / PRINTING / EXCEL / TECHNICAL and shows *what it was doing, what went wrong, why it usually happens, what to try*, plus a technical line for the CI Team. Armed once via `On Error GoTo CM_Fail` at the top of `RunClosing`. | `GlobalModule`, `Closing` | Bare `Run-time error 13` dialogs with no context. |
-| 14 | **Locale-proof amounts** — `CM_Amount` / `CM_ToAmount` read both `1.234,56` and `1,234.56` plus the trailing minus, using `Val` (locale-independent) rather than implicit conversion. | `GlobalModule`, `Closing` | `Run-time error 13: Type mismatch` on the ZGLRME amount column when SAP's decimal notation ≠ the PC's Windows regional format. |
-| 15 | **Print + merge rehearsal** *(new)* — optional part of `PreflightCheck`: prints two test pages (SE16/T001 display via SAP, or Excel as fallback), confirms PDFCreator auto-saves into `\pdf\temp`, then merges them with `GiosPSMC.exe`. Also checks the Windows printer is actually named `PDFCreator`, and offers to clear leftovers from `\pdf\temp`. | `GlobalModule` | Discovering *during* a close that PDFCreator isn't auto-saving, or that the merger is broken — the exact conditions behind fix 11. |
+| 14 | **Locale-proof amounts — all 10 sites** — `CM_Amount` / `CM_ToAmount` read both `1.234,56` and `1,234.56`, the trailing minus and the `(1234)` parenthesis convention, using `Val` (locale-independent). Every place a SAP text export was turned into a number now goes through it: `ZGLRME`, `ZGE132` (×4, local + group currency), `GTB1` (×2), `EIS4`, `GIS4`, `AA02`. | `GlobalModule`, `Closing`, `Printing` | `Run-time error 13: Type mismatch` when SAP's decimal notation ≠ the PC's Windows regional format. `Round("1.234,56", 2)` and `CDbl("1.234,56")` both go through VBA's implicit conversion, which reads Windows — so this bit in a different report each time it was hit. |
+| 16 | **`/arek2` downgraded to informational** — a `~` prefix in `CM_SAP_LAYOUTS` marks a layout as attempted-but-never-failing. `ZGR215 /arek2` is one: the close reaches that field only after the document-number popup, so it cannot honestly be tested from a cold selection screen. | `GlobalModule` | A false `[X]` sending people to look for a problem that was not there. |
+| 15 | **Print + merge rehearsal** *(new)* — optional part of `PreflightCheck`: prints two test pages (SE16/T001 display via SAP, or Excel as fallback), confirms PDFCreator auto-saves into `\pdf\temp`, then merges them with `GiosPSMC.exe`. Also checks the Windows printer is actually named `PDFCreator`, and offers to clear leftovers from `\pdf\temp`. **The merge can also be tested on its own** (answer *No* at the prompt): `CM_SeedPdf` writes two built-in one-page PDFs straight to disk, so the merger is proved with no printer involved and a broken PDFCreator cannot mask a broken merger. | `GlobalModule` | Discovering *during* a close that PDFCreator isn't auto-saving, or that the merger is broken — the exact conditions behind fix 11. |
 
 Functional close logic and the SAP command sequences are **unchanged** — the diff
 is intentionally small (`report/v4-changes.diff`).
@@ -229,7 +230,7 @@ detected, the check offers to test everything the close drives in SAP:
 | Transactions | `SE16` `GR55` `SM35` `ZGE132` `ZGLRME` `ZGR215` `ZGLGWUL` `ZGE1174` |
 | Tables (via SE16) | `T001` `T001B` `T001Z` `SKB1` `ZCCOD` `ZGXMIT` |
 | GR55 report groups | `AA02` `EIS4` `GIS4` `GTB1` |
-| Report layouts (the `/…` variants) | `ZGLRME` → `/default` (`P_VARID`), `/closing` + `/default` (`P_VARIE`); `ZGR215` → `/arek2` (`P_ALV`) |
+| Report layouts (the `/…` variants) | `ZGLRME` → `/default` (`P_VARID`), `/closing` + `/default` (`P_VARIE`); `ZGR215` → `/arek2` (`P_ALV`, informational) |
 
 It navigates to each object and reads the status bar, reporting any error message
 **verbatim** rather than matching keywords — so it works whatever the SAP logon
@@ -253,6 +254,13 @@ nothing is selected, written or posted.
 > screen. ZGLRME answered *"Enter Transm. Group or Comp. Code or Profit Center or
 > Cost Center"* — a mandatory-field message, nothing to do with the layout — which
 > was reported as three false `[X]` failures. Fixed.
+
+> **`ZGR215 /arek2` is reported `[~]`, never `[X]`.** The close only reaches that
+> layout field *after* ZGR215's document-number popup, so it cannot be tested from
+> a cold selection screen and a negative answer there means nothing. A `~` prefix
+> on the entry in `CM_SAP_LAYOUTS` marks it informational — still attempted, never
+> counted as a failure. Use the same prefix for any future layout in the same
+> position.
 
 **Company-code data access is checked too — behind a second, separate consent.**
 Reaching a transaction is not the same as being allowed to read a given company
@@ -285,9 +293,18 @@ SAP  →  front-end printer LOCLX  →  Windows printer "PDFCreator"
      →  auto-saved PDF in C:\pdf\temp  →  GiosPSMC.exe merge
 ```
 
-It prints **two** test pages, waits for each PDF, then merges them — reporting
-each stage and the resulting file sizes. Test files go under `C:\pdf\` and are
-deleted afterwards.
+The prompt offers three answers:
+
+| Answer | What runs |
+|---|---|
+| **Yes** | print two test pages → wait for each PDF → merge them. Proves the whole chain. ~2 min. |
+| **No** | **merge only.** Two built-in one-page PDFs (`CM_SeedPdf`) are written straight to disk and merged. No printer, no SAP, a few seconds. |
+| **Cancel** | skip. |
+
+Either way it reports each stage and the resulting file sizes, checks the merged
+file really is a PDF (`%PDF-` … `%%EOF`), and deletes everything it wrote under
+`C:\pdf\`. If the print stage fails, the merge is **still** tested using the
+built-in pages — a broken PDFCreator cannot hide a broken merger, or vice versa.
 
 - **Source of the test pages:** `SE16` → table `T001` (company-code names),
   limited to 3 rows and printed. A *display*, so no business data is created or

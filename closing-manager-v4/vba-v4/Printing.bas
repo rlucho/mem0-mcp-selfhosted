@@ -389,7 +389,11 @@ Do Until n = 0
 Loop
 arr = Split(line, " ")
 
-Print_EIS4 = Round(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 2)
+'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+'PC's Windows regional format, so a mismatch with the SAP user's decimal
+'notation raised "Run-time error 13: Type mismatch" on the whole column.
+Print_EIS4 = Round(CM_Amount(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _
+                   "reading the total from the EIS4 report group"), 2)
 
 Kill FPath & "eis4.txt"
 
@@ -476,7 +480,11 @@ Do Until n = 0
 Loop
 arr = Split(line, " ")
 
-Print_GIS4 = Round(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 2)
+'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+'PC's Windows regional format, so a mismatch with the SAP user's decimal
+'notation raised "Run-time error 13: Type mismatch" on the whole column.
+Print_GIS4 = Round(CM_Amount(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _
+                   "reading the total from the GIS4 report group"), 2)
 
 Kill FPath & "gis4.txt"
 
@@ -602,17 +610,17 @@ Do Until strim.EOS
         Loop
         arr = Split(line, " ")
         If UBound(arr) = 1 Then
-            If Right(arr(LBound(arr) + 1), 1) = "-" Then
-                AmL = -Round(Left(arr(LBound(arr) + 1), Len(arr(LBound(arr) + 1)) - 1), 2)
-            Else
-                AmL = Round(arr(LBound(arr) + 1), 2)
-            End If
+            'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+            'PC's Windows regional format, so a mismatch with the SAP user's decimal
+            'notation raised "Run-time error 13: Type mismatch" on the whole column.
+            AmL = Round(CM_Amount(arr(LBound(arr) + 1), 0, _
+                                  "reading the local-currency total from the ZGE132 extract"), 2)
         ElseIf arr(UBound(arr) - 1) = "||" Then
-            If Right(arr(UBound(arr)), 1) = "-" Then
-                Am = -Round(Left(arr(UBound(arr)), Len(arr(UBound(arr))) - 1), 2)
-            Else
-                Am = Round(arr(UBound(arr)), 2)
-            End If
+            'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+            'PC's Windows regional format, so a mismatch with the SAP user's decimal
+            'notation raised "Run-time error 13: Type mismatch" on the whole column.
+            Am = Round(CM_Amount(arr(UBound(arr)), 0, _
+                                 "reading a profit-centre amount from the ZGE132 extract"), 2)
             PC = arr(LBound(arr))
             EmptRow = FindLastRow(1, 1, 1, 0, "ZGE132")
             Sheets("ZGE132").Cells(EmptRow, 1) = PC
@@ -644,20 +652,20 @@ Do Until strim.EOS
     If Left(Trim(line), 1) = "|" Then
         arr = Split(line, "|")
         If UBound(arr) = 6 And Left(arr(LBound(arr) + 1), 7) = "* Total" Then
-            If Right(arr(UBound(arr) - 3), 1) = "-" Then
-                AmG = -Round(Left(arr(UBound(arr) - 3), Len(arr(UBound(arr) - 3)) - 1), 2)
-            Else
-                AmG = Round(arr(UBound(arr) - 3), 2)
-            End If
+            'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+            'PC's Windows regional format, so a mismatch with the SAP user's decimal
+            'notation raised "Run-time error 13: Type mismatch" on the whole column.
+            AmG = Round(CM_Amount(arr(UBound(arr) - 3), 0, _
+                                  "reading the group-currency total from the ZGE132 extract"), 2)
         End If
         If UBound(arr) = 7 And Trim(arr(LBound(arr) + 1)) <> "Profit Ctr" And Left(arr(LBound(arr) + 1), 7) <> "* Total" Then
             EmptRow = FindLastRow(1, 1, 1, 0, "ZGE132")
             Sheets("ZGE132").Cells(EmptRow, 1) = Trim(arr(LBound(arr) + 1))
-            If Right(arr(UBound(arr) - 2), 1) = "-" Then
-                Am = -Round(Left(arr(UBound(arr) - 2), Len(arr(UBound(arr) - 2)) - 1), 2)
-            Else
-                Am = Round(arr(UBound(arr) - 2), 2)
-            End If
+            'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+            'PC's Windows regional format, so a mismatch with the SAP user's decimal
+            'notation raised "Run-time error 13: Type mismatch" on the whole column.
+            Am = Round(CM_Amount(arr(UBound(arr) - 2), 0, _
+                                 "reading a profit-centre amount from ZGE132 (group currency)"), 2)
             Sheets("ZGE132").Cells(EmptRow, 2) = Am
         End If
     End If
@@ -1062,17 +1070,17 @@ Do Until strim.EOS
     arr = Split(line, " ")
     If UBound(arr, 1) > 2 Then
         If CStr(arr(LBound(arr) + 1)) = "44400200" Then
-            If Right(arr(UBound(arr) - 1), 1) = "-" Then
-                Am = -CDbl(Left(arr(UBound(arr) - 1), Len(arr(UBound(arr) - 1)) - 1))
-            Else
-                Am = CDbl(arr(UBound(arr) - 1))
-            End If
+            'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+            'PC's Windows regional format, so a mismatch with the SAP user's decimal
+            'notation raised "Run-time error 13: Type mismatch" on the whole column.
+            Am = CM_Amount(arr(UBound(arr) - 1), 0, _
+                           "reading the account 44400200 balance from the GTB1 report")
         ElseIf CStr(Trim(arr(LBound(arr) + 1))) = "****" Then
-            If Right(arr(UBound(arr) - 1), 1) = "-" Then
-                AmT = -CDbl(Left(arr(UBound(arr) - 1), Len(arr(UBound(arr) - 1)) - 1))
-            Else
-                AmT = CDbl(arr(UBound(arr) - 1))
-            End If
+            'V4-CIO FIX: locale-proof amount. Round()/CDbl() on a SAP string use this
+            'PC's Windows regional format, so a mismatch with the SAP user's decimal
+            'notation raised "Run-time error 13: Type mismatch" on the whole column.
+            AmT = CM_Amount(arr(UBound(arr) - 1), 0, _
+                            "reading the total from the GTB1 report")
         End If
     End If
 Loop
