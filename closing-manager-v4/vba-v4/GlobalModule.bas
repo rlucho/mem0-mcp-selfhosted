@@ -1071,7 +1071,7 @@ End Function
 '============================================================================
 ' WAIT FOR A PRINTED PDF
 '----------------------------------------------------------------------------
-' Replaces ten copies of this loop:
+' Replaces fifteen copies of this loop - ten in Printing, five in Postings:
 '
 '     Do Until File <> ""
 '         Set objShell = CreateObject("Shell.Application")

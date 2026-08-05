@@ -254,3 +254,116 @@ def amounts(text, expect_blocks, expect_lines):
     assert n_b == expect_blocks, 'expected %d amount blocks, patched %d' % (expect_blocks, n_b)
     assert n_l == expect_lines, 'expected %d amount lines, patched %d' % (expect_lines, n_l)
     return text
+
+
+# ----------------------------------------------------------------- Postings.bas
+# The module that actually posts, and then verifies the posting. It carried five
+# more copies of the same unbounded print-wait loop as Printing.bas -- including
+# one inside Check_ZGE132AP, which runs immediately AFTER the entries have gone
+# into SAP. A freeze there is the worst case: the postings are real, but the run
+# never reaches the verification that would tell the operator so.
+# It also carried eleven more locale-dependent amount conversions.
+
+POSTINGS_LABELS = [
+    'ZGE132 re-check (local currency)',
+    'ZGE132 re-check (group currency)',
+    'ZGLGWUL',
+    'ZGE132 after posting',
+    'ZGR215 (batch-input documents)',
+]
+
+POSTINGS_BLOCKS = [
+    # Check_ZGE132AP, local currency
+    ('            If Right(arr(LBound(arr) + 1), 1) = "-" Then\n'
+     '                AmL = -Round(Left(arr(LBound(arr) + 1), Len(arr(LBound(arr) + 1)) - 1), 2)\n'
+     '            Else\n'
+     '                AmL = Round(arr(LBound(arr) + 1), 2)\n'
+     '            End If',
+     'AmL = Round(CM_AmountReq(arr(LBound(arr) + 1), 0, _\n'
+     '                                     "re-reading the local-currency total from ZGE132 after posting"), 2)'),
+
+    ('            If Right(arr(UBound(arr)), 1) = "-" Then\n'
+     '                Am = Am + -Round(Left(arr(UBound(arr)), Len(arr(UBound(arr))) - 1), 2)\n'
+     '            Else\n'
+     '                Am = Am + Round(arr(UBound(arr)), 2)\n'
+     '            End If',
+     'Am = Am + Round(CM_AmountReq(arr(UBound(arr)), 0, _\n'
+     '                                         "re-reading a profit-centre amount from ZGE132 after posting"), 2)'),
+
+    ('            If Right(arr(UBound(arr) - 3), 1) = "-" Then\n'
+     '                AmG = -Round(Left(arr(UBound(arr) - 3), Len(arr(UBound(arr) - 3)) - 1), 2)\n'
+     '            Else\n'
+     '                AmG = Round(arr(UBound(arr) - 3), 2)\n'
+     '            End If',
+     'AmG = Round(CM_AmountReq(arr(UBound(arr) - 3), 0, _\n'
+     '                                     "re-reading the group-currency total from ZGE132 after posting"), 2)'),
+
+    ('            If Right(arr(UBound(arr) - 2), 1) = "-" Then\n'
+     '                Am = Am + -Round(Left(arr(UBound(arr) - 2), Len(arr(UBound(arr) - 2)) - 1), 2)\n'
+     '            Else\n'
+     '                Am = Am + Round(arr(UBound(arr) - 2), 2)\n'
+     '            End If',
+     'Am = Am + Round(CM_AmountReq(arr(UBound(arr) - 2), 0, _\n'
+     '                                         "re-reading a profit-centre amount from ZGE132 (group currency)"), 2)'),
+]
+
+# Post_ZGLGWUL. Two defects in five lines: the locale-dependent Round, and
+# Left(arr(U), Len(arr(U - 1))) -- the length of a DIFFERENT array element, so a
+# negative amount was truncated to whatever the neighbouring column happened to
+# be wide. The "|" (empty column) case is preserved exactly.
+ZGLGWUL_OLD = ('                If Right(arr(UBound(arr)), 1) = "-" Then\n'
+               '                    Am = -Round(Left(arr(UBound(arr)), Len(arr(UBound(arr) - 1))), 2)\n'
+               '                ElseIf arr(UBound(arr)) = "|" Then\n'
+               '                    Am = 0\n'
+               '                Else\n'
+               '                    Am = Round(arr(UBound(arr)), 2)\n'
+               '                End If')
+ZGLGWUL_NEW = ("                'V4-CIO FIX: locale-proof amount, and the trailing minus is now stripped\n"
+               "                'correctly. The old negative branch read Left(arr(U), Len(arr(U - 1))) -\n"
+               "                'the length of the PREVIOUS column - so a negative amount was cut to the\n"
+               "                'wrong number of characters whenever the two columns differed in width.\n"
+               '                If arr(UBound(arr)) = "|" Then\n'
+               '                    Am = 0\n'
+               '                Else\n'
+               '                    Am = Round(CM_AmountReq(arr(UBound(arr)), 0, _\n'
+               '                               "reading account 44400200 from the ZGLGWUL extract"), 2)\n'
+               '                End If')
+
+ZGE132AG_OLD = '            ElseIf Round(Trim(getLineData(line, "Amount", 1)), 2) <> 0 Then'
+ZGE132AG_NEW = ("            'V4-CIO FIX: locale-proof amount (was Round on a SAP string -> error 13)\n"
+                '            ElseIf Round(CM_AmountReq(Trim(getLineData(line, "Amount", 1)), 0, _\n'
+                '                         "checking whether ZGE132 still has an amount to post"), 2) <> 0 Then')
+
+
+def postings(text):
+    L = text.split('\n')
+    sites = [i for i, l in enumerate(L) if 'Do Until File <> ""' in l]
+    assert len(sites) == len(POSTINGS_LABELS), \
+        'expected %d print-wait loops in Postings, found %d' % (len(POSTINGS_LABELS), len(sites))
+    for k in range(len(sites) - 1, -1, -1):
+        st = sites[k]
+        ind = _ind(L[st])
+        end = next(j for j in range(st + 1, len(L))
+                   if L[j].strip() == 'Loop' and _ind(L[j]) == ind)
+        L[st:end + 1] = [
+            ind + "'V4-CIO FIX: bounded, responsive wait for the printed file. The old loop",
+            ind + "'rebuilt a Shell.Application on every pass with no pause - a tight spin that",
+            ind + "'froze Excel and ended in error 80010108. In this module that freeze could",
+            ind + "'strand a run with entries already posted but not yet verified.",
+            ind + 'File = CM_WaitForPrint(FTemp, fso, "%s")' % POSTINGS_LABELS[k],
+        ]
+    text = '\n'.join(L)
+
+    n = 0
+    for old, new in POSTINGS_BLOCKS:
+        c = text.count(old)
+        assert c == 1, 'Postings amount block matched %d times: %r' % (c, old[:60])
+        ind = '            '
+        text = text.replace(old, '\n'.join(ind + l for l in NOTE.split('\n')) + '\n' + ind + new)
+        n += 1
+    assert text.count(ZGLGWUL_OLD) == 1, 'ZGLGWUL block not found'
+    text = text.replace(ZGLGWUL_OLD, ZGLGWUL_NEW)
+    assert text.count(ZGE132AG_OLD) == 1, 'ZGE132AG line not found'
+    text = text.replace(ZGE132AG_OLD, ZGE132AG_NEW)
+    assert n == 4
+    return text

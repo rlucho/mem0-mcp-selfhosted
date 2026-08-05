@@ -118,6 +118,8 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 12 | **Live progress** — `CM_Begin` / `CM_Note` / `CM_Done` report the current stage (`[14/27] printing ZGE1174 … running 06:12 — press Esc to stop`) on Excel's status bar; every wait ticks a counter. | `GlobalModule`, `Closing` | “Is it working or has it hung?” — previously indistinguishable. |
 | 13 | **Plain-language failure dialog** — `CM_Explain` classifies the failure as DATA / FILE / SAP / PRINTING / EXCEL / TECHNICAL and shows *what it was doing, what went wrong, why it usually happens, what to try*, plus a technical line for the CI Team. Armed once via `On Error GoTo CM_Fail` at the top of `RunClosing`. | `GlobalModule`, `Closing` | Bare `Run-time error 13` dialogs with no context. |
 | 14 | **Locale-proof amounts — all 10 sites** — `CM_AmountReq` (9 text-parsed sites) / `CM_Amount` (the ZGLRME worksheet column). Reads the literal, not the locale: an already-numeric value passes through untouched; with both separators the last one is the decimal point; a repeated single separator is grouping (`1.234.567` → 1234567, either convention); anything else is the decimal point. | `GlobalModule`, `Closing`, `Printing` | `Run-time error 13: Type mismatch` when SAP's decimal notation ≠ the PC's Windows regional format — and, worse, `1.234,56` being read silently as `1.23456`. `Round("1.234,56", 2)` and `CDbl("1.234,56")` are both locale-dependent, so this bit in a different report each time. |
+| 17 | **`Postings.bas` brought into V4** — it was never rebuilt before. It carried **five more** of the freeze loops (fix 11) — one inside `Check_ZGE132AP`, which runs *immediately after* the entries go into SAP — and **eleven more** locale-dependent amount conversions (fix 14). Both now fixed there too. | `Postings` | A freeze or a `Type mismatch` on the post-and-verify path, where the entries are already real but the run never reaches the check that would say so. |
+| 18 | **`Post_ZGLGWUL` truncation bug** — the negative branch read `Left(arr(U), Len(arr(U - 1)))`: the length of the **previous** column, so a negative account-44400200 amount was cut to the wrong number of characters whenever the two columns differed in width. | `Postings` | A silently wrong figure in the ZGLGWUL posting. |
 | 16 | **`/arek2` downgraded to informational** — a `~` prefix in `CM_SAP_LAYOUTS` marks a layout as attempted-but-never-failing. `ZGR215 /arek2` is one: the close reaches that field only after the document-number popup, so it cannot honestly be tested from a cold selection screen. | `GlobalModule` | A false `[X]` sending people to look for a problem that was not there. |
 | 15 | **Print + merge rehearsal** *(new)* — optional part of `PreflightCheck`: prints two test pages (SE16/T001 display via SAP, or Excel as fallback), confirms PDFCreator auto-saves into `\pdf\temp`, then merges them with `GiosPSMC.exe`. Also checks the Windows printer is actually named `PDFCreator`, and offers to clear leftovers from `\pdf\temp`. **The merge can also be tested on its own** (answer *No* at the prompt): `CM_SeedPdf` writes two built-in one-page PDFs straight to disk, so the merger is proved with no printer involved and a broken PDFCreator cannot mask a broken merger. | `GlobalModule` | Discovering *during* a close that PDFCreator isn't auto-saving, or that the merger is broken — the exact conditions behind fix 11. |
 
@@ -129,6 +131,42 @@ is intentionally small (`report/v4-changes.diff`).
 > transmit flag cleared; the print rehearsal displays `SE16`/`T001` and prints it.
 > Printing does raise a temporary SAP print job (deleted after printing) — that
 > is the only trace it leaves, and `PreflightCheck` asks before doing it.
+
+### What "Balance Control Entry not completed…" means
+
+This is the **original macro's own check**, unchanged in V4 — one of the ten
+`UF_Error` dialogs the audit above confirms are still there. It is working
+correctly when it fires.
+
+**What it detects.** After the macro posts its balancing entries, `Check_ZGE132AP`
+re-runs `ZGE132` in SAP and re-reads the balances. If the profit-centre amounts
+still do not net to zero, `CPCL` (local currency) or `CPCG` (group currency) is
+set, the offending rows are written to the **`Errors` sheet**, and the run stops.
+The only way the numbers move between the macro's read and its re-read is
+**something else posting into the company code while the close is running** —
+which is exactly what the message says.
+
+**What the macro does about it.** Shows the dialog and `Exit Sub`. Nothing further
+is printed, nothing is merged, no report pack is filed. Entries already posted stay
+in SAP — they are real documents.
+
+**Should the whole thing be run again? Yes.** The macro does *not* leave a resume
+marker for this error. The mid-run resume path exists only for the batch-input
+"XY" failure, which writes `XY-<printN>` into `config!AA12` / `AA17`; on the next
+run `RunAgainXY` picks that up and skips the printing already done. This error
+writes `CPCL` / `CPCG`, not `XY-…`, so the next run starts from the top and
+reprints everything — which is what you want, since the partial pack is not a
+complete set.
+
+**Re-running does not double-post.** `Post_ZGE132` does not replay a stored amount.
+It drives `ZGE132` in SAP with `P_CLENT` and `P_BCENT` ticked and lets SAP compute
+the entries from the **live** balances at that moment. So the second run posts only
+whatever is still unbalanced — and nothing at all if the interfering document has
+been reversed and everything nets.
+
+**Before re-running:** make sure the interfering posting is genuinely dealt with,
+and that nobody posts into that company code while the close runs. Otherwise the
+same check fires again — correctly.
 
 ### Safety: nothing that used to stop the close was removed
 

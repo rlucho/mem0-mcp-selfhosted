@@ -259,6 +259,8 @@ def new_stream(raw, off, text):
 
 # ---- V4-CIO post-pass: bounded print waits, live progress, plain-language errors ----
 import post_v4
+praw2, poff2, potext = module_text("Postings")
+potext = post_v4.postings(potext)
 ptext = post_v4.printing(ptext)
 ctext = post_v4.closing(ctext)
 print("post-pass: 10 print waits bounded, %d breadcrumbs, CM_Fail handler" % len(post_v4.STEPS))
@@ -268,6 +270,7 @@ new_data = {
     idx["Closing"]:      new_stream(craw, coff, ctext),
     idx["Printing"]:     new_stream(praw, poff, ptext),
     idx["Admin"]:        new_stream(araw, aoff, atext),
+    idx["Postings"]:     new_stream(praw2, poff2, potext),
 }
 
 # ---- force clean recompile: bump _VBA_PROJECT version, empty __SRP_* caches ----
@@ -284,7 +287,7 @@ final = build_cfb(tpl, new_data)
 open("vbaProject_v4.bin","wb").write(final)
 
 # save the V4 module sources (exactly what is baked into the workbook)
-for nm, txt in (("GlobalModule_FOLDED", gtext), ("Admin", atext), ("Closing", ctext), ("Printing", ptext)):
+for nm, txt in (("GlobalModule_FOLDED", gtext), ("Admin", atext), ("Closing", ctext), ("Printing", ptext), ("Postings", potext)):
     open("build_v4/%s.bas" % nm, "w", encoding="utf-8").write(txt.replace("\n", "\r\n"))
 
 print("built vbaProject_v4.bin  size=%d (orig=%d)" % (len(final), len(orig)))
