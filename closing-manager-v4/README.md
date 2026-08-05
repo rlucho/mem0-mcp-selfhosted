@@ -117,7 +117,7 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 11 | **Bounded print waits** — the ten “wait for the printed PDF” loops now use `CM_WaitForPrint`: `Dir`-based, capped at 240 s + 180 s, `DoEvents` every second. | `Printing` | **The freeze.** The old loop rebuilt a `Shell.Application` on every pass *with no pause*, so an empty temp folder became a tight spin — Excel “Not Responding”, and eventually `-2147417848 (80010108) Method 'NameSpace' of object 'IShellDispatch6' failed`. |
 | 12 | **Live progress** — `CM_Begin` / `CM_Note` / `CM_Done` report the current stage (`[14/27] printing ZGE1174 … running 06:12 — press Esc to stop`) on Excel's status bar; every wait ticks a counter. | `GlobalModule`, `Closing` | “Is it working or has it hung?” — previously indistinguishable. |
 | 13 | **Plain-language failure dialog** — `CM_Explain` classifies the failure as DATA / FILE / SAP / PRINTING / EXCEL / TECHNICAL and shows *what it was doing, what went wrong, why it usually happens, what to try*, plus a technical line for the CI Team. Armed once via `On Error GoTo CM_Fail` at the top of `RunClosing`. | `GlobalModule`, `Closing` | Bare `Run-time error 13` dialogs with no context. |
-| 14 | **Locale-proof amounts — all 10 sites** — `CM_Amount` / `CM_ToAmount` read both `1.234,56` and `1,234.56`, the trailing minus and the `(1234)` parenthesis convention, using `Val` (locale-independent). Every place a SAP text export was turned into a number now goes through it: `ZGLRME`, `ZGE132` (×4, local + group currency), `GTB1` (×2), `EIS4`, `GIS4`, `AA02`. | `GlobalModule`, `Closing`, `Printing` | `Run-time error 13: Type mismatch` when SAP's decimal notation ≠ the PC's Windows regional format. `Round("1.234,56", 2)` and `CDbl("1.234,56")` both go through VBA's implicit conversion, which reads Windows — so this bit in a different report each time it was hit. |
+| 14 | **Locale-proof amounts — all 10 sites** — `CM_AmountReq` (9 text-parsed sites) / `CM_Amount` (the ZGLRME worksheet column). Reads the literal, not the locale: an already-numeric value passes through untouched; with both separators the last one is the decimal point; a repeated single separator is grouping (`1.234.567` → 1234567, either convention); anything else is the decimal point. | `GlobalModule`, `Closing`, `Printing` | `Run-time error 13: Type mismatch` when SAP's decimal notation ≠ the PC's Windows regional format — and, worse, `1.234,56` being read silently as `1.23456`. `Round("1.234,56", 2)` and `CDbl("1.234,56")` are both locale-dependent, so this bit in a different report each time. |
 | 16 | **`/arek2` downgraded to informational** — a `~` prefix in `CM_SAP_LAYOUTS` marks a layout as attempted-but-never-failing. `ZGR215 /arek2` is one: the close reaches that field only after the document-number popup, so it cannot honestly be tested from a cold selection screen. | `GlobalModule` | A false `[X]` sending people to look for a problem that was not there. |
 | 15 | **Print + merge rehearsal** *(new)* — optional part of `PreflightCheck`: prints two test pages (SE16/T001 display via SAP, or Excel as fallback), confirms PDFCreator auto-saves into `\pdf\temp`, then merges them with `GiosPSMC.exe`. Also checks the Windows printer is actually named `PDFCreator`, and offers to clear leftovers from `\pdf\temp`. **The merge can also be tested on its own** (answer *No* at the prompt): `CM_SeedPdf` writes two built-in one-page PDFs straight to disk, so the merger is proved with no printer involved and a broken PDFCreator cannot mask a broken merger. | `GlobalModule` | Discovering *during* a close that PDFCreator isn't auto-saving, or that the merger is broken — the exact conditions behind fix 11. |
 
@@ -129,6 +129,55 @@ is intentionally small (`report/v4-changes.diff`).
 > transmit flag cleared; the print rehearsal displays `SE16`/`T001` and prints it.
 > Printing does raise a temporary SAP print job (deleted after printing) — that
 > is the only trace it leaves, and `PreflightCheck` asks before doing it.
+
+### Safety: nothing that used to stop the close was removed
+
+Every construct that abandons a run was matched between the original and V4 by its
+**guard condition**, not its line number:
+
+| | original | V4 | |
+|---|---|---|---|
+| `Exit Sub` / `Exit Function` / `End` | 20 | 56 | all originals still present; the extras are new guards |
+| `MsgBox` warnings | 0 | 12 | all new |
+| `UF_Error` dialogs (the macro's own) | 10 | 10 | unchanged |
+| Balance / difference checks (`ZGLRMEErr`, `Round(Bal…)`, `CCOpened`, `CheckZGLRME`, `CheckAA02`, `CheckZGE132`) | — | — | unchanged, one for one |
+
+Two `Exit Sub` sites read as "missing" on a naive text diff because single-line
+`If … Then Exit Sub` became a four-line block so `CM_Done` could clear the status
+bar. The conditions are byte-identical:
+
+```vba
+If SAPID = "" Then Exit Sub                                  ' original
+If SAPID = "" Then                                           ' V4
+    CM_Done
+    Exit Sub
+End If
+```
+
+The ten `If size1 = size2 And size1 <> 0 And size2 <> 0 Then` checks also read as
+removed. They were not: `CM_WaitForPrint` carries the same test
+(`If s1 >= 0 And s1 = s2 And s1 > 0 Then Exit Do`) plus an existence check the
+original never had.
+
+#### The one place V4 deliberately stops where the original did not
+
+An **ambiguous** amount. `1,234` is 1234 to an English reader and 1.234 to a German
+one, and nothing in the string says which — the original guessed from Windows, which
+is exactly how a figure ends up wrong by a factor of 1000 in a signed report pack.
+V4 stops and explains instead. This cannot fire on a 2-decimal currency (the last
+separator is followed by two digits, not three), which is every currency this close
+handles.
+
+And the mirror of that: a **blank** amount parsed out of a SAP text export used to
+raise `Type mismatch` and stop the close. It still stops — `CM_AmountReq` is the
+strict variant used at all nine text-parsed sites, precisely so a missing amount
+cannot be silently read as zero and let an out-of-balance close pass. Only the
+ZGLRME worksheet column uses the lenient `CM_Amount`, matching the original, where
+an empty cell means a row with no amount.
+
+`build/check_amount.py` is the harness: it runs 23 value shapes through a model of
+the original (under both en-US and de-DE Windows) and through V4, and flags any case
+where V4 continues but the original stopped, or returns a different number.
 
 ### Configuration — change locations in one place
 

@@ -171,7 +171,7 @@ AMOUNT_BLOCKS = [
      '            Else\n'
      '                AmL = Round(arr(LBound(arr) + 1), 2)\n'
      '            End If',
-     'AmL = Round(CM_Amount(arr(LBound(arr) + 1), 0, _\n'
+     'AmL = Round(CM_AmountReq(arr(LBound(arr) + 1), 0, _\n'
      '                                  "reading the local-currency total from the ZGE132 extract"), 2)'),
 
     ('            If Right(arr(UBound(arr)), 1) = "-" Then\n'
@@ -179,7 +179,7 @@ AMOUNT_BLOCKS = [
      '            Else\n'
      '                Am = Round(arr(UBound(arr)), 2)\n'
      '            End If',
-     'Am = Round(CM_Amount(arr(UBound(arr)), 0, _\n'
+     'Am = Round(CM_AmountReq(arr(UBound(arr)), 0, _\n'
      '                                 "reading a profit-centre amount from the ZGE132 extract"), 2)'),
 
     ('            If Right(arr(UBound(arr) - 3), 1) = "-" Then\n'
@@ -187,7 +187,7 @@ AMOUNT_BLOCKS = [
      '            Else\n'
      '                AmG = Round(arr(UBound(arr) - 3), 2)\n'
      '            End If',
-     'AmG = Round(CM_Amount(arr(UBound(arr) - 3), 0, _\n'
+     'AmG = Round(CM_AmountReq(arr(UBound(arr) - 3), 0, _\n'
      '                                  "reading the group-currency total from the ZGE132 extract"), 2)'),
 
     ('            If Right(arr(UBound(arr) - 2), 1) = "-" Then\n'
@@ -195,7 +195,7 @@ AMOUNT_BLOCKS = [
      '            Else\n'
      '                Am = Round(arr(UBound(arr) - 2), 2)\n'
      '            End If',
-     'Am = Round(CM_Amount(arr(UBound(arr) - 2), 0, _\n'
+     'Am = Round(CM_AmountReq(arr(UBound(arr) - 2), 0, _\n'
      '                                 "reading a profit-centre amount from ZGE132 (group currency)"), 2)'),
 
     ('            If Right(arr(UBound(arr) - 1), 1) = "-" Then\n'
@@ -203,7 +203,7 @@ AMOUNT_BLOCKS = [
      '            Else\n'
      '                Am = CDbl(arr(UBound(arr) - 1))\n'
      '            End If',
-     'Am = CM_Amount(arr(UBound(arr) - 1), 0, _\n'
+     'Am = CM_AmountReq(arr(UBound(arr) - 1), 0, _\n'
      '                           "reading the account 44400200 balance from the GTB1 report")'),
 
     ('            If Right(arr(UBound(arr) - 1), 1) = "-" Then\n'
@@ -211,19 +211,19 @@ AMOUNT_BLOCKS = [
      '            Else\n'
      '                AmT = CDbl(arr(UBound(arr) - 1))\n'
      '            End If',
-     'AmT = CM_Amount(arr(UBound(arr) - 1), 0, _\n'
+     'AmT = CM_AmountReq(arr(UBound(arr) - 1), 0, _\n'
      '                            "reading the total from the GTB1 report")'),
 ]
 
 AMOUNT_LINES = [
     ('Print_EIS4 = Round(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 2)',
-     'Print_EIS4 = Round(CM_Amount(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _\n'
+     'Print_EIS4 = Round(CM_AmountReq(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _\n'
      '                   "reading the total from the EIS4 report group"), 2)'),
     ('Print_GIS4 = Round(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 2)',
-     'Print_GIS4 = Round(CM_Amount(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _\n'
+     'Print_GIS4 = Round(CM_AmountReq(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _\n'
      '                   "reading the total from the GIS4 report group"), 2)'),
     ('        Am = Round(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 2)',
-     '        Am = Round(CM_Amount(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _\n'
+     '        Am = Round(CM_AmountReq(Replace(Replace(arr(UBound(arr, 1) - 1), "(", "-"), ")", ""), 0, _\n'
      '                   "reading an amount from the AA02 report group"), 2)'),
 ]
 

@@ -1141,45 +1141,104 @@ End Function
 
 
 
-'--- SAP amounts: trailing minus, and either decimal convention --------------
+'============================================================================
+' READING A SAP AMOUNT
+'----------------------------------------------------------------------------
 ' SAP writes negatives as "1.234,56-" and formats numbers using the SAP user's
 ' decimal notation, which need not match this PC's Windows regional settings.
-' VBA's implicit conversion uses Windows, so "123.456,78" on an English-format
-' PC raised "Type mismatch". This reads both conventions and is locale
-' independent: it normalises to "." and uses Val, which never reads the locale.
-' (A bare "1.234" with no decimals is genuinely ambiguous and is read as 1.234,
-'  the same as VBA would; SAP writes currency with decimals, so this is moot.)
-Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean) As Double
+' VBA's Round()/CDbl()/implicit conversion all read Windows, so a mismatch
+' raised "Run-time error 13: Type mismatch" - or, worse, quietly read
+' "1.234,56" as 1.23456.
+'
+' This reads the literal instead of the locale. The rules, in order:
+'
+'   already a number          use it unchanged (worksheet-sourced values)
+'   both "." and ","          the LAST one is the decimal separator
+'   one separator, repeated   it must be grouping     1.234.567 -> 1234567
+'   one separator, 3 digits   AMBIGUOUS - see below
+'   one separator, otherwise  it is the decimal point  1234,56  -> 1234.56
+'
+' AMBIGUITY IS NOT GUESSED. "1,234" is 1234 to an English reader and 1.234 to a
+' German one, and nothing in the string says which. Guessing would put a figure
+' wrong by a factor of 1000 into a signed report pack, so the close stops and
+' says so. This cannot fire on a 2-decimal currency, which is every currency
+' this close handles - the last separator is followed by two digits, not three.
+'============================================================================
+Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
+                            ByVal blankOk As Boolean, ByRef reason As String) As Double
     Dim s As String, neg As Boolean, i As Long, c As String
-    Dim dots As Long, pDot As Long, pCom As Long
+    Dim dots As Long, pDot As Long, pCom As Long, nSep As Long, after As Long
     ok = False
+    reason = "AMOUNT"
     CM_ToAmount = 0
 
+    'a value that is already numeric (a worksheet cell, say) needs no parsing
+    Select Case VarType(v)
+        Case vbDouble, vbSingle, vbCurrency, vbInteger, vbLong, vbByte, vbDecimal
+            CM_ToAmount = CDbl(v)
+            ok = True
+            Exit Function
+        Case vbBoolean, vbDate, vbObject
+            reason = "AMOUNT"
+            Exit Function
+    End Select
+
     s = Trim$(CStr(v))
+    s = Replace(s, " ", "")
+    s = Replace(s, Chr$(160), "")          'SAP groups with a hard space in places
+
     If s = "" Then
-        ok = True
+        If blankOk Then
+            ok = True                       'no amount on this row = nothing to add
+        Else
+            reason = "BLANK"
+        End If
         Exit Function
     End If
 
     If Right$(s, 1) = "-" Then
         neg = True
-        s = Trim$(Left$(s, Len(s) - 1))
+        s = Left$(s, Len(s) - 1)
     End If
     If Left$(s, 1) = "-" Then
         neg = True
-        s = Trim$(Mid$(s, 2))
+        s = Mid$(s, 2)
     End If
-
-    s = Replace(s, " ", "")
-    s = Replace(s, Chr$(160), "")
+    If s = "" Then Exit Function
 
     pDot = InStrRev(s, ".")
     pCom = InStrRev(s, ",")
-    If pDot > pCom Then
-        s = Replace(s, ",", "")
-    ElseIf pCom > pDot Then
-        s = Replace(s, ".", "")
-        s = Replace(s, ",", ".")
+
+    If pDot > 0 And pCom > 0 Then
+        'both kinds present: whichever comes last is the decimal separator
+        If pDot > pCom Then
+            s = Replace(s, ",", "")
+        Else
+            s = Replace(s, ".", "")
+            s = Replace(s, ",", ".")
+        End If
+
+    ElseIf pDot > 0 Then
+        nSep = CM_CountChar(s, ".")
+        after = Len(s) - pDot
+        If nSep > 1 Then
+            s = Replace(s, ".", "")                 'grouping - a number has one point
+        ElseIf after = 3 Then
+            reason = "AMBIG"                        'could be 1234 or 1.234 - do not guess
+            Exit Function
+        End If
+
+    ElseIf pCom > 0 Then
+        nSep = CM_CountChar(s, ",")
+        after = Len(s) - pCom
+        If nSep > 1 Then
+            s = Replace(s, ",", "")
+        ElseIf after = 3 Then
+            reason = "AMBIG"
+            Exit Function
+        Else
+            s = Replace(s, ",", ".")
+        End If
     End If
 
     If Len(s) = 0 Then Exit Function
@@ -1193,23 +1252,48 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean) As Double
         End If
     Next i
 
-    CM_ToAmount = Val(s)
+    CM_ToAmount = Val(s)                    'Val never reads the locale
     If neg Then CM_ToAmount = -CM_ToAmount
     ok = True
 End Function
 
 
-'--- convert an amount, or stop with an explained data error -----------------
+'--- how many times a character occurs --------------------------------------
+Private Function CM_CountChar(ByVal s As String, ByVal c As String) As Long
+    CM_CountChar = Len(s) - Len(Replace(s, c, ""))
+End Function
+
+
+'--- amount that MAY legitimately be blank (a worksheet cell with no value) --
+' Used for the ZGLRME extract, where the original code also treated an empty
+' cell as nothing to add. A blank there is a row with no amount, not a fault.
 Public Function CM_Amount(ByVal v As Variant, ByVal rowNo As Long, _
                           ByVal where As String) As Double
-    Dim ok As Boolean, d As Double
-    d = CM_ToAmount(v, ok)
+    CM_Amount = CM_AmountCore(v, rowNo, where, True)
+End Function
+
+
+'--- amount that MUST be there ----------------------------------------------
+' Used everywhere a value is parsed out of a SAP text export. The original code
+' raised "Type mismatch" on a blank there and stopped the close; so does this,
+' with an explanation instead of a bare error number. Do NOT relax this - a
+' missing amount silently read as zero would let an out-of-balance close pass.
+Public Function CM_AmountReq(ByVal v As Variant, ByVal rowNo As Long, _
+                             ByVal where As String) As Double
+    CM_AmountReq = CM_AmountCore(v, rowNo, where, False)
+End Function
+
+
+Private Function CM_AmountCore(ByVal v As Variant, ByVal rowNo As Long, _
+                               ByVal where As String, ByVal blankOk As Boolean) As Double
+    Dim ok As Boolean, d As Double, reason As String
+    d = CM_ToAmount(v, ok, blankOk, reason)
     If Not ok Then
         CM_Step = where
         Err.Raise vbObjectError + 513, "ClosingManager", _
-                  "AMOUNT|" & CStr(v) & "|" & rowNo
+                  reason & "|" & CStr(v) & "|" & rowNo
     End If
-    CM_Amount = d
+    CM_AmountCore = d
 End Function
 
 
@@ -1254,11 +1338,22 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
         GoTo Report
     End If
 
-    If errNum = vbObjectError + 513 And Left$(errDesc, 7) = "AMOUNT|" Then
+    If errNum = vbObjectError + 513 And InStr(errDesc, "|") > 0 Then
         parts = Split(errDesc, "|")
         kind = "DATA"
-        what = "SAP sent an amount the macro could not read as a number." & vbCrLf & _
-               "        The value was:  [" & parts(1) & "]"
+        Select Case parts(0)
+            Case "BLANK"
+                what = "An amount SAP should have sent was blank."
+            Case "AMBIG"
+                what = "SAP sent an amount that could mean two different things." & vbCrLf & _
+                       "        The value was:  [" & parts(1) & "]" & vbCrLf & _
+                       "        Read one way that is " & Replace(Replace(parts(1), ".", ""), ",", "") & _
+                       ", read the other it is about " & Left$(parts(1), InStr(parts(1) & ".", ".") - 1) & "." & vbCrLf & _
+                       "        The macro will not guess a figure for a signed report."
+            Case Else
+                what = "SAP sent an amount the macro could not read as a number." & vbCrLf & _
+                       "        The value was:  [" & parts(1) & "]"
+        End Select
         If Val(parts(2)) > 0 Then what = what & vbCrLf & "        On data row:    " & parts(2)
         why = "Almost always the number format. SAP writes amounts using the" & vbCrLf & _
               "        SAP user's decimal notation, and this PC reads them using its" & vbCrLf & _
