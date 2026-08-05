@@ -114,9 +114,20 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 8 | **Preflight Check** *(new)* — one-click `PreflightCheck` reports every dependency as pass/fail before a run, on its own `Preflight` sheet with a button. | `GlobalModule` | Discovering a missing dependency halfway through a close. |
 | 9 | **Endpoint constants** — the SharePoint URL, the merger UNC and the archive UNC are now named constants; the hard-coded call sites (incl. `Admin`) point at them. | `GlobalModule`, `Admin` | Hunting through code to re-point servers when a site/share moves. |
 | 10 | **SAP authorisation sweep** *(new)* — optional part of `PreflightCheck`: tests the 8 transactions, 6 SE16 tables, 4 GR55 report groups and 4 ALV display layouts, plus an optional read-only company-code data probe. | `GlobalModule` | Hitting an authorisation wall — or a missing layout — mid-close, after entries are posted. |
+| 11 | **Bounded print waits** — the ten “wait for the printed PDF” loops now use `CM_WaitForPrint`: `Dir`-based, capped at 240 s + 180 s, `DoEvents` every second. | `Printing` | **The freeze.** The old loop rebuilt a `Shell.Application` on every pass *with no pause*, so an empty temp folder became a tight spin — Excel “Not Responding”, and eventually `-2147417848 (80010108) Method 'NameSpace' of object 'IShellDispatch6' failed`. |
+| 12 | **Live progress** — `CM_Begin` / `CM_Note` / `CM_Done` report the current stage (`[14/27] printing ZGE1174 … running 06:12 — press Esc to stop`) on Excel's status bar; every wait ticks a counter. | `GlobalModule`, `Closing` | “Is it working or has it hung?” — previously indistinguishable. |
+| 13 | **Plain-language failure dialog** — `CM_Explain` classifies the failure as DATA / FILE / SAP / PRINTING / EXCEL / TECHNICAL and shows *what it was doing, what went wrong, why it usually happens, what to try*, plus a technical line for the CI Team. Armed once via `On Error GoTo CM_Fail` at the top of `RunClosing`. | `GlobalModule`, `Closing` | Bare `Run-time error 13` dialogs with no context. |
+| 14 | **Locale-proof amounts** — `CM_Amount` / `CM_ToAmount` read both `1.234,56` and `1,234.56` plus the trailing minus, using `Val` (locale-independent) rather than implicit conversion. | `GlobalModule`, `Closing` | `Run-time error 13: Type mismatch` on the ZGLRME amount column when SAP's decimal notation ≠ the PC's Windows regional format. |
+| 15 | **Print + merge rehearsal** *(new)* — optional part of `PreflightCheck`: prints two test pages (SE16/T001 display via SAP, or Excel as fallback), confirms PDFCreator auto-saves into `\pdf\temp`, then merges them with `GiosPSMC.exe`. Also checks the Windows printer is actually named `PDFCreator`, and offers to clear leftovers from `\pdf\temp`. | `GlobalModule` | Discovering *during* a close that PDFCreator isn't auto-saving, or that the merger is broken — the exact conditions behind fix 11. |
 
 Functional close logic and the SAP command sequences are **unchanged** — the diff
 is intentionally small (`report/v4-changes.diff`).
+
+> **Nothing is written or posted to SAP by any preflight check.** The
+> authorisation sweep navigates screens; the data probe runs `ZGLRME` with the
+> transmit flag cleared; the print rehearsal displays `SE16`/`T001` and prints it.
+> Printing does raise a temporary SAP print job (deleted after printing) — that
+> is the only trace it leaves, and `PreflightCheck` asks before doing it.
 
 ### Configuration — change locations in one place
 
@@ -206,7 +217,9 @@ Users can also run it without the sheet: **Alt + F8** → **PreflightCheck** →
 
 **Part 1 — environment (instant, read-only).** Does not start the close, create
 folders or write files. Reports pass/fail on: workbook location, working drive,
-SAP session, PDFCreator, the PDF merger, and the cost centre.
+SAP session, PDFCreator (both the program **and** a Windows printer whose name
+contains `PDFCreator` — SAP is told that exact name), the PDF merger, and the
+company code.
 
 **Part 2 — SAP authorisations (optional, asks first).** If a SAP session is
 detected, the check offers to test everything the close drives in SAP:
@@ -262,6 +275,83 @@ Two transactions are deliberately **never** executed, because they write:
 > A selection screen may answer a bare Enter with "fill in required fields";
 > because SAP's message is passed through verbatim you can see that is what
 > happened rather than mistaking it for a missing layout.
+
+**Part 3 — print + merge rehearsal (optional, asks first).** Every other check is
+a *look*; this one is a *rehearsal*, because the only way to know the printing
+chain works is to run it:
+
+```
+SAP  →  front-end printer LOCLX  →  Windows printer "PDFCreator"
+     →  auto-saved PDF in C:\pdf\temp  →  GiosPSMC.exe merge
+```
+
+It prints **two** test pages, waits for each PDF, then merges them — reporting
+each stage and the resulting file sizes. Test files go under `C:\pdf\` and are
+deleted afterwards.
+
+- **Source of the test pages:** `SE16` → table `T001` (company-code names),
+  limited to 3 rows and printed. A *display*, so no business data is created or
+  changed; the print does raise a temporary SAP print job. If SAP is unavailable —
+  or its print dialog doesn't appear — it falls back to printing a page from Excel
+  and says which route it used. Either route still proves PDFCreator and the merger.
+- **Leftovers are a finding.** The close treats whatever is sitting in
+  `C:\pdf\temp` as its freshly printed report, so leftovers can end up inside the
+  report pack. If any are found the check reports them and offers to clear them.
+
+This is the check that catches the condition behind the freeze: **PDFCreator
+installed but not auto-saving into `C:\pdf\temp`** (or waiting on a dialog). The
+macro's `SetPDFCreator` only *launches* PDFCreator — every registry write that
+would configure the auto-save folder is commented out in the original code, so
+that configuration is an unverified assumption on every PC. Now it is verified.
+
+### What the user sees while it runs
+
+`RunClosing` reports its stage on Excel's status bar and refreshes it every second
+during any wait:
+
+```
+CLOSING MANAGER   [14/27]   printing ZGE1174   -   waiting for the PDF of ZGE1174 (37s)      (running 06:12 - press Esc to stop)
+```
+
+### What the user sees when it stops
+
+Instead of a bare `Run-time error 13`, `CM_Explain` shows:
+
+```
+CLOSING MANAGER - COULD NOT CONTINUE
+--------------------------------------------
+
+WHAT IT WAS DOING
+        step 9 of 27 - checking ZGLRME and AA02 for differences
+
+WHAT WENT WRONG   (DATA)
+        SAP sent an amount the macro could not read as a number.
+        The value was:  1.234.567,89
+        On data row:    412
+
+WHY THIS USUALLY HAPPENS
+        Almost always the number format. SAP writes amounts using the
+        SAP user's decimal notation, and this PC reads them using its
+        Windows regional settings. ...
+
+WHAT TO TRY
+        1. SAP: System > User Profile > Own Data > Defaults > Decimal Notation ...
+        2. Windows: Settings > Time & language > Region > Regional format ...
+        3. If the value above is not a number at all (for example *****),
+           the SAP report column is too narrow - tell the CI Team.
+
+--------------------------------------------
+This failure itself posted nothing. Anything already posted to SAP
+earlier in this run stays posted - check before running again.
+
+For the CI Team:  error 13 - Type mismatch
+```
+
+Failures are classified as **DATA** (number formats, empty selections),
+**FILE** (working files, OneDrive, leftovers), **SAP** (screen not as expected,
+authorisations), **PRINTING** (no PDF appeared), **EXCEL** (sheet renamed or
+protected) or **TECHNICAL** (send it to the CI Team) — so a user can tell at a
+glance whether it is something they can fix.
 
 ---
 

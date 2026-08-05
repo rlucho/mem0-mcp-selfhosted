@@ -257,6 +257,12 @@ def new_stream(raw, off, text):
     src = text.replace("\n", "\r\n").encode("cp1252")
     return raw[:off] + compress_ovba(src)
 
+# ---- V4-CIO post-pass: bounded print waits, live progress, plain-language errors ----
+import post_v4
+ptext = post_v4.printing(ptext)
+ctext = post_v4.closing(ctext)
+print("post-pass: 10 print waits bounded, %d breadcrumbs, CM_Fail handler" % len(post_v4.STEPS))
+
 new_data = {
     idx["GlobalModule"]: new_stream(graw, goff, gtext),
     idx["Closing"]:      new_stream(craw, coff, ctext),

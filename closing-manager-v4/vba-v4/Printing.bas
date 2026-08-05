@@ -209,29 +209,11 @@ With sess
         .findById("wnd[0]/tbar[0]/btn[3]").press
         
         File = ""
-        Do Until File <> ""
-            Set objShell = CreateObject("Shell.Application")
-            Set objFolder = objShell.Namespace(FTemp & "\")
-            Set colItems = objFolder.Items
-            For Each objitem In colItems
-                Do
-                    If fso.FileExists(FTemp & "\" & objitem) Then
-                        File = fso.GetFile(FTemp & "\" & objitem)
-                        Exit Do
-                    Else
-                        Application.Wait (Now + TimeValue("0:00:01"))
-                    End If
-                Loop
-                Do
-                    size1 = fso.GetFile(File).Size
-                    Application.Wait (Now + TimeValue("0:00:01"))
-                    size2 = fso.GetFile(File).Size
-                    If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                        Exit Do
-                    End If
-                Loop
-            Next
-        Loop
+        'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+        'rebuilt a Shell.Application on every pass with no pause, so an empty
+        'temp folder became a tight spin: Excel showed "Not Responding" and the
+        'shell object eventually dropped out with error 80010108.
+        File = CM_WaitForPrint(FTemp, fso, "ZGLRME (errors only)")
         
         fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
         printN = printN + 1
@@ -312,29 +294,11 @@ With sess
     .findById("wnd[0]/tbar[0]/btn[3]").press
     
     File = ""
-    Do Until File <> ""
-        Set objShell = CreateObject("Shell.Application")
-        Set objFolder = objShell.Namespace(FTemp & "\")
-        Set colItems = objFolder.Items
-        For Each objitem In colItems
-            Do
-                If fso.FileExists(FTemp & "\" & objitem) Then
-                    File = fso.GetFile(FTemp & "\" & objitem)
-                    Exit Do
-                Else
-                    Application.Wait (Now + TimeValue("0:00:01"))
-                End If
-            Loop
-            Do
-                size1 = fso.GetFile(File).Size
-                Application.Wait (Now + TimeValue("0:00:01"))
-                size2 = fso.GetFile(File).Size
-                If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                    Exit Do
-                End If
-            Loop
-        Next
-    Loop
+    'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+    'rebuilt a Shell.Application on every pass with no pause, so an empty
+    'temp folder became a tight spin: Excel showed "Not Responding" and the
+    'shell object eventually dropped out with error 80010108.
+    File = CM_WaitForPrint(FTemp, fso, "ZGLRME (full report)")
     
     fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
     printN = printN + 1
@@ -398,29 +362,11 @@ With sess
 End With
 
 File = ""
-Do Until File <> ""
-    Set objShell = CreateObject("Shell.Application")
-    Set objFolder = objShell.Namespace(FTemp & "\")
-    Set colItems = objFolder.Items
-    For Each objitem In colItems
-        Do
-            If fso.FileExists(FTemp & "\" & objitem) Then
-                File = fso.GetFile(FTemp & "\" & objitem)
-                Exit Do
-            Else
-                Application.Wait (Now + TimeValue("0:00:01"))
-            End If
-        Loop
-        Do
-            size1 = fso.GetFile(File).Size
-            Application.Wait (Now + TimeValue("0:00:01"))
-            size2 = fso.GetFile(File).Size
-            If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                Exit Do
-            End If
-        Loop
-    Next
-Loop
+'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+'rebuilt a Shell.Application on every pass with no pause, so an empty
+'temp folder became a tight spin: Excel showed "Not Responding" and the
+'shell object eventually dropped out with error 80010108.
+File = CM_WaitForPrint(FTemp, fso, "report group EIS4")
 
 fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
 printN = printN + 1
@@ -503,29 +449,11 @@ With sess
 End With
 
 File = ""
-Do Until File <> ""
-    Set objShell = CreateObject("Shell.Application")
-    Set objFolder = objShell.Namespace(FTemp & "\")
-    Set colItems = objFolder.Items
-    For Each objitem In colItems
-        Do
-            If fso.FileExists(FTemp & "\" & objitem) Then
-                File = fso.GetFile(FTemp & "\" & objitem)
-                Exit Do
-            Else
-                Application.Wait (Now + TimeValue("0:00:01"))
-            End If
-        Loop
-        Do
-            size1 = fso.GetFile(File).Size
-            Application.Wait (Now + TimeValue("0:00:01"))
-            size2 = fso.GetFile(File).Size
-            If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                Exit Do
-            End If
-        Loop
-    Next
-Loop
+'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+'rebuilt a Shell.Application on every pass with no pause, so an empty
+'temp folder became a tight spin: Excel showed "Not Responding" and the
+'shell object eventually dropped out with error 80010108.
+File = CM_WaitForPrint(FTemp, fso, "report group GIS4")
 
 fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
 printN = printN + 1
@@ -598,29 +526,11 @@ With sess
     .findById("wnd[0]/tbar[0]/btn[3]").press
     
     File = ""
-    Do Until File <> ""
-        Set objShell = CreateObject("Shell.Application")
-        Set objFolder = objShell.Namespace(FTemp & "\")
-        Set colItems = objFolder.Items
-        For Each objitem In colItems
-            Do
-                If fso.FileExists(FTemp & "\" & objitem) Then
-                    File = fso.GetFile(FTemp & "\" & objitem)
-                    Exit Do
-                Else
-                    Application.Wait (Now + TimeValue("0:00:01"))
-                End If
-            Loop
-            Do
-                size1 = fso.GetFile(File).Size
-                Application.Wait (Now + TimeValue("0:00:01"))
-                size2 = fso.GetFile(File).Size
-                If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                    Exit Do
-                End If
-            Loop
-        Next
-    Loop
+    'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+    'rebuilt a Shell.Application on every pass with no pause, so an empty
+    'temp folder became a tight spin: Excel showed "Not Responding" and the
+    'shell object eventually dropped out with error 80010108.
+    File = CM_WaitForPrint(FTemp, fso, "ZGE132 (before posting)")
     
     fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
     printN = printN + 1
@@ -657,29 +567,11 @@ With sess
     .findById("wnd[0]/tbar[0]/btn[3]").press
     
     File = ""
-    Do Until File <> ""
-        Set objShell = CreateObject("Shell.Application")
-        Set objFolder = objShell.Namespace(FTemp & "\")
-        Set colItems = objFolder.Items
-        For Each objitem In colItems
-            Do
-                If fso.FileExists(FTemp & "\" & objitem) Then
-                    File = fso.GetFile(FTemp & "\" & objitem)
-                    Exit Do
-                Else
-                    Application.Wait (Now + TimeValue("0:00:01"))
-                End If
-            Loop
-            Do
-                size1 = fso.GetFile(File).Size
-                Application.Wait (Now + TimeValue("0:00:01"))
-                size2 = fso.GetFile(File).Size
-                If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                    Exit Do
-                End If
-            Loop
-        Next
-    Loop
+    'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+    'rebuilt a Shell.Application on every pass with no pause, so an empty
+    'temp folder became a tight spin: Excel showed "Not Responding" and the
+    'shell object eventually dropped out with error 80010108.
+    File = CM_WaitForPrint(FTemp, fso, "ZGE132 (after posting)")
     
     fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
     printN = printN + 1
@@ -1043,29 +935,11 @@ With sess
     .findById("wnd[1]/tbar[0]/btn[13]").press
     
     File = ""
-    Do Until File <> ""
-        Set objShell = CreateObject("Shell.Application")
-        Set objFolder = objShell.Namespace(FTemp & "\")
-        Set colItems = objFolder.Items
-        For Each objitem In colItems
-            Do
-                If fso.FileExists(FTemp & "\" & objitem) Then
-                    File = fso.GetFile(FTemp & "\" & objitem)
-                    Exit Do
-                Else
-                    Application.Wait (Now + TimeValue("0:00:01"))
-                End If
-            Loop
-            Do
-                size1 = fso.GetFile(File).Size
-                Application.Wait (Now + TimeValue("0:00:01"))
-                size2 = fso.GetFile(File).Size
-                If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                    Exit Do
-                End If
-            Loop
-        Next
-    Loop
+    'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+    'rebuilt a Shell.Application on every pass with no pause, so an empty
+    'temp folder became a tight spin: Excel showed "Not Responding" and the
+    'shell object eventually dropped out with error 80010108.
+    File = CM_WaitForPrint(FTemp, fso, "ZGR215 (document list)")
     
     fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
     printN = printN + 1
@@ -1102,29 +976,11 @@ With sess
         .findById("wnd[1]/tbar[0]/btn[13]").press
         
         File = ""
-        Do Until File <> ""
-            Set objShell = CreateObject("Shell.Application")
-            Set objFolder = objShell.Namespace(FTemp & "\")
-            Set colItems = objFolder.Items
-            For Each objitem In colItems
-                Do
-                    If fso.FileExists(FTemp & "\" & objitem) Then
-                        File = fso.GetFile(FTemp & "\" & objitem)
-                        Exit Do
-                    Else
-                        Application.Wait (Now + TimeValue("0:00:01"))
-                    End If
-                Loop
-                Do
-                    size1 = fso.GetFile(File).Size
-                    Application.Wait (Now + TimeValue("0:00:01"))
-                    size2 = fso.GetFile(File).Size
-                    If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                        Exit Do
-                    End If
-                Loop
-            Next
-        Loop
+        'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+        'rebuilt a Shell.Application on every pass with no pause, so an empty
+        'temp folder became a tight spin: Excel showed "Not Responding" and the
+        'shell object eventually dropped out with error 80010108.
+        File = CM_WaitForPrint(FTemp, fso, "ZGR215 (documents)")
         
         fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
         printN = printN + 1
@@ -1179,29 +1035,11 @@ With sess
 End With
 
 File = ""
-Do Until File <> ""
-    Set objShell = CreateObject("Shell.Application")
-    Set objFolder = objShell.Namespace(FTemp & "\")
-    Set colItems = objFolder.Items
-    For Each objitem In colItems
-        Do
-            If fso.FileExists(FTemp & "\" & objitem) Then
-                File = fso.GetFile(FTemp & "\" & objitem)
-                Exit Do
-            Else
-                Application.Wait (Now + TimeValue("0:00:01"))
-            End If
-        Loop
-        Do
-            size1 = fso.GetFile(File).Size
-            Application.Wait (Now + TimeValue("0:00:01"))
-            size2 = fso.GetFile(File).Size
-            If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                Exit Do
-            End If
-        Loop
-    Next
-Loop
+'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+'rebuilt a Shell.Application on every pass with no pause, so an empty
+'temp folder became a tight spin: Excel showed "Not Responding" and the
+'shell object eventually dropped out with error 80010108.
+File = CM_WaitForPrint(FTemp, fso, "report group GTB1")
 
 fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
 printN = printN + 1
@@ -1308,29 +1146,11 @@ With sess
 End With
 
 File = ""
-Do Until File <> ""
-    Set objShell = CreateObject("Shell.Application")
-    Set objFolder = objShell.Namespace(FTemp & "\")
-    Set colItems = objFolder.Items
-    For Each objitem In colItems
-        Do
-            If fso.FileExists(FTemp & "\" & objitem) Then
-                File = fso.GetFile(FTemp & "\" & objitem)
-                Exit Do
-            Else
-                Application.Wait (Now + TimeValue("0:00:01"))
-            End If
-        Loop
-        Do
-            size1 = fso.GetFile(File).Size
-            Application.Wait (Now + TimeValue("0:00:01"))
-            size2 = fso.GetFile(File).Size
-            If size1 = size2 And size1 <> 0 And size2 <> 0 Then
-                Exit Do
-            End If
-        Loop
-    Next
-Loop
+'V4-CIO FIX: bounded, responsive wait for the printed PDF. The old loop
+'rebuilt a Shell.Application on every pass with no pause, so an empty
+'temp folder became a tight spin: Excel showed "Not Responding" and the
+'shell object eventually dropped out with error 80010108.
+File = CM_WaitForPrint(FTemp, fso, "ZGE1174")
 
 fso.MoveFile File, FFinal & "\" & CC & "-" & Yearx & "-" & Right("0" & Monthx, 2) & "-" & printN & ".pdf"
 printN = printN + 1

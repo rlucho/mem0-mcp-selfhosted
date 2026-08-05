@@ -54,6 +54,15 @@ Public Const CM_SAP_LAYOUTS As String = _
     "ZGLRME|P_VARIE|/default;ZGR215|P_ALV|/arek2"
 '----------------------------------------------------------------------------
 
+' Breadcrumb: the plain-language description of what the macro is doing right
+' now. Set by CM_Note at each stage, shown live on Excel's status bar, and
+' read back by CM_Explain when a run stops.
+Public CM_Step As String
+Public CM_StepNo As Long          'which stage we are on
+Public CM_StepMax As Long         'how many stages the close has
+Public CM_Started As Double       'Timer value when the run began
+'----------------------------------------------------------------------------
+
 
 '--- TRUE when a path is an http(s) address, i.e. an Excel-in-the-cloud file -
 Public Function IsUrlPath(ByVal p As String) As Boolean
@@ -141,7 +150,8 @@ Public Sub PreflightCheck()
     Dim fso As Object, msg As String, okAll As Boolean
     Dim g As Object, eng As Object, sapOK As Boolean
     Dim sapSess As Object, sapBlocked As Boolean, runData As Boolean
-    Dim cc As String, dst As String
+    Dim cc As String, dst As String, winPrn As String
+    Dim pdfOK As Boolean, prtBlocked As Boolean
     Set fso = CreateObject("Scripting.FileSystemObject")
     okAll = True
 
@@ -188,11 +198,22 @@ Public Sub PreflightCheck()
     End If
 
     ' 4) PDFCreator ------------------------------------------------------------
-    If fso.FileExists("C:\Program Files\PDFCreator\PDFCreator.exe") Or _
-       fso.FileExists("C:\Program Files (x86)\PDFCreator\PDFCreator.exe") Then
+    pdfOK = fso.FileExists("C:\Program Files\PDFCreator\PDFCreator.exe") Or _
+            fso.FileExists("C:\Program Files (x86)\PDFCreator\PDFCreator.exe")
+    If pdfOK Then
         msg = msg & "[OK] PDFCreator is installed." & vbCrLf
     Else
         msg = msg & "[X] PDFCreator.exe not found (printer must be named 'PDFCreator')." & vbCrLf
+        okAll = False
+    End If
+
+    ' 4b) the Windows printer itself - SAP is told to print to the name below,
+    '     so a renamed printer fails the close even with PDFCreator installed.
+    winPrn = CM_PdfCreatorPrinter()
+    If winPrn <> "" Then
+        msg = msg & "[OK] Windows printer found: " & winPrn & "." & vbCrLf
+    Else
+        msg = msg & "[X] No Windows printer whose name contains 'PDFCreator'." & vbCrLf
         okAll = False
     End If
 
@@ -240,6 +261,25 @@ Public Sub PreflightCheck()
             If sapBlocked Then okAll = False
         Else
             msg = msg & "[~] SAP authorisations not tested (skipped)." & vbCrLf
+        End If
+    End If
+
+    ' 8) Print + merge rehearsal (optional - it really prints, so it asks) -----
+    If pdfOK And winPrn <> "" And Not IsUrlPath(ThisWorkbook.Path) Then
+        If MsgBox("Test printing and merging for real?" & vbCrLf & vbCrLf & _
+                  "This prints two small test pages to PDFCreator, then merges them" & vbCrLf & _
+                  "with GiosPSMC.exe - the exact chain that produces the report pack." & vbCrLf & _
+                  "It is the only way to prove PDFCreator is saving automatically" & vbCrLf & _
+                  "into " & CM_BASE_DRIVE & "pdf\temp and that the merger works." & vbCrLf & vbCrLf & _
+                  "It writes only test files under " & CM_BASE_DRIVE & "pdf\ and deletes them" & vbCrLf & _
+                  "afterwards. If SAP is available the pages come from SE16/T001 -" & vbCrLf & _
+                  "a display only, which creates a temporary print job and no data." & vbCrLf & _
+                  "Allow up to two minutes.", _
+                  vbYesNo + vbQuestion, "Closing Manager - Preflight") = vbYes Then
+            msg = msg & CM_PrintMergeTest(sapSess, prtBlocked)
+            If prtBlocked Then okAll = False
+        Else
+            msg = msg & "[~] Print/merge not tested (skipped)." & vbCrLf
         End If
     End If
 
@@ -573,4 +613,753 @@ Public Function CM_SapAuthReport(ByVal sess As Object, _
     End If
 
     CM_SapAuthReport = out
+End Function
+
+
+'============================================================================
+' PLAIN-LANGUAGE FAILURE REPORTING
+'----------------------------------------------------------------------------
+' When the close stops, the operator used to get a raw VBA dialog ("Run-time
+' error 13: Type mismatch") with no clue what the macro was doing or whether
+' anything had been posted. CM_Note leaves a breadcrumb at each stage and
+' CM_Explain turns the failure into something a finance user can act on.
+'============================================================================
+
+
+'--- live progress -----------------------------------------------------------
+' The close spends minutes at a time inside SAP, and the old code gave no sign
+' of life: users could not tell "still working" from "frozen". Every stage now
+' reports itself on Excel's status bar, and every wait ticks a counter, so a
+' run that is simply slow looks different from a run that is stuck.
+
+'--- start of a run: reset the counters --------------------------------------
+Public Sub CM_Begin(ByVal totalSteps As Long)
+    CM_StepNo = 0
+    CM_StepMax = totalSteps
+    CM_Started = Timer
+    CM_Step = "starting the close"
+    CM_Paint ""
+End Sub
+
+
+'--- leave a breadcrumb: what the macro is doing right now -------------------
+Public Sub CM_Note(ByVal what As String)
+    CM_Step = what
+    CM_StepNo = CM_StepNo + 1
+    If CM_Started = 0 Then CM_Started = Timer
+    CM_Paint ""
+End Sub
+
+
+'--- end of a run: hand the status bar back to Excel -------------------------
+Public Sub CM_Done()
+    CM_Step = ""
+    CM_StepNo = 0
+    CM_StepMax = 0
+    CM_Started = 0
+    On Error Resume Next
+    Application.StatusBar = False
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+
+'--- draw the status bar -----------------------------------------------------
+Public Sub CM_Paint(ByVal extra As String)
+    Dim s As String, el As Long
+    el = CM_Elapsed()
+    s = "CLOSING MANAGER"
+    If CM_StepMax > 0 Then s = s & "   [" & CM_StepNo & "/" & CM_StepMax & "]"
+    s = s & "   " & CM_Step
+    If extra <> "" Then s = s & "   -   " & extra
+    s = s & "      (running " & Format$(el \ 60, "00") & ":" & Format$(el Mod 60, "00") & _
+        " - press Esc to stop)"
+    On Error Resume Next
+    Application.StatusBar = s
+    Err.Clear
+    On Error GoTo 0
+    DoEvents
+End Sub
+
+
+'--- seconds since the run started (safe across midnight) --------------------
+Private Function CM_Elapsed() As Long
+    Dim t As Double
+    If CM_Started = 0 Then Exit Function
+    t = Timer - CM_Started
+    If t < 0 Then t = t + 86400
+    CM_Elapsed = CLng(t)
+End Function
+
+
+'--- one second of waiting that keeps Excel alive ----------------------------
+Private Sub CM_Tick(ByVal extra As String)
+    CM_Paint extra
+    Application.Wait (Now + TimeValue("0:00:01"))
+    DoEvents
+End Sub
+
+
+'--- file size, or -1 if the file is not there right now ---------------------
+Private Function CM_FileSize(ByVal fso As Object, ByVal p As String) As Double
+    On Error Resume Next
+    CM_FileSize = -1
+    CM_FileSize = fso.GetFile(p).Size
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'============================================================================
+' WAIT FOR A PRINTED PDF
+'----------------------------------------------------------------------------
+' Replaces ten copies of this loop:
+'
+'     Do Until File <> ""
+'         Set objShell = CreateObject("Shell.Application")
+'         Set objFolder = objShell.Namespace(FTemp & "\")
+'         ...
+'     Loop
+'
+' If PDFCreator never dropped a file, the folder was empty, the For Each body
+' never ran, File stayed "", and the loop went straight back to CreateObject
+' with NO delay: a tight spin that pegged a CPU core, left Excel showing "Not
+' Responding", and hammered the shell COM server until it dropped the
+' connection - which is where "Run-time error -2147417848 (80010108): Method
+' 'NameSpace' of object 'IShellDispatch6' failed" came from. The disconnect was
+' the symptom; the missing PDF was the cause, and the run could never recover.
+'
+' This version uses Dir (no COM server to lose), waits a bounded time, keeps
+' Excel responsive and reporting, and if the PDF really never arrives it stops
+' with an explained error instead of hanging for ever.
+'============================================================================
+Public Function CM_WaitForPrint(ByVal folder As String, ByVal fso As Object, _
+                                ByVal what As String) As String
+    Const APPEAR_MAX As Long = 240      'seconds to wait for the PDF to appear
+    Const SETTLE_MAX As Long = 180      'seconds to wait for it to stop growing
+    Dim base As String, nm As String, p As String
+    Dim waited As Long, s1 As Double, s2 As Double
+
+    base = folder
+    If Right$(base, 1) <> "\" Then base = base & "\"
+
+    'wait for PDFCreator to drop a file into the temp folder
+    Do
+        nm = Dir(base & "*.*")
+        If nm <> "" Then Exit Do
+        If waited >= APPEAR_MAX Then
+            Err.Raise vbObjectError + 514, "ClosingManager", _
+                      "PRINT|" & what & "|" & waited & "|" & base
+        End If
+        CM_Tick "waiting for the PDF of " & what & " (" & waited & "s)"
+        waited = waited + 1
+    Loop
+
+    p = base & nm
+
+    'wait for it to stop growing (PDFCreator may still be writing it)
+    waited = 0
+    Do
+        s1 = CM_FileSize(fso, p)
+        CM_Tick "writing the PDF of " & what & " (" & waited & "s)"
+        s2 = CM_FileSize(fso, p)
+        If s1 >= 0 And s1 = s2 And s1 > 0 Then Exit Do
+        If s1 < 0 Then
+            'renamed under us (temp name -> final name): pick up what is there
+            nm = Dir(base & "*.*")
+            If nm <> "" Then p = base & nm
+        End If
+        waited = waited + 1
+        If waited >= SETTLE_MAX Then Exit Do
+    Loop
+
+    If Not fso.FileExists(p) Then
+        Err.Raise vbObjectError + 514, "ClosingManager", _
+                  "PRINT|" & what & "|" & (APPEAR_MAX + SETTLE_MAX) & "|" & base
+    End If
+
+    CM_WaitForPrint = p
+End Function
+
+
+
+'--- SAP amounts: trailing minus, and either decimal convention --------------
+' SAP writes negatives as "1.234,56-" and formats numbers using the SAP user's
+' decimal notation, which need not match this PC's Windows regional settings.
+' VBA's implicit conversion uses Windows, so "123.456,78" on an English-format
+' PC raised "Type mismatch". This reads both conventions and is locale
+' independent: it normalises to "." and uses Val, which never reads the locale.
+' (A bare "1.234" with no decimals is genuinely ambiguous and is read as 1.234,
+'  the same as VBA would; SAP writes currency with decimals, so this is moot.)
+Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean) As Double
+    Dim s As String, neg As Boolean, i As Long, c As String
+    Dim dots As Long, pDot As Long, pCom As Long
+    ok = False
+    CM_ToAmount = 0
+
+    s = Trim$(CStr(v))
+    If s = "" Then
+        ok = True
+        Exit Function
+    End If
+
+    If Right$(s, 1) = "-" Then
+        neg = True
+        s = Trim$(Left$(s, Len(s) - 1))
+    End If
+    If Left$(s, 1) = "-" Then
+        neg = True
+        s = Trim$(Mid$(s, 2))
+    End If
+
+    s = Replace(s, " ", "")
+    s = Replace(s, Chr$(160), "")
+
+    pDot = InStrRev(s, ".")
+    pCom = InStrRev(s, ",")
+    If pDot > pCom Then
+        s = Replace(s, ",", "")
+    ElseIf pCom > pDot Then
+        s = Replace(s, ".", "")
+        s = Replace(s, ",", ".")
+    End If
+
+    If Len(s) = 0 Then Exit Function
+    For i = 1 To Len(s)
+        c = Mid$(s, i, 1)
+        If c = "." Then
+            dots = dots + 1
+            If dots > 1 Then Exit Function
+        ElseIf c < "0" Or c > "9" Then
+            Exit Function
+        End If
+    Next i
+
+    CM_ToAmount = Val(s)
+    If neg Then CM_ToAmount = -CM_ToAmount
+    ok = True
+End Function
+
+
+'--- convert an amount, or stop with an explained data error -----------------
+Public Function CM_Amount(ByVal v As Variant, ByVal rowNo As Long, _
+                          ByVal where As String) As Double
+    Dim ok As Boolean, d As Double
+    d = CM_ToAmount(v, ok)
+    If Not ok Then
+        CM_Step = where
+        Err.Raise vbObjectError + 513, "ClosingManager", _
+                  "AMOUNT|" & CStr(v) & "|" & rowNo
+    End If
+    CM_Amount = d
+End Function
+
+
+'--- turn a failure into plain language --------------------------------------
+Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
+    Dim kind As String, what As String, why As String, todo As String
+    Dim parts As Variant, m As String
+
+    'our own explained data errors carry their detail in the description
+    'the printed PDF never arrived (was: Excel hangs for ever)
+    If errNum = vbObjectError + 514 And Left$(errDesc, 6) = "PRINT|" Then
+        parts = Split(errDesc, "|")
+        kind = "PRINTING"
+        what = "SAP was asked to print a report, but no PDF ever appeared." & vbCrLf & _
+               "        The report was:  " & parts(1) & vbCrLf & _
+               "        Waited:          " & parts(2) & " seconds" & vbCrLf & _
+               "        Watching folder: " & parts(3)
+        why = "The print left SAP but PDFCreator did not finish the file. Usually" & vbCrLf & _
+              "        one of: PDFCreator is showing a dialog waiting for an answer, it" & vbCrLf & _
+              "        is not set to save automatically to the folder above, it is not" & vbCrLf & _
+              "        running, or SAP put up a pop-up so nothing was actually printed."
+        todo = "1. Look for a PDFCreator window behind Excel and close/answer it." & vbCrLf & _
+               "        2. Check SAP for a pop-up left open." & vbCrLf & _
+               "        3. Run Preflight Check - it confirms PDFCreator is installed." & vbCrLf & _
+               "        4. Empty the folder above of any leftover files, then run again." & vbCrLf & _
+               "        Earlier reports that already printed are kept - the run can be" & vbCrLf & _
+               "        repeated from the START sheet."
+        GoTo Report
+    End If
+
+    'the shell COM object dropped out - only ever seen as a knock-on of the above
+    If errNum = -2147417848 Or errNum = -2147417851 Or errNum = 462 Then
+        kind = "TECHNICAL"
+        what = "The link between Excel and Windows was lost part-way through the run."
+        why = "In earlier versions this followed a print that never completed: the" & vbCrLf & _
+              "        macro spun without pausing until Windows dropped the connection." & vbCrLf & _
+              "        That loop is fixed in this version, so if you are seeing this" & vbCrLf & _
+              "        message the CI Team wants to know."
+        todo = "Close Excel completely (Task Manager if it will not close), reopen" & vbCrLf & _
+               "        the workbook and run again. If it happens twice, send this message" & vbCrLf & _
+               "        to the Continuous Improvement Team."
+        GoTo Report
+    End If
+
+    If errNum = vbObjectError + 513 And Left$(errDesc, 7) = "AMOUNT|" Then
+        parts = Split(errDesc, "|")
+        kind = "DATA"
+        what = "SAP sent an amount the macro could not read as a number." & vbCrLf & _
+               "        The value was:  " & parts(1) & vbCrLf & _
+               "        On data row:    " & parts(2)
+        why = "Almost always the number format. SAP writes amounts using the" & vbCrLf & _
+              "        SAP user's decimal notation, and this PC reads them using its" & vbCrLf & _
+              "        Windows regional settings. If one uses 1.234,56 and the other" & vbCrLf & _
+              "        expects 1,234.56, the amount cannot be read."
+        todo = "1. SAP: System > User Profile > Own Data > Defaults >" & vbCrLf & _
+               "           Decimal Notation - compare with a colleague whose run works." & vbCrLf & _
+               "        2. Windows: Settings > Time & language > Region >" & vbCrLf & _
+               "           Regional format - compare the same way." & vbCrLf & _
+               "        3. If the value above is not a number at all (for example *****)," & vbCrLf & _
+               "           the SAP report column is too narrow - tell the CI Team."
+    Else
+        Select Case errNum
+            Case 13, 6, 11
+                kind = "DATA"
+                what = "A value coming back from SAP was not the kind of value the" & vbCrLf & _
+                       "        macro expected (usually a number)."
+                why = "Normally a number-format difference between SAP and Windows," & vbCrLf & _
+                      "        or a report column showing ***** instead of a figure."
+                todo = "Compare SAP decimal notation and Windows regional format with" & vbCrLf & _
+                       "        a colleague whose run works, then send this message to the CI Team."
+            Case 9
+                kind = "DATA"
+                what = "The macro expected a list of data and found it empty or shorter" & vbCrLf & _
+                       "        than expected."
+                why = "Usually SAP returned no rows for this company code and period -" & vbCrLf & _
+                      "        for example the period is not open, or the data is not posted yet."
+                todo = "Check the company code and period on the START sheet, and that" & vbCrLf & _
+                       "        the period really is open in SAP. Then run again."
+            Case 70, 75, 76, 53, 3004, 3002, 3001
+                kind = "FILE"
+                what = "The macro could not write or read one of its small working files."
+                why = "These are written into the folder this workbook sits in. The folder" & vbCrLf & _
+                      "        may be read-only, synced by OneDrive, or a leftover file from a" & vbCrLf & _
+                      "        previous run may still be locked."
+                todo = "1. Copy this workbook to a plain local folder such as C:\Closing\" & vbCrLf & _
+                       "        2. Delete any leftover .csv / .txt files sitting beside it." & vbCrLf & _
+                       "        3. Close and reopen Excel, then run again."
+            Case 424, 438, 91, 462, 619
+                kind = "SAP"
+                what = "SAP was not showing the screen the macro expected."
+                why = "Usually one of: you are not authorised for the transaction, an" & vbCrLf & _
+                      "        unexpected SAP pop-up appeared, the SAP session was closed, or" & vbCrLf & _
+                      "        the screen changed after an SAP update."
+                todo = "1. Run Preflight Check (Preflight sheet) - it tests every" & vbCrLf & _
+                       "           transaction the close needs." & vbCrLf & _
+                       "        2. Make sure only one SAP window is open and you are logged in." & vbCrLf & _
+                       "        3. If Preflight is all green, send this message to the CI Team."
+            Case 1004
+                kind = "EXCEL"
+                what = "The macro could not read or write one of the sheets in this workbook."
+                why = "A sheet may have been renamed, deleted, or is protected."
+                todo = "Use a fresh copy of the workbook and run again."
+            Case Else
+                kind = "TECHNICAL"
+                what = "The macro stopped with an unexpected error."
+                why = "This one is not a known data problem - it needs a look by the CI Team."
+                todo = "Send this whole message to the Continuous Improvement Team."
+        End Select
+    End If
+
+Report:
+    If CM_Step = "" Then CM_Step = "(not recorded)"
+
+    m = "CLOSING MANAGER - COULD NOT CONTINUE" & vbCrLf & _
+        "--------------------------------------------" & vbCrLf & vbCrLf & _
+        "WHAT IT WAS DOING" & vbCrLf & _
+        "        " & CM_StepLabel() & vbCrLf & vbCrLf & _
+        "WHAT WENT WRONG   (" & kind & ")" & vbCrLf & _
+        "        " & what & vbCrLf & vbCrLf & _
+        "WHY THIS USUALLY HAPPENS" & vbCrLf & _
+        "        " & why & vbCrLf & vbCrLf & _
+        "WHAT TO TRY" & vbCrLf & _
+        "        " & todo & vbCrLf & vbCrLf & _
+        "--------------------------------------------" & vbCrLf & _
+        "This failure itself posted nothing. Anything already posted to SAP" & vbCrLf & _
+        "earlier in this run stays posted - check before running again." & vbCrLf & vbCrLf & _
+        "For the CI Team:  error " & errNum & " - " & errDesc
+
+    On Error Resume Next
+    Application.StatusBar = False
+    Err.Clear
+    On Error GoTo 0
+
+    MsgBox m, vbExclamation, "Closing Manager - stopped"
+End Sub
+
+
+'--- "step 12 of 27 - printing ZGLRME" ---------------------------------------
+Public Function CM_StepLabel() As String
+    If CM_Step = "" Then
+        CM_StepLabel = "(not recorded)"
+    ElseIf CM_StepMax > 0 Then
+        CM_StepLabel = "step " & CM_StepNo & " of " & CM_StepMax & " - " & CM_Step
+    Else
+        CM_StepLabel = CM_Step
+    End If
+End Function
+
+
+'============================================================================
+' PRINT + MERGE REHEARSAL
+'----------------------------------------------------------------------------
+' The close breaks most often at the printing step, and the old code could not
+' tell the difference between "PDFCreator is slow" and "PDFCreator is never
+' going to produce anything" - it simply waited for ever. Every other preflight
+' check is a look; this one is a rehearsal, because the only way to know the
+' chain works is to run it:
+'
+'     SAP  ->  front-end printer LOCLX  ->  Windows printer "PDFCreator"
+'          ->  auto-saved PDF in C:\pdf\temp  ->  GiosPSMC.exe merge
+'
+' It writes only into C:\pdf\ and removes what it wrote. In SAP it displays
+' SE16/T001 (company-code names) and prints that list: a display, so no
+' business data is created or changed. Printing does raise a temporary SAP
+' print job, which is why PreflightCheck asks first. If SAP is not available,
+' or its print dialog does not appear, it falls back to printing a page from
+' Excel and says so - that still proves PDFCreator and the merger.
+'============================================================================
+Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean) As String
+    Dim fso As Object, out As String, route As String, why As String
+    Dim tmp As String, work As String, exePath As String, merged As String
+    Dim p As String, n As Long, i As Long
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Call EnsureFolders
+
+    tmp     = CM_BASE_DRIVE & "pdf\temp\"
+    work    = CM_BASE_DRIVE & "pdf\_preflight\"
+    exePath = CM_BASE_DRIVE & "pdf\merger\GiosPSMC.exe"
+    merged  = work & "merged.pdf"
+
+    'the close picks up whatever is sitting in \temp, so leftovers are a fault
+    'in their own right - and they would make this test meaningless
+    n = CM_CountFiles(fso, tmp)
+    If n > 0 Then
+        If MsgBox(n & " leftover file(s) are sitting in" & vbCrLf & tmp & vbCrLf & vbCrLf & _
+                  "The close treats whatever is in that folder as its freshly printed" & vbCrLf & _
+                  "report, so leftovers can end up inside the report pack." & vbCrLf & vbCrLf & _
+                  "Delete them now?", vbYesNo + vbExclamation, _
+                  "Closing Manager - Preflight") = vbYes Then
+            On Error Resume Next
+            fso.DeleteFile tmp & "*.*", True
+            Err.Clear
+            On Error GoTo 0
+            out = out & "[OK] Cleared " & n & " leftover file(s) from \pdf\temp." & vbCrLf
+        Else
+            blocked = True
+            CM_PrintMergeTest = out & "[X] " & n & " leftover file(s) in " & tmp & _
+                                " - clear them before closing." & vbCrLf
+            CM_Done
+            Exit Function
+        End If
+    End If
+
+    On Error Resume Next
+    fso.DeleteFolder work, True
+    Err.Clear
+    On Error GoTo 0
+    fso.CreateFolder work
+
+    Call SetPDFCreator          'same launch the close does
+
+    'two test pages, printed one at a time so each can be identified
+    For i = 1 To 2
+        CM_Step = "preflight: printing test page " & i & " of 2"
+        CM_Paint ""
+
+        why = ""
+        route = "SAP"
+        If sess Is Nothing Then
+            route = "Excel"
+        Else
+            why = CM_SapTestPrint(sess)
+            If why <> "" Then route = "Excel"
+        End If
+        If route = "Excel" Then why = CM_ExcelTestPrint()
+
+        If why <> "" Then
+            blocked = True
+            out = out & "[X] Could not send test page " & i & " to PDFCreator - " & why & "." & vbCrLf
+            GoTo CleanUp
+        End If
+
+        p = CM_WaitForFile(fso, tmp, 90, "test page " & i)
+        If p = "" Then
+            blocked = True
+            out = out & "[X] Test page " & i & " was printed from " & route & _
+                        " but no PDF appeared in" & vbCrLf & _
+                        "       " & tmp & " within 90 seconds." & vbCrLf & _
+                        "       PDFCreator is not saving automatically to that folder," & vbCrLf & _
+                        "       or it is waiting on a dialog. This is what makes the" & vbCrLf & _
+                        "       close appear to freeze." & vbCrLf
+            GoTo CleanUp
+        End If
+
+        On Error Resume Next
+        fso.MoveFile p, work & "t" & i & ".pdf"
+        If Err.Number <> 0 Then
+            Err.Clear: On Error GoTo 0
+            blocked = True
+            out = out & "[X] The test PDF was created but could not be moved out of \pdf\temp." & vbCrLf
+            GoTo CleanUp
+        End If
+        On Error GoTo 0
+
+        out = out & "[OK] Test page " & i & ": printed from " & route & _
+                    " and saved as PDF (" & CM_KB(fso, work & "t" & i & ".pdf") & " KB)." & vbCrLf
+    Next i
+
+    'now the merge, using the same command line the close uses
+    If Not fso.FileExists(exePath) Then
+        blocked = True
+        out = out & "[X] PDF merger not present at " & exePath & " - merge not tested." & vbCrLf
+        GoTo CleanUp
+    End If
+
+    CM_Step = "preflight: merging the two test pages"
+    CM_Paint ""
+    On Error Resume Next
+    CreateObject("WScript.Shell").Run "%COMSPEC% /c " & exePath & " " & _
+        Chr$(34) & work & "t1.pdf" & Chr$(34) & " " & _
+        Chr$(34) & work & "t2.pdf" & Chr$(34) & " output " & merged, 0, False
+    If Err.Number <> 0 Then
+        Err.Clear: On Error GoTo 0
+        blocked = True
+        out = out & "[X] The PDF merger would not start." & vbCrLf
+        GoTo CleanUp
+    End If
+    On Error GoTo 0
+
+    If Not CM_WaitForPath(fso, merged, 60, "the merged test file") Then
+        blocked = True
+        out = out & "[X] The merger ran but produced no merged file within 60 seconds." & vbCrLf & _
+                    "       " & exePath & vbCrLf
+    ElseIf CM_KB(fso, merged) <= 0 Then
+        blocked = True
+        out = out & "[X] The merger produced an empty file." & vbCrLf
+    Else
+        out = out & "[OK] Merge works (" & CM_KB(fso, merged) & " KB from 2 pages)." & vbCrLf
+    End If
+
+CleanUp:
+    On Error Resume Next
+    fso.DeleteFolder work, True
+    fso.DeleteFile tmp & "*.*", True
+    Err.Clear
+    On Error GoTo 0
+    CM_Done
+    CM_PrintMergeTest = out
+End Function
+
+
+'--- print SE16/T001 - a display, so nothing is created or changed -----------
+Private Function CM_SapTestPrint(ByVal sess As Object) As String
+    On Error Resume Next
+    Err.Clear
+    CM_ClearPopups sess
+
+    sess.findById("wnd[0]/tbar[0]/okcd").Text = "/nse16"
+    sess.findById("wnd[0]").sendVKey 0
+    sess.findById("wnd[0]/usr/ctxtDATABROWSE-TABLENAME").Text = "T001"
+    sess.findById("wnd[0]").sendVKey 0
+    If Err.Number <> 0 Then
+        Err.Clear: On Error GoTo 0
+        CM_SapTestPrint = "SE16 did not open"
+        Exit Function
+    End If
+
+    'keep the printed list to a single short page
+    sess.findById("wnd[0]/usr/txtMAX_SEL").Text = "3"
+    Err.Clear
+
+    sess.findById("wnd[0]/tbar[1]/btn[8]").press          'F8 - display
+    If Err.Number <> 0 Then
+        Err.Clear: On Error GoTo 0
+        CM_SapTestPrint = "SE16 would not display table T001"
+        Exit Function
+    End If
+
+    sess.findById("wnd[0]").sendVKey 86                   'Ctrl+P - print
+    sess.findById("wnd[1]/usr/ctxtPRI_PARAMS-PDEST").Text = "LOCLX"
+    sess.findById("wnd[1]").sendVKey 0
+    If Err.Number <> 0 Then
+        Err.Clear
+        CM_SapBackOut sess
+        On Error GoTo 0
+        CM_SapTestPrint = "the SAP print dialog did not appear"
+        Exit Function
+    End If
+
+    sess.findById("wnd[1]/usr/cmbPRIPAR_EXT-OSPRINTER").Key = "PDFCreator"
+    If Err.Number <> 0 Then
+        Err.Clear
+        'the printer list can sit one window deeper, exactly as in Print_ZGLRME
+        sess.findById("wnd[2]/tbar[0]/btn[0]").press
+        sess.findById("wnd[1]/usr/cmbPRIPAR_EXT-OSPRINTER").Key = "PDFCreator"
+        If Err.Number <> 0 Then
+            Err.Clear
+            CM_SapBackOut sess
+            On Error GoTo 0
+            CM_SapTestPrint = "SAP does not offer a front-end printer called 'PDFCreator'"
+            Exit Function
+        End If
+    End If
+
+    sess.findById("wnd[1]/tbar[0]/btn[13]").press         'print
+    If Err.Number <> 0 Then
+        Err.Clear
+        CM_SapBackOut sess
+        On Error GoTo 0
+        CM_SapTestPrint = "SAP would not accept the print"
+        Exit Function
+    End If
+
+    CM_SapBackOut sess
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'--- leave SAP on a clean screen ---------------------------------------------
+Private Sub CM_SapBackOut(ByVal sess As Object)
+    On Error Resume Next
+    sess.findById("wnd[0]/tbar[0]/okcd").Text = "/n"
+    sess.findById("wnd[0]").sendVKey 0
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+
+'--- fallback: print one page from Excel to the same printer -----------------
+Private Function CM_ExcelTestPrint() As String
+    Dim prn As String, ws As Object
+    prn = CM_PdfCreatorPrinter()
+    If prn = "" Then
+        CM_ExcelTestPrint = "no Windows printer called 'PDFCreator'"
+        Exit Function
+    End If
+
+    On Error Resume Next
+    Err.Clear
+    Set ws = ThisWorkbook.Sheets("Preflight")
+    If ws Is Nothing Then Set ws = ThisWorkbook.Sheets(1)
+    Err.Clear
+    ws.PrintOut Copies:=1, ActivePrinter:=prn, Collate:=True
+    If Err.Number <> 0 Then CM_ExcelTestPrint = "Excel could not print to " & prn
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'--- "PDFCreator on Ne00:" - the name Excel needs, "" if there is none -------
+Public Function CM_PdfCreatorPrinter() As String
+    Dim wmi As Object, col As Object, p As Object
+    On Error Resume Next
+    Set wmi = GetObject("winmgmts:\\.\root\cimv2")
+    If wmi Is Nothing Then
+        Err.Clear: On Error GoTo 0
+        Exit Function
+    End If
+    Set col = wmi.ExecQuery("SELECT Name, PortName FROM Win32_Printer")
+    For Each p In col
+        If InStr(1, CStr(p.Name), "PDFCreator", vbTextCompare) > 0 Then
+            CM_PdfCreatorPrinter = CStr(p.Name) & " on " & CStr(p.PortName)
+            Exit For
+        End If
+    Next
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'--- how many files are sitting in a folder ----------------------------------
+Private Function CM_CountFiles(ByVal fso As Object, ByVal folder As String) As Long
+    Dim f As Object
+    On Error Resume Next
+    If Not fso.FolderExists(folder) Then Exit Function
+    For Each f In fso.GetFolder(folder).Files
+        CM_CountFiles = CM_CountFiles + 1
+    Next
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'--- file size in whole KB, -1 if it is not there ----------------------------
+Private Function CM_KB(ByVal fso As Object, ByVal p As String) As Long
+    On Error Resume Next
+    CM_KB = -1
+    CM_KB = CLng(fso.GetFile(p).Size \ 1024)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'--- bounded wait for one named file to appear and stop growing --------------
+Private Function CM_WaitForPath(ByVal fso As Object, ByVal p As String, _
+                                ByVal maxSecs As Long, ByVal what As String) As Boolean
+    Dim waited As Long, s1 As Double, s2 As Double
+    Do
+        If fso.FileExists(p) Then Exit Do
+        If waited >= maxSecs Then Exit Function
+        CM_Tick "waiting for " & what & " (" & waited & "/" & maxSecs & "s)"
+        waited = waited + 1
+    Loop
+    Do
+        s1 = -1: s2 = -1
+        On Error Resume Next
+        s1 = fso.GetFile(p).Size
+        Err.Clear
+        On Error GoTo 0
+        CM_Tick "writing " & what & " (" & waited & "s)"
+        On Error Resume Next
+        s2 = fso.GetFile(p).Size
+        Err.Clear
+        On Error GoTo 0
+        If s1 >= 0 And s1 = s2 And s1 > 0 Then Exit Do
+        waited = waited + 1
+        If waited >= maxSecs Then Exit Do
+    Loop
+    CM_WaitForPath = (s1 > 0)
+End Function
+
+
+'--- bounded wait used by the rehearsal; "" if nothing arrived ---------------
+Private Function CM_WaitForFile(ByVal fso As Object, ByVal folder As String, _
+                                ByVal maxSecs As Long, ByVal what As String) As String
+    Dim base As String, nm As String, waited As Long
+    Dim s1 As Double, s2 As Double
+
+    base = folder
+    If Right$(base, 1) <> "\" Then base = base & "\"
+
+    Do
+        nm = Dir(base & "*.*")
+        If nm <> "" Then Exit Do
+        If waited >= maxSecs Then Exit Function
+        CM_Tick "waiting for " & what & " (" & waited & "/" & maxSecs & "s)"
+        waited = waited + 1
+    Loop
+
+    'let it finish being written
+    Do
+        s1 = -1: s2 = -1
+        On Error Resume Next
+        s1 = fso.GetFile(base & nm).Size
+        On Error GoTo 0
+        CM_Tick "writing " & what & " (" & waited & "s)"
+        On Error Resume Next
+        s2 = fso.GetFile(base & nm).Size
+        Err.Clear
+        On Error GoTo 0
+        If s1 >= 0 And s1 = s2 And s1 > 0 Then Exit Do
+        nm = Dir(base & "*.*")
+        If nm = "" Then Exit Function
+        waited = waited + 1
+        If waited >= maxSecs Then Exit Do
+    Loop
+
+    CM_WaitForFile = base & nm
 End Function

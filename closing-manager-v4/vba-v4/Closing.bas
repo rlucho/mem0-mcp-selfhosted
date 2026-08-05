@@ -12,13 +12,21 @@ Public BL As Boolean, BG As Boolean
 Public FirstColumn As String, SAPID As String
 Sub RunClosing()
 
+'V4-CIO: show progress on the status bar so a slow run cannot be mistaken
+'for a frozen one, and explain any failure in plain language.
+On Error GoTo CM_Fail
+CM_Begin 27
+
 Dim sess As Object
 
 Call CreateVariants
 Call CreatePaths
 
 SAPID = InputBox("Provide SAP user")
-If SAPID = "" Then Exit Sub
+If SAPID = "" Then
+    CM_Done
+    Exit Sub
+End If
 
 SAPID = UCase(SAPID)
 
@@ -90,6 +98,7 @@ End If
 '----------------------------------------------------------------
 'SAP
 '----------------------------------------------------------------
+CM_Note "connecting to your SAP session"
 Set sess = SAPsess
 
 If Sheets("config").Range("B1") = "Yes" Then
@@ -101,12 +110,14 @@ If Sheets("config").Range("B1") = "Yes" Then
         .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
         .Show
     End With
+    CM_Done
     Exit Sub
 End If
 
 '----------------------------------------------------------------
 'update tracker
 '----------------------------------------------------------------
+CM_Note "reading the company code and period"
 CC = Sheets("config").Range("B2")
 'List = "ClosingTracker"
 'Date1 = Format(Now(), "yyyy-MM-ddTHH:mm:ssZ")
@@ -165,6 +176,7 @@ CC = Sheets("config").Range("B2")
 '----------------------------------------------------------------
 'clearing
 '----------------------------------------------------------------
+CM_Note "clearing the previous run's data"
 LastRow = FindLastRow(1, 1, 0, 0, "ZGLRME")
 If LastRow > 1 Then Sheets("ZGLRME").Range("A2", Sheets("ZGLRME").Cells(LastRow, 11)).ClearContents
 If RunAgainXY = False Then
@@ -193,6 +205,7 @@ Sheets("Errors").Visible = xlVeryHidden
 '----------------------------------------------------------------
 'create folders
 '----------------------------------------------------------------
+CM_Note "creating the working folders"
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 Call EnsureFolders   'V4-CIO FIX: single-drive, parent-aware folder creation (was hardcoded C:\ here while CreatePaths used D:\ if present -> broke print/merge on D:-drive PCs).
@@ -274,6 +287,7 @@ Call EnsureFolders   'V4-CIO FIX: single-drive, parent-aware folder creation (wa
 '----------------------------------------------------------------
 'assign variables
 '----------------------------------------------------------------
+CM_Note "reading the settings from the config sheet"
 LastRow = FindLastRow(1, 18, 0, 0, "config")
 ArrVar = Sheets("config").Range("R2", Sheets("config").Cells(LastRow, 21))
 LastRow = FindLastRow(1, 12, 0, 0, "config")
@@ -286,6 +300,7 @@ ArrInd = Sheets("config").Range("W2", Sheets("config").Cells(LastRow, 24))
 '----------------------------------------------------------------
 'select closing variant
 '----------------------------------------------------------------
+CM_Note "selecting the closing variant for this company code"
 For i = 1 To UBound(ArrVar, 1)
     If CC = ArrVar(i, 1) Then
         Var = ArrVar(i, 2)
@@ -300,6 +315,7 @@ Sheets("config").Range("AA1") = CC
 '----------------------------------------------------------------
 'check if CC is opened
 '----------------------------------------------------------------
+CM_Note "checking the company code and period are open in SAP"
 If CCOpened(sess, ArrPC) = False Then
 
     'update tracker
@@ -327,12 +343,14 @@ If CCOpened(sess, ArrPC) = False Then
         .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
         .Show
     End With
+    CM_Done
     Exit Sub
 End If
 
 '----------------------------------------------------------------
 'select reports to be printed
 '----------------------------------------------------------------
+CM_Note "asking which reports to print"
 If RunAgainXY = False And RunAgainXYAG = False Then
     Sheets("config").Range("AA3") = "No"
     Sheets("config").Range("AA4") = "No"
@@ -362,6 +380,7 @@ End If
 '----------------------------------------------------------------
 'check ZGLRME and AA02
 '----------------------------------------------------------------
+CM_Note "checking ZGLRME and AA02 for differences"
 If RunAgainXY = False And RunAgainXYAG = False Then
     ZGLRMEErr = False
     If CheckZGLRME(sess, ArrInd, ArrPC, ArrCPC) = False Or CheckAA02(sess) = False Then
@@ -378,6 +397,7 @@ If RunAgainXY = False And RunAgainXYAG = False Then
                 .Show
             End With
             If Sheets("config").Range("B3") <> "Yes" Then
+                CM_Done
                 Exit Sub
             Else
                 LastRow = FindLastRow(1, 2, 0, 0, "Errors")
@@ -441,6 +461,7 @@ If RunAgainXY = False And RunAgainXYAG = False Then
                 .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
                 .Show
             End With
+            CM_Done
             Exit Sub
         End If
     Else
@@ -465,6 +486,7 @@ End If
 '----------------------------------------------------------------
 'print ZGLRME
 '----------------------------------------------------------------
+CM_Note "printing ZGLRME"
 If RunAgainXY = False And RunAgainXYAG = False Then
     Call Print_ZGLRME(sess, printN)
     Sheets("config").Range("AA3") = "Yes"
@@ -473,16 +495,19 @@ End If
 '----------------------------------------------------------------
 'print EIS4
 '----------------------------------------------------------------
+CM_Note "printing report group EIS4"
 If RunAgainXY = False And RunAgainXYAG = False Then Sheets("config").Range("AA4") = Print_EIS4(sess, printN)
 
 '----------------------------------------------------------------
 'print GIS4
 '----------------------------------------------------------------
+CM_Note "printing report group GIS4"
 If RunAgainXY = False And RunAgainXYAG = False Then Sheets("config").Range("AA10") = Print_GIS4(sess, printN)
 
 '----------------------------------------------------------------
 'print and check ZGE132
 '----------------------------------------------------------------
+CM_Note "printing and checking ZGE132"
 If RunAgainXY = False And RunAgainXYAG = False Then
     BPCL = False
     CPCL = False
@@ -549,6 +574,7 @@ If RunAgainXY = False And RunAgainXYAG = False Then
                 .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
                 .Show
             End With
+            CM_Done
             Exit Sub
         End If
     End If
@@ -557,6 +583,7 @@ End If
 '----------------------------------------------------------------
 'post ZGE132
 '----------------------------------------------------------------
+CM_Note "posting the ZGE132 entries in SAP"
 If RunAgainXY = False And RunAgainXYAG = False Then
     If Round(Sheets("config").Range("AA4"), 2) <> 0 Then
         Call Post_ZGE132(sess)
@@ -568,6 +595,7 @@ End If
 '----------------------------------------------------------------
 'check ZGE132 after posting
 '----------------------------------------------------------------
+CM_Note "checking ZGE132 after posting"
 If RunAgainXYAG = False Then
     BG = False
     BL = False
@@ -647,6 +675,7 @@ If RunAgainXYAG = False Then
                 .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
                 .Show
             End With
+            CM_Done
             Exit Sub
         End If
     Else
@@ -658,6 +687,7 @@ End If
 '----------------------------------------------------------------
 'get document numbers from SM35
 '----------------------------------------------------------------
+CM_Note "reading the document numbers from SM35"
 If RunAgainXYAG = False Then
     If Round(Sheets("config").Range("AA4"), 2) <> 0 Then
         If Sheets("config").Range("AA12") = "No posting" Then
@@ -686,6 +716,7 @@ End If
 '----------------------------------------------------------------
 'print documents in ZGR215
 '----------------------------------------------------------------
+CM_Note "printing the posted documents in ZGR215"
 If RunAgainXYAG = False Then
     If Round(Sheets("config").Range("AA4"), 2) <> 0 Then
         Call Print_ZGR215(sess)
@@ -697,6 +728,7 @@ End If
 '----------------------------------------------------------------
 'print EIS4
 '----------------------------------------------------------------
+CM_Note "printing report group EIS4 again (after posting)"
 If RunAgainXYAG = False Then
     Sheets("config").Range("AA9") = Print_EIS4(sess, printN)
     If Round(Sheets("config").Range("AA9"), 2) <> 0 Then
@@ -725,6 +757,7 @@ If RunAgainXYAG = False Then
             .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
             .Show
         End With
+        CM_Done
         Exit Sub
     End If
 End If
@@ -732,6 +765,7 @@ End If
 '----------------------------------------------------------------
 'print GIS4
 '----------------------------------------------------------------
+CM_Note "printing report group GIS4 again (after posting)"
 If RunAgainXYAG = False Then
     Sheets("config").Range("AA15") = Print_GIS4(sess, printN)
     If Round(Sheets("config").Range("AA15"), 2) <> 0 Then
@@ -760,6 +794,7 @@ If RunAgainXYAG = False Then
             .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
             .Show
         End With
+        CM_Done
         Exit Sub
     End If
 End If
@@ -767,6 +802,7 @@ End If
 '----------------------------------------------------------------
 'ZGLGWUL
 '----------------------------------------------------------------
+CM_Note "running ZGLGWUL"
 If RunAgainXYAG = False Then
     If Sheets("config").Range("AA16") <> "NA" Then
         Call Post_ZGLGWUL(sess)
@@ -797,6 +833,7 @@ If RunAgainXYAG = False Then
                 .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
                 .Show
             End With
+            CM_Done
             Exit Sub
         End If
     End If
@@ -805,10 +842,14 @@ End If
 '----------------------------------------------------------------
 'after ZGLGWUL
 '----------------------------------------------------------------
+CM_Note "checking the result of ZGLGWUL"
 If RunAgainXYAG = False Then
     If Sheets("config").Range("AA17") <> "NA" Then
         Call Post_ZGE132AG(sess)
-        If Left(Sheets("config").Range("AA17"), 2) = "XY" Then Exit Sub
+        If Left(Sheets("config").Range("AA17"), 2) = "XY" Then
+            CM_Done
+            Exit Sub
+        End If
     End If
 Else
     Call GetSM35AG(sess)
@@ -817,6 +858,7 @@ End If
 '----------------------------------------------------------------
 'Print GTB1
 '----------------------------------------------------------------
+CM_Note "printing report group GTB1"
 If Sheets("config").Range("AA18") <> "NA" Then
     Call Print_GTB1(sess, printN)
     If Sheets("config").Range("AA16") <> "NA" Then
@@ -858,6 +900,7 @@ End If
 '----------------------------------------------------------------
 'Print ZGE1174
 '----------------------------------------------------------------
+CM_Note "printing ZGE1174"
 If Sheets("config").Range("AA19") <> "NA" Then
     Call Print_ZGE1174(sess, printN)
 End If
@@ -865,6 +908,7 @@ End If
 '----------------------------------------------------------------
 'check ZGLRME
 '----------------------------------------------------------------
+CM_Note "checking ZGLRME again"
 ZGLRMEErr = False
 If CheckZGLRME(sess, ArrInd, ArrPC, ArrCPC) = False Or CheckAA02(sess) = False Then
 
@@ -918,16 +962,19 @@ End If
 '----------------------------------------------------------------
 'print ZGLRME
 '----------------------------------------------------------------
+CM_Note "printing the final ZGLRME"
 Call Print_ZGLRME(sess, printN)
 
 '----------------------------------------------------------------
 'combine PDFs
 '----------------------------------------------------------------
+CM_Note "merging all the PDFs into the final report pack"
 Call CombinePDF(printN)
 
 '----------------------------------------------------------------
 'check final errors
 '----------------------------------------------------------------
+CM_Note "checking for any remaining errors"
 LastRow = FindLastRow(1, 1, 0, 0, "Errors")
 If LastRow > 1 Then
     Sheets("Errors").Visible = 1
@@ -984,6 +1031,18 @@ Else
 '    Call spAddToList(updates, List)
     
 End If
+
+
+'V4-CIO: one handler for the whole close. RunClosing turns error handling on
+'nowhere else, so anything that fails here - or in any routine it calls -
+'lands below and is explained in plain language instead of showing a bare
+'"Run-time error 13" dialog with no idea what the macro was doing.
+CM_Done
+Exit Sub
+
+CM_Fail:
+    CM_Explain Err.Number, Err.Description
+    CM_Done
 
 End Sub
 Function CCOpened(sess As Object, ArrPC)
@@ -1285,7 +1344,11 @@ LastRow = FindLastRow(1, 1, 0, 0, "ZGLRME")
 ArrZGL = Sheets("ZGLRME").Range("A2", Sheets("ZGLRME").Cells(LastRow, 11))
 
 For i = 1 To UBound(ArrZGL, 1)
-    If Right(ArrZGL(i, 5), 1) = "-" Then ArrZGL(i, 5) = -Left(ArrZGL(i, 5), Len(ArrZGL(i, 5)) - 1)
+    'V4-CIO FIX: SAP writes amounts in the SAP user's decimal notation, which
+    'need not match this PC's Windows regional settings; the old implicit
+    'conversion then raised "Run-time error 13: Type mismatch". CM_Amount reads
+    'both conventions and the trailing minus, and explains itself if it cannot.
+    ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i, "reading the amounts from the ZGLRME extract")
     For j = 1 To UBound(ArrPC, 1)
         If CStr(ArrZGL(i, 3)) = CStr(ArrPC(j, 2)) Then
             ArrZGL(i, 9) = ArrPC(j, 3)
