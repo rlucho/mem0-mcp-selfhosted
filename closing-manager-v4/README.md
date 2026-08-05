@@ -118,6 +118,7 @@ keep the same procedure names and call signatures, so the rest of the workbook
 | 12 | **Live progress** — `CM_Begin` / `CM_Note` / `CM_Done` report the current stage (`[14/27] printing ZGE1174 … running 06:12 — press Esc to stop`) on Excel's status bar; every wait ticks a counter. | `GlobalModule`, `Closing` | “Is it working or has it hung?” — previously indistinguishable. |
 | 13 | **Plain-language failure dialog** — `CM_Explain` classifies the failure as DATA / FILE / SAP / PRINTING / EXCEL / TECHNICAL and shows *what it was doing, what went wrong, why it usually happens, what to try*, plus a technical line for the CI Team. Armed once via `On Error GoTo CM_Fail` at the top of `RunClosing`. | `GlobalModule`, `Closing` | Bare `Run-time error 13` dialogs with no context. |
 | 14 | **Locale-proof amounts — all 10 sites** — `CM_AmountReq` (9 text-parsed sites) / `CM_Amount` (the ZGLRME worksheet column). Reads the literal, not the locale: an already-numeric value passes through untouched; with both separators the last one is the decimal point; a repeated single separator is grouping (`1.234.567` → 1234567, either convention); anything else is the decimal point. | `GlobalModule`, `Closing`, `Printing` | `Run-time error 13: Type mismatch` when SAP's decimal notation ≠ the PC's Windows regional format — and, worse, `1.234,56` being read silently as `1.23456`. `Round("1.234,56", 2)` and `CDbl("1.234,56")` are both locale-dependent, so this bit in a different report each time. |
+| 20 | **The failure names the line it failed on** — every extract the close reads is announced with `CM_Source`, every line with `CM_Reading`, so an amount failure reports the **file, the line number, and the SAP line verbatim** — which carries the document number, account and profit centre. A worksheet-sourced failure names the sheet and row instead. The whole message is appended to `ClosingManager_errors.log` beside the workbook. | `GlobalModule`, `Closing`, `Printing`, `Postings` | "A value could not be read" with no way to find which one. |
 | 19 | **The decimal convention resolves itself** — `CM_ToAmount` learns which character SAP is using as the decimal point from the first unambiguous amount in a run (anything with both separators, a repeated separator, or 1/2/4+ decimals) and applies it to any ambiguous one afterwards. `CM_SAP_DECIMAL` (default `"auto"`) pins it permanently if a site ever needs to. | `GlobalModule` | Having to stop and ask a human to resolve `1,234` — the macro now works it out itself, and only stops if nothing in the run says which convention is in force. |
 | 17 | **`Postings.bas` brought into V4** — it was never rebuilt before. It carried **five more** of the freeze loops (fix 11) — one inside `Check_ZGE132AP`, which runs *immediately after* the entries go into SAP — and **eleven more** locale-dependent amount conversions (fix 14). Both now fixed there too. | `Postings` | A freeze or a `Type mismatch` on the post-and-verify path, where the entries are already real but the run never reaches the check that would say so. |
 | 18 | **`Post_ZGLGWUL` truncation bug** — the negative branch read `Left(arr(U), Len(arr(U - 1)))`: the length of the **previous** column, so a negative account-44400200 amount was cut to the wrong number of characters whenever the two columns differed in width. | `Postings` | A silently wrong figure in the ZGLGWUL posting. |
@@ -170,6 +171,50 @@ convention is in force.
 
 The macro will not guess. A figure wrong by a factor of 1000 in a signed report
 pack is worse than a stop.
+
+### Finding the figure that failed
+
+The dialog no longer stops at "a value could not be read". Every SAP extract is
+announced as it is opened and every line as it is read, so a failure can say
+exactly where to look:
+
+```
+WHAT IT WAS DOING
+        step 20 of 27 - running ZGLGWUL
+
+WHAT WENT WRONG   (DATA)
+        SAP sent an amount that could mean two things, and
+        nothing else in this run said which.
+        The value was:  [1,234]
+        That is either 1234 or about 1.
+
+WHERE TO LOOK
+        Extract file:   zglgwul.txt   -   line 147
+        This is the line SAP sent (it carries the document
+        number, account and profit centre):
+        |  44400200 |  1234567890 | PC4711  | ...  |    1,234 |
+
+WHAT TO TRY
+        This one is settled permanently by a single setting.
+        ...
+
+A copy of this message was saved to:
+C:\Closing\ClosingManager_errors.log
+```
+
+- **Text extracts** (`zglrme.txt`, `zge132.txt`, `zge132G.txt`, `zglgwul.txt`,
+  `gtb1.txt`, `eis4.txt`, `gis4.txt`, `aa02.txt`, `zge1174.txt`, `zge132gwul.txt`)
+  report file + line number + the line verbatim. The line is captured *before* the
+  macro collapses its spacing, so the columns still line up and the document
+  number is readable.
+- **Worksheet-sourced values** (the ZGLRME amount column) report the sheet and the
+  real sheet row — open the `ZGLRME` tab and go straight to it.
+- **A print that never produced a PDF** reports the report name, the folder being
+  watched, and how long it waited.
+- Everything is **appended** to `ClosingManager_errors.log` next to the workbook,
+  with a timestamp and the user name, so a sequence of failures across one close
+  can be sent to the CI Team in one go rather than retyped from a dialog someone
+  already clicked away.
 
 ### What "Balance Control Entry not completed…" means
 

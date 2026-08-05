@@ -173,10 +173,12 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "zge132.txt")
+CM_Source "zge132.txt"
 
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
 
     If IsNumeric(Left(Trim(line), 1)) Then
         n = InStr(1, line, "  ", vbBinaryCompare)
@@ -220,9 +222,11 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "zge132G.txt")
+CM_Source "zge132G.txt"
 
 Do Until strim.EOS
     line = strim.ReadText(-2)
+    CM_Reading line
     If Left(Trim(line), 1) = "|" Then
         arr = Split(line, "|")
         If UBound(arr) = 6 And Left(arr(LBound(arr) + 1), 7) = "* Total" Then
@@ -447,9 +451,11 @@ If ErrTxt = "" Then
     strim.Open
     
     strim.LoadFromFile (FPath & "zglgwul.txt")
+    CM_Source "zglgwul.txt"
     
     Do Until strim.EOS
         line = strim.ReadText(-2)
+        CM_Reading line
         If Left(Trim(line), 1) = "|" Then
             n = InStr(1, line, "  ", vbBinaryCompare)
             Do Until n = 0
@@ -525,11 +531,13 @@ strim.Open
 
 Call CreateArray(FPath & "zge132gwul.txt")
 strim.LoadFromFile (FPath & "zge132gwul.txt")
+CM_Source "zge132gwul.txt"
 
 CheckPosting = False
 Do Until strim.EOS Or CheckPosting = True
     Dim line As String, tablica() As String
     line = strim.ReadText(-2)
+    CM_Reading line
 
     If Left(Trim(line), 1) = "|" And Trim(getLineData(line, FirstColumn, 1)) <> FirstColumn Then
         If Left(line, 15) = "| List does not" Then

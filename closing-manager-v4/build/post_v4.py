@@ -42,7 +42,7 @@ def printing(text):
             ind + "'shell object eventually dropped out with error 80010108.",
             ind + 'File = CM_WaitForPrint(FTemp, fso, "%s")' % LABELS[st + 1],
         ]
-    return amounts('\n'.join(L), 6, 2)
+    return instrument_reads(amounts('\n'.join(L), 6, 2), 6, 6)
 
 # ---------------------------------------------------------------- Closing.bas
 STEPS = [
@@ -142,7 +142,10 @@ def closing(text):
         'On Error GoTo CM_Fail',
         'CM_Begin %d' % len(STEPS),
     ]
-    return amounts('\n'.join(L), 0, 1)
+    text = amounts('\n'.join(L), 0, 1)
+    assert text.count(ZGLRME_OLD) == 1
+    text = text.replace(ZGLRME_OLD, ZGLRME_NEW)
+    return instrument_reads(text, 3, 3)
 
 
 # ------------------------------------------------------- amounts (both modules)
@@ -366,4 +369,41 @@ def postings(text):
     assert text.count(ZGE132AG_OLD) == 1, 'ZGE132AG line not found'
     text = text.replace(ZGE132AG_OLD, ZGE132AG_NEW)
     assert n == 4
-    return text
+    return instrument_reads(text, 4, 4)
+
+
+# --------------------------------------------------- extract-read instrumentation
+# So a bad amount can name the file, the line number and the line itself. Every
+# "strim.LoadFromFile (FPath & "x.txt")" is followed by CM_Source, and every
+# "line = strim.ReadText(-2)" by CM_Reading. Purely additive - no existing
+# statement is touched.
+import re as _re
+
+_LOAD = _re.compile(r'^(\s*)strim\.LoadFromFile \(FPath & "([^"]+)"\)\s*$')
+_READ = _re.compile(r'^(\s*)line = strim\.ReadText\(-2\)\s*$')
+
+def instrument_reads(text, expect_loads, expect_reads):
+    L = text.split('\n')
+    out, nl, nr = [], 0, 0
+    for line in L:
+        out.append(line)
+        m = _LOAD.match(line)
+        if m:
+            out.append('%sCM_Source "%s"' % (m.group(1), m.group(2)))
+            nl += 1
+            continue
+        m = _READ.match(line)
+        if m:
+            out.append('%sCM_Reading line' % m.group(1))
+            nr += 1
+    assert nl == expect_loads, 'expected %d LoadFromFile, instrumented %d' % (expect_loads, nl)
+    assert nr == expect_reads, 'expected %d ReadText, instrumented %d' % (expect_reads, nr)
+    return '\n'.join(out)
+
+
+# The ZGLRME amount comes from a worksheet, not a text file: name the sheet, and
+# report the real sheet row (the array starts at A2, so array row i is sheet row
+# i + 1). Reporting only - the loop still indexes with i.
+ZGLRME_OLD = 'ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i, "reading the amounts from the ZGLRME extract")'
+ZGLRME_NEW = ('CM_Source ""\n'
+              '    ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i + 1, "reading the amounts from the ZGLRME extract")')

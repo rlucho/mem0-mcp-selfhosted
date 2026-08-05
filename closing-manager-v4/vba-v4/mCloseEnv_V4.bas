@@ -81,6 +81,10 @@ Public CM_StepNo As Long          'which stage we are on
 Public CM_StepMax As Long         'how many stages the close has
 Public CM_Started As Double       'Timer value when the run began
 Public CM_DecSeen As String        'decimal separator learned during this run
+Public CM_SrcFile As String        'which SAP extract is being read right now
+Public CM_SrcNo As Long            'line number within it
+Public CM_SrcLine As String        'that line, verbatim - it carries the document
+                                   'number / account / profit centre SAP printed
 '----------------------------------------------------------------------------
 
 
@@ -674,6 +678,7 @@ End Function
 '--- start of a run: reset the counters --------------------------------------
 Public Sub CM_Begin(ByVal totalSteps As Long)
     CM_DecSeen = ""
+    CM_SrcFile = "": CM_SrcNo = 0: CM_SrcLine = ""
     CM_StepNo = 0
     CM_StepMax = totalSteps
     CM_Started = Timer
@@ -789,7 +794,7 @@ Public Function CM_WaitForPrint(ByVal folder As String, ByVal fso As Object, _
         If nm <> "" Then Exit Do
         If waited >= APPEAR_MAX Then
             Err.Raise vbObjectError + 514, "ClosingManager", _
-                      "PRINT|" & what & "|" & waited & "|" & base
+                      "PRINT" & Chr$(1) & what & Chr$(1) & waited & Chr$(1) & base
         End If
         CM_Tick "waiting for the PDF of " & what & " (" & waited & "s)"
         waited = waited + 1
@@ -815,7 +820,7 @@ Public Function CM_WaitForPrint(ByVal folder As String, ByVal fso As Object, _
 
     If Not fso.FileExists(p) Then
         Err.Raise vbObjectError + 514, "ClosingManager", _
-                  "PRINT|" & what & "|" & (APPEAR_MAX + SETTLE_MAX) & "|" & base
+                  "PRINT" & Chr$(1) & what & Chr$(1) & (APPEAR_MAX + SETTLE_MAX) & Chr$(1) & base
     End If
 
     CM_WaitForPrint = p
@@ -956,6 +961,34 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
 End Function
 
 
+
+'============================================================================
+' WHERE THE BAD VALUE CAME FROM
+'----------------------------------------------------------------------------
+' Knowing that "1.234" could not be read is only half an answer - the operator
+' still has to find it. Every extract the close reads is announced with
+' CM_Source, and every line with CM_Reading, so a failure can name the file, the
+' line number and the line itself. SAP prints the document number, account and
+' profit centre on that same line, which is what somebody actually needs to look
+' the figure up.
+'============================================================================
+Public Sub CM_Source(ByVal fileName As String)
+    CM_SrcFile = fileName
+    CM_SrcNo = 0
+    CM_SrcLine = ""
+End Sub
+
+
+Public Sub CM_Reading(ByVal rawLine As String)
+    CM_SrcNo = CM_SrcNo + 1
+    If Len(rawLine) > 300 Then
+        CM_SrcLine = Left$(rawLine, 300) & " ..."
+    Else
+        CM_SrcLine = rawLine
+    End If
+End Sub
+
+
 '--- which character SAP is using as the decimal point, "" if not yet known --
 ' An explicit CM_SAP_DECIMAL always wins; otherwise it is whatever this run has
 ' worked out from an unambiguous amount. Public so PreflightCheck can show it.
@@ -1000,8 +1033,10 @@ Private Function CM_AmountCore(ByVal v As Variant, ByVal rowNo As Long, _
     d = CM_ToAmount(v, ok, blankOk, reason)
     If Not ok Then
         CM_Step = where
+        'Chr(1) separates the fields - a SAP report line is full of "|"
         Err.Raise vbObjectError + 513, "ClosingManager", _
-                  reason & "|" & CStr(v) & "|" & rowNo
+                  reason & Chr$(1) & CStr(v) & Chr$(1) & rowNo & Chr$(1) & _
+                  CM_SrcFile & Chr$(1) & CM_SrcNo & Chr$(1) & CM_SrcLine
     End If
     CM_AmountCore = d
 End Function
@@ -1010,12 +1045,12 @@ End Function
 '--- turn a failure into plain language --------------------------------------
 Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
     Dim kind As String, what As String, why As String, todo As String
-    Dim parts As Variant, m As String
+    Dim parts As Variant, m As String, whereTo As String, logPath As String
 
     'our own explained data errors carry their detail in the description
     'the printed PDF never arrived (was: Excel hangs for ever)
-    If errNum = vbObjectError + 514 And Left$(errDesc, 6) = "PRINT|" Then
-        parts = Split(errDesc, "|")
+    If errNum = vbObjectError + 514 And Left$(errDesc, 6) = "PRINT" & Chr$(1) Then
+        parts = Split(errDesc, Chr$(1))
         kind = "PRINTING"
         what = "SAP was asked to print a report, but no PDF ever appeared." & vbCrLf & _
                "        The report was:  " & parts(1) & vbCrLf & _
@@ -1048,8 +1083,8 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
         GoTo Report
     End If
 
-    If errNum = vbObjectError + 513 And InStr(errDesc, "|") > 0 Then
-        parts = Split(errDesc, "|")
+    If errNum = vbObjectError + 513 And InStr(errDesc, Chr$(1)) > 0 Then
+        parts = Split(errDesc, Chr$(1))
         kind = "DATA"
         Select Case parts(0)
             Case "BLANK"
@@ -1066,6 +1101,17 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
                        "        The value was:  [" & parts(1) & "]"
         End Select
         If Val(parts(2)) > 0 Then what = what & vbCrLf & "        On data row:    " & parts(2)
+        If UBound(parts) >= 5 Then
+            If parts(3) <> "" Then
+                whereTo = "Extract file:   " & parts(3) & "   -   line " & parts(4) & vbCrLf & _
+                          "        This is the line SAP sent (it carries the document" & vbCrLf & _
+                          "        number, account and profit centre):" & vbCrLf & _
+                          "        " & parts(5)
+            ElseIf Val(parts(2)) > 0 Then
+                whereTo = "Sheet ""ZGLRME"", row " & parts(2) & ", the amount column." & vbCrLf & _
+                          "        Open that sheet in this workbook and look at the row."
+            End If
+        End If
         why = "Almost always the number format. SAP writes amounts using the" & vbCrLf & _
               "        SAP user's decimal notation, and this PC reads them using its" & vbCrLf & _
               "        Windows regional settings. If one uses 1.234,56 and the other" & vbCrLf & _
@@ -1153,12 +1199,18 @@ Report:
         "        " & what & vbCrLf & vbCrLf & _
         "WHY THIS USUALLY HAPPENS" & vbCrLf & _
         "        " & why & vbCrLf & vbCrLf & _
+        IIf(whereTo = "", "", "WHERE TO LOOK" & vbCrLf & "        " & whereTo & vbCrLf & vbCrLf) & _
         "WHAT TO TRY" & vbCrLf & _
         "        " & todo & vbCrLf & vbCrLf & _
         "--------------------------------------------" & vbCrLf & _
         "This failure itself posted nothing. Anything already posted to SAP" & vbCrLf & _
         "earlier in this run stays posted - check before running again." & vbCrLf & vbCrLf & _
         "For the CI Team:  error " & errNum & " - " & errDesc
+
+    logPath = CM_SaveLog(m & vbCrLf & "For the CI Team:  error " & errNum & " - " & errDesc)
+    If logPath <> "" Then
+        m = m & vbCrLf & vbCrLf & "A copy of this message was saved to:" & vbCrLf & logPath
+    End If
 
     On Error Resume Next
     Application.StatusBar = False
@@ -1167,6 +1219,30 @@ Report:
 
     MsgBox m, vbExclamation, "Closing Manager - stopped"
 End Sub
+
+
+'--- keep the message after the dialog is dismissed --------------------------
+' Appended, not overwritten, so a sequence of failures across a close can be
+' sent to the CI Team in one go. Returns the path, or "" if it could not write.
+Private Function CM_SaveLog(ByVal text As String) As String
+    Dim f As Integer, p As String
+    On Error Resume Next
+    p = ThisWorkbook.Path
+    If p = "" Then Exit Function
+    If IsUrlPath(p) Then Exit Function
+    If Right$(p, 1) <> "\" Then p = p & "\"
+    p = p & "ClosingManager_errors.log"
+    f = FreeFile
+    Open p For Append As #f
+    Print #f, String$(70, "=")
+    Print #f, Format$(Now, "yyyy-mm-dd hh:nn:ss") & "   user " & Environ$("username")
+    Print #f, text
+    Print #f, ""
+    Close #f
+    If Err.Number = 0 Then CM_SaveLog = p
+    Err.Clear
+    On Error GoTo 0
+End Function
 
 
 '--- "step 12 of 27 - printing ZGLRME" ---------------------------------------

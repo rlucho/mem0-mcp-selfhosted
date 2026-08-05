@@ -1225,10 +1225,12 @@ With sess
             
             Call CreateArray(FPath & "closestatus.txt")
             strim.LoadFromFile (FPath & "closestatus.txt")
+            CM_Source "closestatus.txt"
             
             Do Until strim.EOS
                 Dim line As String, tablica() As String
                 line = strim.ReadText(-2)
+                CM_Reading line
             
                 If Left(Trim(line), 1) = "|" And Trim(getLineData(line, FirstColumn, 1)) <> FirstColumn Then
                     
@@ -1318,10 +1320,12 @@ strim.Open
 
 Call CreateArray(FPath & "zglrme.txt")
 strim.LoadFromFile (FPath & "zglrme.txt")
+CM_Source "zglrme.txt"
 
 Do Until strim.EOS
     Dim line As String, tablica() As String
     line = strim.ReadText(-2)
+    CM_Reading line
     
     If Left(line, 6) = "| List" Then
         CheckZGLRME = True
@@ -1348,7 +1352,8 @@ For i = 1 To UBound(ArrZGL, 1)
     'need not match this PC's Windows regional settings; the old implicit
     'conversion then raised "Run-time error 13: Type mismatch". CM_Amount reads
     'both conventions and the trailing minus, and explains itself if it cannot.
-    ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i, "reading the amounts from the ZGLRME extract")
+    CM_Source ""
+    ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i + 1, "reading the amounts from the ZGLRME extract")
     For j = 1 To UBound(ArrPC, 1)
         If CStr(ArrZGL(i, 3)) = CStr(ArrPC(j, 2)) Then
             ArrZGL(i, 9) = ArrPC(j, 3)
@@ -1701,6 +1706,7 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "aa02.txt")
+CM_Source "aa02.txt"
 
 If Sheets("Errors").Range("A10") = "" Then
     Sheets("Errors").Range("A10") = "Blank Profit Center on all documents' lines (local currency):"
@@ -1723,6 +1729,7 @@ Sheets("Errors").Cells(EmptRow, 3) = "Balance"
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
 
     If IsNumeric(Left(Trim(line), 1)) Then
         n = InStr(1, line, "  ", vbBinaryCompare)

@@ -376,10 +376,12 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "eis4.txt")
+CM_Source "eis4.txt"
 
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
 Loop
 
 n = InStr(1, line, "  ", vbBinaryCompare)
@@ -467,10 +469,12 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "gis4.txt")
+CM_Source "gis4.txt"
 
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
 Loop
 
 n = InStr(1, line, "  ", vbBinaryCompare)
@@ -597,10 +601,12 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "zge132.txt")
+CM_Source "zge132.txt"
 
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
 
     If IsNumeric(Left(Trim(line), 1)) Then
         n = InStr(1, line, "  ", vbBinaryCompare)
@@ -646,9 +652,11 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "zge132G.txt")
+CM_Source "zge132G.txt"
 
 Do Until strim.EOS
     line = strim.ReadText(-2)
+    CM_Reading line
     If Left(Trim(line), 1) = "|" Then
         arr = Split(line, "|")
         If UBound(arr) = 6 And Left(arr(LBound(arr) + 1), 7) = "* Total" Then
@@ -1057,10 +1065,12 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "gtb1.txt")
+CM_Source "gtb1.txt"
 
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
     
     n = InStr(1, line, "  ", vbBinaryCompare)
     Do Until n = 0
@@ -1168,10 +1178,12 @@ strim.Charset = "utf-8"
 strim.Open
 
 strim.LoadFromFile (FPath & "zge1174.txt")
+CM_Source "zge1174.txt"
 
 Do Until strim.EOS
     Dim line As String
     line = strim.ReadText(-2)
+    CM_Reading line
 Loop
 
 If InStr(1, line, "No Records") = 0 Then
