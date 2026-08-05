@@ -261,6 +261,8 @@ def new_stream(raw, off, text):
 import post_v4
 praw2, poff2, potext = module_text("Postings")
 potext = post_v4.postings(potext)
+gtext = post_v4.review_fixes_globalmodule(gtext)
+atext = post_v4.admin(atext)
 ptext = post_v4.printing(ptext)
 ctext = post_v4.closing(ctext)
 print("post-pass: 10 print waits bounded, %d breadcrumbs, CM_Fail handler" % len(post_v4.STEPS))

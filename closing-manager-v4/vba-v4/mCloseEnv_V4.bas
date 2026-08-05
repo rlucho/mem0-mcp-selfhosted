@@ -901,10 +901,13 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
     pCom = InStrRev(s, ",")
 
     If pDot > 0 And pCom > 0 Then
-        'both kinds present: whichever comes last is the decimal separator
+        'Both kinds present: whichever comes last is the decimal separator. This
+        'is the most decisive evidence there is, so it is what the run learns from.
         If pDot > pCom Then
+            If Not CM_Learn(".") Then reason = "CLASH": Exit Function
             s = Replace(s, ",", "")
         Else
+            If Not CM_Learn(",") Then reason = "CLASH": Exit Function
             s = Replace(s, ".", "")
             s = Replace(s, ",", ".")
         End If
@@ -920,12 +923,12 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
         If nSep > 1 Then
             'a number has one decimal point, so a repeated separator is grouping -
             'which also tells us the OTHER character is this system's decimal point
-            CM_DecSeen = other
+            If Not CM_Learn(other) Then reason = "CLASH": Exit Function
             s = Replace(s, sep, "")
 
         ElseIf after <> 3 Then
             '1, 2 or 4+ digits after it: it is the decimal point, unambiguously
-            CM_DecSeen = sep
+            If Not CM_Learn(sep) Then reason = "CLASH": Exit Function
             If sep = "," Then s = Replace(s, ",", ".")
 
         Else
@@ -990,6 +993,22 @@ Public Sub CM_Reading(ByVal rawLine As String)
         CM_SrcLine = rawLine
     End If
 End Sub
+
+
+
+'--- record the convention; False if it contradicts what we already knew -----
+' One SAP user writes amounts one way, so two extracts in one close cannot
+' disagree. If they do, something is wrong that guessing would only hide - the
+' close stops rather than read one literal two different ways in one run.
+Private Function CM_Learn(ByVal sep As String) As Boolean
+    If CM_SAP_DECIMAL = "." Or CM_SAP_DECIMAL = "," Then
+        CM_Learn = (CM_SAP_DECIMAL = sep)      'pinned by configuration
+        Exit Function
+    End If
+    If CM_DecSeen <> "" And CM_DecSeen <> sep Then Exit Function
+    CM_DecSeen = sep
+    CM_Learn = True
+End Function
 
 
 '--- which character SAP is using as the decimal point, "" if not yet known --
@@ -1072,6 +1091,25 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
         GoTo Report
     End If
 
+    'a SAP export came back with no data at all (was: an unbreakable hang)
+    If errNum = vbObjectError + 515 And Left$(errDesc, 6) = "EMPTY" & Chr$(1) Then
+        parts = Split(errDesc, Chr$(1))
+        kind = "DATA"
+        what = "A report SAP was asked for came back with nothing in it." & vbCrLf & _
+               "        The file was:  " & parts(1)
+        why = "SAP selected no rows at all. Usually the company code or the" & vbCrLf & _
+              "        period on the START sheet does not match anything posted," & vbCrLf & _
+              "        the period is not open, or the report was cancelled in SAP" & vbCrLf & _
+              "        before it finished."
+        todo = "1. Check the company code and period on the START sheet." & vbCrLf & _
+               "        2. Run the same report by hand in SAP for that company code" & vbCrLf & _
+               "           and period - if it is empty there too, the data is not" & vbCrLf & _
+               "           posted yet and the close cannot run." & vbCrLf & _
+               "        3. If SAP shows rows but this file is empty, send this" & vbCrLf & _
+               "           message to the CI Team."
+        GoTo Report
+    End If
+
     'the shell COM object dropped out - only ever seen as a knock-on of the above
     If errNum = -2147417848 Or errNum = -2147417851 Or errNum = 462 Then
         kind = "TECHNICAL"
@@ -1092,12 +1130,16 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
         Select Case parts(0)
             Case "BLANK"
                 what = "An amount SAP should have sent was blank."
+            Case "CLASH"
+                what = "Two SAP reports in this run wrote amounts in different" & vbCrLf & _
+                       "        number formats, which cannot both be right." & vbCrLf & _
+                       "        The value that disagreed:  [" & parts(1) & "]"
             Case "AMBIG"
                 what = "SAP sent an amount that could mean two things, and" & vbCrLf & _
                        "        nothing else in this run said which." & vbCrLf & _
                        "        The value was:  [" & parts(1) & "]" & vbCrLf & _
                        "        That is either " & Replace(Replace(parts(1), ".", ""), ",", "") & _
-                       " or about " & Left$(parts(1), 1) & "." & vbCrLf & _
+                       " or about " & Split(Replace(parts(1), ",", "."), ".")(0) & "." & vbCrLf & _
                        "        The macro will not guess a figure for a signed report."
             Case Else
                 what = "SAP sent an amount the macro could not read as a number." & vbCrLf & _
@@ -1121,7 +1163,13 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
               "        SAP user's decimal notation, and this PC reads them using its" & vbCrLf & _
               "        Windows regional settings. If one uses 1.234,56 and the other" & vbCrLf & _
               "        expects 1,234.56, the amount cannot be read."
-        If parts(0) = "AMBIG" Then
+        If parts(0) = "CLASH" Then
+            todo = "Send this message to the CI Team. One of the SAP reports is" & vbCrLf & _
+                   "        being produced with a different decimal notation from the" & vbCrLf & _
+                   "        others, which usually means a report variant or a user" & vbCrLf & _
+                   "        default was changed. Setting CM_SAP_DECIMAL does not fix" & vbCrLf & _
+                   "        this - the reports themselves disagree."
+        ElseIf parts(0) = "AMBIG" Then
             todo = "This one is settled permanently by a single setting." & vbCrLf & _
                    "        Look up SAP: System > User Profile > Own Data >" & vbCrLf & _
                    "        Defaults > Decimal Notation, then ask the CI Team to set" & vbCrLf & _
@@ -1333,7 +1381,9 @@ Public Function CM_PrintMergeTest(ByVal sess As Object, ByRef blocked As Boolean
     fso.DeleteFolder work, True
     Err.Clear
     On Error GoTo 0
-    fso.CreateFolder work
+    'guarded: if the delete above could not remove it (open in Explorer, say),
+    'an unguarded CreateFolder would raise error 58 and kill the preflight
+    EnsureFolderChain fso, work
 
     If Not doPrint Then GoTo DoMerge
 

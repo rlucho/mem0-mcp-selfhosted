@@ -887,10 +887,10 @@ If Sheets("config").Range("AA18") <> "NA" Then
                 EmptRow1 = FindLastRow(1, 2, 2, 0, "Errors")
                 If EmptRow > EmptRow1 Then
                     Sheets("Errors").Cells(EmptRow, 1) = "Error in GTB1 - amount from ZGLGWUL transaction does not equal the amount in GTB1 report for account 44400200."
-                    Sheets("Errors").Range(EmptRow, 1).Font.Bold = True
+                    Sheets("Errors").Cells(EmptRow, 1).Font.Bold = True
                 Else
                     Sheets("Errors").Cells(EmptRow1, 1) = "Error in GTB1 - amount from ZGLGWUL transaction does not equal the amount in GTB1 report for account 44400200."
-                    Sheets("Errors").Range(EmptRow1, 1).Font.Bold = True
+                    Sheets("Errors").Cells(EmptRow1, 1).Font.Bold = True
                 End If
             End If
         End If

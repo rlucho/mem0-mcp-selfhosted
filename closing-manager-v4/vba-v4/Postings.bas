@@ -412,7 +412,14 @@ With sess
     On Error Resume Next
     .findById("wnd[0]/mbar/menu[0]/menu[1]/menu[2]").Select
     If Err.Number <> 0 Then
+        'V4-CIO FIX: disarm here too. Without this the handler stayed armed
+        'for the rest of the procedure and swallowed everything after it,
+        'including the explained amount error - AA16 was then written from
+        'whatever Am happened to hold.
+        On Error Resume Next
         ErrTxt = .findById("wnd[1]/usr/txtMESSTXT1").Text
+        Err.Clear
+        On Error GoTo 0
     Else
         .findById("wnd[1]").sendVKey 0
         .findById("wnd[1]/usr/ctxtDY_PATH").Text = FPath

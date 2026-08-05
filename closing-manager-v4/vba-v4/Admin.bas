@@ -7,6 +7,10 @@ Attribute VB_Name = "Admin"
 'Date of validation: https://capgemini.sharepoint.com/sites/InternationalPaper/capgemini/Lists/Automations_list/Allitemsg.aspx
 Sub UpdateData()
 
+On Error GoTo CM_Fail
+CM_Begin 0
+CM_Note "refreshing the reference data from SAP"
+
 Dim sess As Object
 Dim k As Long
 
@@ -21,6 +25,7 @@ If Sheets("config").Range("B1") = "Yes" Then
         .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
         .Show
     End With
+    CM_Done
     Exit Sub
 End If
 
@@ -113,7 +118,7 @@ With sess
     .findById("wnd[0]").sendVKey 0
     On Error Resume Next
     .findById("wnd[1]/tbar[0]/btn[0]").press
-    On Error GoTo 0
+    On Error GoTo CM_Fail
     .findById("wnd[0]/mbar/menu[3]/menu[1]").Select
     .findById("wnd[1]/usr/tabsG_TABSTRIP/tabp0400/ssubTOOLAREA:SAPLWB_CUSTOMIZING:0400/ctxtRSEUMOD-TBLISTBR").Text = "250"
     .findById("wnd[1]/usr/tabsG_TABSTRIP/tabp0400/ssubTOOLAREA:SAPLWB_CUSTOMIZING:0400/txtRSEUMOD-TBMAXSEL").Text = "999999999"
@@ -180,7 +185,7 @@ With sess
     .findById("wnd[0]").sendVKey 0
     On Error Resume Next
     .findById("wnd[1]/tbar[0]/btn[0]").press
-    On Error GoTo 0
+    On Error GoTo CM_Fail
     .findById("wnd[0]/mbar/menu[3]/menu[1]").Select
     .findById("wnd[1]/usr/tabsG_TABSTRIP/tabp0400/ssubTOOLAREA:SAPLWB_CUSTOMIZING:0400/ctxtRSEUMOD-TBLISTBR").Text = "250"
     .findById("wnd[1]/usr/tabsG_TABSTRIP/tabp0400/ssubTOOLAREA:SAPLWB_CUSTOMIZING:0400/txtRSEUMOD-TBMAXSEL").Text = "999999999"
@@ -346,7 +351,7 @@ With sess
     .findById("wnd[0]").sendVKey 0
     On Error Resume Next
     .findById("wnd[1]/tbar[0]/btn[0]").press
-    On Error GoTo 0
+    On Error GoTo CM_Fail
     .findById("wnd[0]/mbar/menu[3]/menu[1]").Select
     .findById("wnd[1]/usr/tabsG_TABSTRIP/tabp0400/ssubTOOLAREA:SAPLWB_CUSTOMIZING:0400/ctxtRSEUMOD-TBLISTBR").Text = "250"
     .findById("wnd[1]/usr/tabsG_TABSTRIP/tabp0400/ssubTOOLAREA:SAPLWB_CUSTOMIZING:0400/txtRSEUMOD-TBMAXSEL").Text = "999999999"
@@ -719,7 +724,7 @@ With sess
     .findById("wnd[0]").sendVKey 0
     On Error Resume Next
     .findById("wnd[1]/tbar[0]/btn[0]").press
-    On Error GoTo 0
+    On Error GoTo CM_Fail
     .findById("wnd[0]/mbar/menu[3]/menu[2]").Select
     .findById("wnd[1]/tbar[0]/btn[14]").press
     
@@ -909,6 +914,15 @@ With UF_Info
     .Top = Application.Top + (0.5 * Application.Height) - (0.5 * .Height)
     .Show
 End With
+
+
+'V4-CIO: the same plain-language failure reporting as the close.
+CM_Done
+Exit Sub
+
+CM_Fail:
+    CM_Explain Err.Number, Err.Description
+    CM_Done
 
 End Sub
 Sub ShowTracker()

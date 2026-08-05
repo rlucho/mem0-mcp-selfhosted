@@ -145,7 +145,7 @@ def closing(text):
     text = amounts('\n'.join(L), 0, 1)
     assert text.count(ZGLRME_OLD) == 1
     text = text.replace(ZGLRME_OLD, ZGLRME_NEW)
-    return instrument_reads(text, 3, 3)
+    return review_fixes_closing(instrument_reads(text, 3, 3))
 
 
 # ------------------------------------------------------- amounts (both modules)
@@ -369,7 +369,7 @@ def postings(text):
     assert text.count(ZGE132AG_OLD) == 1, 'ZGE132AG line not found'
     text = text.replace(ZGE132AG_OLD, ZGE132AG_NEW)
     assert n == 4
-    return instrument_reads(text, 4, 4)
+    return review_fixes_postings(instrument_reads(text, 4, 4))
 
 
 # --------------------------------------------------- extract-read instrumentation
@@ -407,3 +407,179 @@ def instrument_reads(text, expect_loads, expect_reads):
 ZGLRME_OLD = 'ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i, "reading the amounts from the ZGLRME extract")'
 ZGLRME_NEW = ('CM_Source ""\n'
               '    ArrZGL(i, 5) = CM_Amount(ArrZGL(i, 5), i + 1, "reading the amounts from the ZGLRME extract")')
+
+
+# ------------------------------------------------------- review fixes (originals)
+# Three defects that were in the original macro, found by an independent read of
+# the shipping code. All three are hangs or silent-wrong-number paths, which is
+# the class this whole build exists to remove.
+
+# (a) Range(row, col) where Cells(row, col) was meant. Worksheet.Range takes an
+#     A1 string or a Range, so a Long gives run-time error 1004 EVERY time this
+#     branch runs -- and it only runs after ZGE132/ZGLGWUL have already posted.
+#     Every neighbouring statement, and the identical logic in CheckZGLRME, uses
+#     .Cells. It is a typo, and the branch has never worked.
+GTB1_BOLD = [
+    ('                    Sheets("Errors").Range(EmptRow, 1).Font.Bold = True',
+     '                    Sheets("Errors").Cells(EmptRow, 1).Font.Bold = True'),
+    ('                    Sheets("Errors").Range(EmptRow1, 1).Font.Bold = True',
+     '                    Sheets("Errors").Cells(EmptRow1, 1).Font.Bold = True'),
+]
+
+# (b) Post_ZGLGWUL arms On Error Resume Next and only disarms it inside the Else
+#     branch. On the other branch the handler stays armed for the rest of the
+#     procedure, so a later failure -- including the explained one CM_AmountReq
+#     raises -- is swallowed and AA16 is written from a stale Am.
+ZGLGWUL_ERR_OLD = (
+    '    If Err.Number <> 0 Then\n'
+    '        ErrTxt = .findById("wnd[1]/usr/txtMESSTXT1").Text')
+ZGLGWUL_ERR_NEW = (
+    '    If Err.Number <> 0 Then\n'
+    "        'V4-CIO FIX: disarm here too. Without this the handler stayed armed\n"
+    "        'for the rest of the procedure and swallowed everything after it,\n"
+    "        'including the explained amount error - AA16 was then written from\n"
+    "        'whatever Am happened to hold.\n"
+    '        On Error Resume Next\n'
+    '        ErrTxt = .findById("wnd[1]/usr/txtMESSTXT1").Text\n'
+    '        Err.Clear\n'
+    '        On Error GoTo 0')
+
+
+def review_fixes_closing(text):
+    for old, new in GTB1_BOLD:
+        assert text.count(old) == 1, 'GTB1 bold line not found: %r' % old[:60]
+        text = text.replace(old, new)
+    return text
+
+
+def review_fixes_postings(text):
+    assert text.count(ZGLGWUL_ERR_OLD) == 1, 'Post_ZGLGWUL error branch not found'
+    return text.replace(ZGLGWUL_ERR_OLD, ZGLGWUL_ERR_NEW)
+
+
+# (c) Two loops in GlobalModule that cannot terminate on an empty or pipe-less
+#     SAP export. CreateArray is called on t001.txt, zgxmit.txt, t001z.txt,
+#     skb1.txt, closestatus.txt, zglrme.txt and zge132gwul.txt, so an export that
+#     comes back empty hangs Excel with no message and no way out - exactly the
+#     symptom this build set out to eliminate. Neither guard changes behaviour on
+#     data the loops already handled.
+IMPORT_OLD = "\n".join([
+    'Do',
+    '    Data = strix.ReadText(-2)',
+    '    If VBA.Left(VBA.Trim(Data), 1) = "|" Then',
+    '        For i = 2 To Len(Trim(Data))',
+    '            If Mid(Trim(Data), i, 1) = "|" Then',
+    '                FirstColumn = Trim(Mid(Trim(Data), 2, i - 2))',
+    '                Exit For',
+    '            End If',
+    '        Next i',
+    '        Exit Do',
+    '    End If',
+    'Loop',
+])
+
+IMPORT_NEW = "\n".join([
+    "'V4-CIO FIX: the only way out of this loop was finding a line that starts",
+    "'with \"|\". An empty or pipe-less export spun here for ever, hanging Excel",
+    "'with no message. It now stops at end of file and says which file.",
+    'Dim cmFound As Boolean',
+    'Do Until strix.EOS',
+    '    Data = strix.ReadText(-2)',
+    '    If VBA.Left(VBA.Trim(Data), 1) = "|" Then',
+    '        cmFound = True',
+    '        For i = 2 To Len(Trim(Data))',
+    '            If Mid(Trim(Data), i, 1) = "|" Then',
+    '                FirstColumn = Trim(Mid(Trim(Data), 2, i - 2))',
+    '                Exit For',
+    '            End If',
+    '        Next i',
+    '        Exit Do',
+    '    End If',
+    'Loop',
+    'If Not cmFound Then',
+    '    strix.Close',
+    '    Set strix = Nothing',
+    '    CM_Step = "reading the SAP export " & nazwa',
+    '    Err.Raise vbObjectError + 515, "ClosingManager", "EMPTY" & Chr$(1) & nazwa',
+    'End If',
+])
+
+PROPER_OLD = "\n".join([
+    '    For a = nStart To VBA.Len(Data)',
+    '        If VBA.Mid(Data, a, 1) = "|" Then',
+    '            nStart = a + 1',
+    '            nEnd = nStart',
+    '            Exit For',
+    '        End If',
+    '    Next',
+])
+
+PROPER_NEW = "\n".join([
+    '    cmLast = nStart',
+    '    For a = nStart To VBA.Len(Data)',
+    '        If VBA.Mid(Data, a, 1) = "|" Then',
+    '            nStart = a + 1',
+    '            nEnd = nStart',
+    '            Exit For',
+    '        End If',
+    '    Next',
+    "    'V4-CIO FIX: nStart only moves when a \"|\" is found. With none left it",
+    "    'stayed put and this loop ran for ever, while ReDim Preserve grew the",
+    "    'array on every pass - a hang that ended in out-of-memory, if at all.",
+    '    If nStart = cmLast Then Exit Do',
+])
+
+
+def review_fixes_globalmodule(text):
+    assert text.count(IMPORT_OLD) == 1, 'ImportTitle loop not found'
+    text = text.replace(IMPORT_OLD, IMPORT_NEW)
+    assert text.count(PROPER_OLD) == 1, 'ProperArray loop not found'
+    text = text.replace(PROPER_OLD, PROPER_NEW)
+    old = 'Dim a, b, n\n'
+    assert text.count(old) == 1, 'ProperArray Dim line not found'
+    return text.replace(old, 'Dim a, b, n\nDim cmLast As Long\n')
+
+
+# Admin.UpdateData also calls CreateArray, so it can now raise the explained
+# empty-export error. Without a handler the operator gets a raw VBA dialog.
+#
+# Unlike RunClosing, UpdateData already contains four short "On Error Resume
+# Next / On Error GoTo 0" windows. "On Error GoTo 0" DISABLES handling, so an
+# outer handler armed at the top would be switched off by the first one. Each
+# window is three lines - arm, one guarded statement, disarm - so the disarm is
+# rewritten to restore the outer handler, which is what it always meant.
+def admin(text):
+    L = text.split('\n')
+    i = L.index('Sub UpdateData()')
+    end = next(j for j in range(i + 1, len(L)) if L[j].strip() == 'End Sub')
+
+    n_restore = 0
+    for j in range(i, end):
+        if L[j].strip() == 'On Error GoTo 0':
+            L[j] = L[j].replace('On Error GoTo 0', 'On Error GoTo CM_Fail')
+            n_restore += 1
+    assert n_restore == 4, 'expected 4 On Error GoTo 0 in UpdateData, found %d' % n_restore
+
+    n_exit = 0
+    for j in range(end - 1, i, -1):
+        if L[j].strip() == 'Exit Sub':
+            ind = L[j][:len(L[j]) - len(L[j].lstrip())]
+            L[j:j] = [ind + 'CM_Done']
+            n_exit += 1
+    assert n_exit == 1, 'expected 1 Exit Sub in UpdateData, found %d' % n_exit
+    end += n_exit
+
+    L[end:end] = [
+        '',
+        "'V4-CIO: the same plain-language failure reporting as the close.",
+        'CM_Done',
+        'Exit Sub',
+        '',
+        'CM_Fail:',
+        '    CM_Explain Err.Number, Err.Description',
+        '    CM_Done',
+        '',
+    ]
+    L[i + 1:i + 1] = ['', 'On Error GoTo CM_Fail', 'CM_Begin 0',
+                      'CM_Note "refreshing the reference data from SAP"']
+    return '\n'.join(L)
