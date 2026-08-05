@@ -211,10 +211,34 @@ C:\Closing\ClosingManager_errors.log
   real sheet row — open the `ZGLRME` tab and go straight to it.
 - **A print that never produced a PDF** reports the report name, the folder being
   watched, and how long it waited.
-- Everything is **appended** to `ClosingManager_errors.log` next to the workbook,
-  with a timestamp and the user name, so a sequence of failures across one close
-  can be sent to the CI Team in one go rather than retyped from a dialog someone
-  already clicked away.
+- Everything is **appended** to `ClosingManager_errors.log`, with a timestamp and
+  the Windows user name, so a sequence of failures across one close can be sent to
+  the CI Team in one go rather than retyped from a dialog someone already clicked
+  away.
+
+#### Where the files are
+
+Everything needed to investigate a failure is in **one folder — the one the
+workbook itself sits in** (`ThisWorkbook.Path`, which is also `FPath`):
+
+| File | What it is |
+|---|---|
+| `Closing_Manager_IP_V4-CIO.xlsm` | the workbook |
+| `ClosingManager_errors.log` | every failure message, appended |
+| `zglrme.txt`, `zge132.txt`, `zglgwul.txt`, `gtb1.txt`, `eis4.txt`, … | the SAP extracts the close reads |
+
+So if the dialog says *"Extract file: `C:\Closing\zglgwul.txt` — line 147"*, that
+file is sitting right next to the workbook and the log. **It is still there:** the
+`Kill` that tidies each extract away runs *after* the parse loop, so a failure
+during parsing stops the run before the file is deleted — verified for
+`eis4.txt`, `gis4.txt`, `gtb1.txt`, `zglrme.txt` and `aa02.txt`.
+
+`PreflightCheck` prints the log path up front, so people know where it will be
+before anything goes wrong. If the workbook folder will not take the file (a
+read-only share, or the workbook opened from the web) it falls back to
+`C:\pdf\`, which the macro creates itself — and if even that fails the dialog
+says so and asks the user to copy the message (Ctrl+C works on a VBA MsgBox)
+rather than silently losing it.
 
 ### What "Balance Control Entry not completed…" means
 

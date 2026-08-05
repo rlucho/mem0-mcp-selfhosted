@@ -571,6 +571,9 @@ Public Sub PreflightCheck()
         okAll = False
     End If
 
+    ' 3b) where a failure will be written -------------------------------------
+    msg = msg & "[OK] Failures are logged to " & CM_LogPath() & "." & vbCrLf
+
     ' 4a) how SAP writes amounts -------------------------------------------------
     If CM_DecimalSep() = "" Then
         msg = msg & "[OK] SAP decimal notation: worked out automatically at run time." & vbCrLf
@@ -1443,7 +1446,9 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
         If Val(parts(2)) > 0 Then what = what & vbCrLf & "        On data row:    " & parts(2)
         If UBound(parts) >= 5 Then
             If parts(3) <> "" Then
-                whereTo = "Extract file:   " & parts(3) & "   -   line " & parts(4) & vbCrLf & _
+                whereTo = "Extract file:   " & FPath & parts(3) & vbCrLf & _
+                          "        Line " & parts(4) & " of that file. It is still there - the run" & vbCrLf & _
+                          "        stopped before deleting it." & vbCrLf & _
                           "        This is the line SAP sent (it carries the document" & vbCrLf & _
                           "        number, account and profit centre):" & vbCrLf & _
                           "        " & parts(5)
@@ -1550,6 +1555,9 @@ Report:
     logPath = CM_SaveLog(m & vbCrLf & "For the CI Team:  error " & errNum & " - " & errDesc)
     If logPath <> "" Then
         m = m & vbCrLf & vbCrLf & "A copy of this message was saved to:" & vbCrLf & logPath
+    Else
+        m = m & vbCrLf & vbCrLf & "This message could not be saved to a file - please copy it" & vbCrLf & _
+                "(Ctrl+C works on this dialog) before clicking OK."
     End If
 
     On Error Resume Next
@@ -1565,13 +1573,44 @@ End Sub
 ' Appended, not overwritten, so a sequence of failures across a close can be
 ' sent to the CI Team in one go. Returns the path, or "" if it could not write.
 Private Function CM_SaveLog(ByVal text As String) As String
-    Dim f As Integer, p As String
+    'Beside the workbook first - that is where the SAP extracts land too, so
+    'everything needed to investigate a failure sits in one folder. If that
+    'folder will not take it (read-only share, or the workbook opened from the
+    'web) fall back to the working folder, which the macro creates itself.
+    CM_SaveLog = CM_TryLog(CM_LogFolder(), text)
+    If CM_SaveLog <> "" Then Exit Function
+    CM_SaveLog = CM_TryLog(CM_BASE_DRIVE & "pdf\", text)
+End Function
+
+
+'--- where the log goes: beside the workbook, "" if that is not usable --------
+Public Function CM_LogFolder() As String
+    Dim p As String
     On Error Resume Next
     p = ThisWorkbook.Path
+    Err.Clear
+    On Error GoTo 0
     If p = "" Then Exit Function
     If IsUrlPath(p) Then Exit Function
     If Right$(p, 1) <> "\" Then p = p & "\"
-    p = p & "ClosingManager_errors.log"
+    CM_LogFolder = p
+End Function
+
+
+'--- the file the next failure will be written to ----------------------------
+Public Function CM_LogPath() As String
+    Dim p As String
+    p = CM_LogFolder()
+    If p = "" Then p = CM_BASE_DRIVE & "pdf\"
+    CM_LogPath = p & "ClosingManager_errors.log"
+End Function
+
+
+Private Function CM_TryLog(ByVal folder As String, ByVal text As String) As String
+    Dim f As Integer, p As String
+    If folder = "" Then Exit Function
+    On Error Resume Next
+    p = folder & "ClosingManager_errors.log"
     f = FreeFile
     Open p For Append As #f
     Print #f, String$(70, "=")
@@ -1579,7 +1618,7 @@ Private Function CM_SaveLog(ByVal text As String) As String
     Print #f, text
     Print #f, ""
     Close #f
-    If Err.Number = 0 Then CM_SaveLog = p
+    If Err.Number = 0 Then CM_TryLog = p
     Err.Clear
     On Error GoTo 0
 End Function
