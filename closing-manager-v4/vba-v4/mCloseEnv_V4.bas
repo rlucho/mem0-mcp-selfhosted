@@ -61,6 +61,18 @@ Public Const CM_SAP_LAYOUTS As String = _
     "ZGLRME|P_VARIE|/default;~ZGR215|P_ALV|/arek2"
 '----------------------------------------------------------------------------
 
+' --- Decimal notation SAP writes amounts in, when it cannot be worked out ------
+' Leave as "auto" and the macro learns it from the first unambiguous amount it
+' sees in a run (anything with both separators, or with 1, 2 or 4+ decimals) and
+' applies it to any ambiguous one afterwards. Set it to "." or "," only if a site
+' hits the ambiguity message - it then never has to guess or learn.
+'   "auto"   work it out from the data          (default)
+'   "."      SAP writes 1,234.56
+'   ","      SAP writes 1.234,56
+Public Const CM_SAP_DECIMAL As String = "auto"
+'----------------------------------------------------------------------------
+
+
 ' Breadcrumb: the plain-language description of what the macro is doing right
 ' now. Set by CM_Note at each stage, shown live on Excel's status bar, and
 ' read back by CM_Explain when a run stops.
@@ -68,6 +80,7 @@ Public CM_Step As String
 Public CM_StepNo As Long          'which stage we are on
 Public CM_StepMax As Long         'how many stages the close has
 Public CM_Started As Double       'Timer value when the run began
+Public CM_DecSeen As String        'decimal separator learned during this run
 '----------------------------------------------------------------------------
 
 
@@ -212,6 +225,14 @@ Public Sub PreflightCheck()
     Else
         msg = msg & "[X] PDFCreator.exe not found (printer must be named 'PDFCreator')." & vbCrLf
         okAll = False
+    End If
+
+    ' 4a) how SAP writes amounts -------------------------------------------------
+    If CM_DecimalSep() = "" Then
+        msg = msg & "[OK] SAP decimal notation: worked out automatically at run time." & vbCrLf
+    Else
+        msg = msg & "[OK] SAP decimal notation is set to """ & CM_DecimalSep() & """ " & _
+                    "(1" & IIf(CM_DecimalSep() = ".", ",", ".") & "234" & CM_DecimalSep() & "56)." & vbCrLf
     End If
 
     ' 4b) the Windows printer itself - SAP is told to print to the name below,
@@ -652,6 +673,7 @@ End Function
 
 '--- start of a run: reset the counters --------------------------------------
 Public Sub CM_Begin(ByVal totalSteps As Long)
+    CM_DecSeen = ""
     CM_StepNo = 0
     CM_StepMax = totalSteps
     CM_Started = Timer
@@ -828,6 +850,7 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
                             ByVal blankOk As Boolean, ByRef reason As String) As Double
     Dim s As String, neg As Boolean, i As Long, c As String
     Dim dots As Long, pDot As Long, pCom As Long, nSep As Long, after As Long
+    Dim sep As String, other As String
     ok = False
     reason = "AMOUNT"
     CM_ToAmount = 0
@@ -878,26 +901,41 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
             s = Replace(s, ",", ".")
         End If
 
-    ElseIf pDot > 0 Then
-        nSep = CM_CountChar(s, ".")
-        after = Len(s) - pDot
-        If nSep > 1 Then
-            s = Replace(s, ".", "")                 'grouping - a number has one point
-        ElseIf after = 3 Then
-            reason = "AMBIG"                        'could be 1234 or 1.234 - do not guess
-            Exit Function
-        End If
-
-    ElseIf pCom > 0 Then
-        nSep = CM_CountChar(s, ",")
-        after = Len(s) - pCom
-        If nSep > 1 Then
-            s = Replace(s, ",", "")
-        ElseIf after = 3 Then
-            reason = "AMBIG"
-            Exit Function
+    ElseIf pDot > 0 Or pCom > 0 Then
+        If pDot > 0 Then
+            sep = ".": other = ",": after = Len(s) - pDot
         Else
-            s = Replace(s, ",", ".")
+            sep = ",": other = ".": after = Len(s) - pCom
+        End If
+        nSep = CM_CountChar(s, sep)
+
+        If nSep > 1 Then
+            'a number has one decimal point, so a repeated separator is grouping -
+            'which also tells us the OTHER character is this system's decimal point
+            CM_DecSeen = other
+            s = Replace(s, sep, "")
+
+        ElseIf after <> 3 Then
+            '1, 2 or 4+ digits after it: it is the decimal point, unambiguously
+            CM_DecSeen = sep
+            If sep = "," Then s = Replace(s, ",", ".")
+
+        Else
+            'Exactly three digits after a single separator, and nothing else in
+            'the string to go on: "1,234" is 1234 to an English reader and 1.234
+            'to a German one. Resolve it from CM_SAP_DECIMAL, or from what this
+            'run has already learned from unambiguous values. Only if neither is
+            'known does the close stop - it will not put a guessed figure into a
+            'signed report pack.
+            If CM_DecimalSep() = "" Then
+                reason = "AMBIG"
+                Exit Function
+            End If
+            If CM_DecimalSep() = sep Then
+                If sep = "," Then s = Replace(s, ",", ".")   'it is the decimal point
+            Else
+                s = Replace(s, sep, "")                      'it is grouping
+            End If
         End If
     End If
 
@@ -915,6 +953,18 @@ Public Function CM_ToAmount(ByVal v As Variant, ByRef ok As Boolean, _
     CM_ToAmount = Val(s)                    'Val never reads the locale
     If neg Then CM_ToAmount = -CM_ToAmount
     ok = True
+End Function
+
+
+'--- which character SAP is using as the decimal point, "" if not yet known --
+' An explicit CM_SAP_DECIMAL always wins; otherwise it is whatever this run has
+' worked out from an unambiguous amount. Public so PreflightCheck can show it.
+Public Function CM_DecimalSep() As String
+    If CM_SAP_DECIMAL = "." Or CM_SAP_DECIMAL = "," Then
+        CM_DecimalSep = CM_SAP_DECIMAL
+    Else
+        CM_DecimalSep = CM_DecSeen
+    End If
 End Function
 
 
@@ -1005,10 +1055,11 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
             Case "BLANK"
                 what = "An amount SAP should have sent was blank."
             Case "AMBIG"
-                what = "SAP sent an amount that could mean two different things." & vbCrLf & _
+                what = "SAP sent an amount that could mean two things, and" & vbCrLf & _
+                       "        nothing else in this run said which." & vbCrLf & _
                        "        The value was:  [" & parts(1) & "]" & vbCrLf & _
-                       "        Read one way that is " & Replace(Replace(parts(1), ".", ""), ",", "") & _
-                       ", read the other it is about " & Left$(parts(1), InStr(parts(1) & ".", ".") - 1) & "." & vbCrLf & _
+                       "        That is either " & Replace(Replace(parts(1), ".", ""), ",", "") & _
+                       " or about " & Left$(parts(1), 1) & "." & vbCrLf & _
                        "        The macro will not guess a figure for a signed report."
             Case Else
                 what = "SAP sent an amount the macro could not read as a number." & vbCrLf & _
@@ -1019,22 +1070,38 @@ Public Sub CM_Explain(ByVal errNum As Long, ByVal errDesc As String)
               "        SAP user's decimal notation, and this PC reads them using its" & vbCrLf & _
               "        Windows regional settings. If one uses 1.234,56 and the other" & vbCrLf & _
               "        expects 1,234.56, the amount cannot be read."
-        todo = "1. SAP: System > User Profile > Own Data > Defaults >" & vbCrLf & _
-               "           Decimal Notation - compare with a colleague whose run works." & vbCrLf & _
-               "        2. Windows: Settings > Time & language > Region >" & vbCrLf & _
-               "           Regional format - compare the same way." & vbCrLf & _
-               "        3. If the value above is not a number at all (for example *****)," & vbCrLf & _
-               "           the SAP report column is too narrow - tell the CI Team."
+        If parts(0) = "AMBIG" Then
+            todo = "This one is settled permanently by a single setting." & vbCrLf & _
+                   "        Look up SAP: System > User Profile > Own Data >" & vbCrLf & _
+                   "        Defaults > Decimal Notation, then ask the CI Team to set" & vbCrLf & _
+                   "        CM_SAP_DECIMAL in the macro to ""."" or "","" to match." & vbCrLf & _
+                   "        After that the macro never has to work it out."
+        ElseIf parts(0) = "BLANK" Then
+            todo = "The amount column was empty where a figure was expected." & vbCrLf & _
+                   "        Re-run the SAP report by hand for this company code and" & vbCrLf & _
+                   "        period and check the column really has a value. If it does," & vbCrLf & _
+                   "        send this message to the CI Team."
+        Else
+            todo = "If the value above is not a number at all (for example *****)," & vbCrLf & _
+                   "        the SAP report column is too narrow to show the figure -" & vbCrLf & _
+                   "        tell the CI Team. Otherwise send them this message: the" & vbCrLf & _
+                   "        macro reads both 1.234,56 and 1,234.56, so a value it" & vbCrLf & _
+                   "        cannot read is not a regional-settings problem."
+        End If
     Else
         Select Case errNum
             Case 13, 6, 11
                 kind = "DATA"
-                what = "A value coming back from SAP was not the kind of value the" & vbCrLf & _
-                       "        macro expected (usually a number)."
-                why = "Normally a number-format difference between SAP and Windows," & vbCrLf & _
-                      "        or a report column showing ***** instead of a figure."
-                todo = "Compare SAP decimal notation and Windows regional format with" & vbCrLf & _
-                       "        a colleague whose run works, then send this message to the CI Team."
+                what = "A value coming back from SAP was not the kind of value" & vbCrLf & _
+                       "        the macro expected."
+                why = "Every amount the close reads is now converted independently" & vbCrLf & _
+                      "        of Windows regional settings, so this is NOT the usual" & vbCrLf & _
+                      "        SAP-vs-Windows number-format difference. It is more" & vbCrLf & _
+                      "        likely a report column showing ***** instead of a figure," & vbCrLf & _
+                      "        or a SAP screen returning something unexpected."
+                todo = "Run the SAP report by hand for this company code and period" & vbCrLf & _
+                       "        and look for a column of asterisks or a missing value." & vbCrLf & _
+                       "        Then send this whole message to the CI Team."
             Case 9
                 kind = "DATA"
                 what = "The macro expected a list of data and found it empty or shorter" & vbCrLf & _
