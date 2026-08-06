@@ -89,8 +89,13 @@ def resolve_targets(rows: list[dict]) -> list[tuple[str, int, str]]:
         name = (r.get("name") or "").strip()
         if depth == 4 and name in build.SYSTEMS.get(project, []):
             continue                      # group row
-        if depth == 4 and r["id"] in baseline:
-            continue                      # predates this work, already assigned
+        if r["id"] in baseline:
+            # Depth-INDEPENDENT on purpose. Re-parenting moved these 18 from
+            # depth 4 to depth 5 under P02, and a check written as
+            # `depth == 4 and id in baseline` silently stops matching the moment
+            # they move -- re-admitting 18 already-assigned activities and
+            # double-assigning all 25 resources to each.
+            continue
         if r["id"] in doomed:
             continue                      # duplicate, being deleted
         if depth not in (4, 5):

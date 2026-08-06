@@ -239,6 +239,21 @@ def rows_system_tasks(ids: dict) -> list[dict]:
     return out
 
 
+def flat_tasks(rows: list[dict], project: str) -> dict:
+    """name -> id for tasks still sitting DIRECTLY under `project` (depth 4, not
+    a system). Read from the export rather than EXISTING, because EXISTING is a
+    fixed baseline that does not know the re-parenting has happened."""
+    systems = SYSTEMS.get(project, [])
+    out = {}
+    for r in rows:
+        wbs = (r.get("wbs") or "").strip()
+        if (wbs.startswith("2.1.") and len(wbs.split(".")) == 4
+                and canon((r.get("project") or "").strip()) == project
+                and (r.get("name") or "").strip() not in systems):
+            out[(r.get("name") or "").strip()] = r["id"]
+    return out
+
+
 def p02_duplicates(rows: list[dict]) -> list[tuple[str, str, str, str]]:
     """(new id, country, name, old id) for tasks 03 created under P02 that
     duplicate a task already sitting flat under the same project.
@@ -254,12 +269,18 @@ def p02_duplicates(rows: list[dict]) -> list[tuple[str, str, str, str]]:
            and r["project"] in SYSTEMS}
     out = []
     for country, (pid, pwbs) in p02.items():
-        old = EXISTING[country]
+        # Compare against what is STILL FLAT, not against the EXISTING baseline.
+        # Once re-parenting has run, the baseline tasks are themselves under P02,
+        # so matching on the baseline makes every one of them its own duplicate --
+        # and the delete list then names the rows carrying the booked hours.
+        # Nothing is flat any more at that point, which is exactly right: the
+        # duplicates were already dealt with.
+        old = flat_tasks(rows, country)
         for r in rows:
             wbs = (r.get("wbs") or "").strip()
             if wbs.startswith(pwbs + ".") and len(wbs.split(".")) == 5:
                 if r["name"] in old:
-                    out.append((r["id"], country, r["name"], str(old[r["name"]])))
+                    out.append((r["id"], country, r["name"], old[r["name"]]))
     return sorted(out, key=lambda t: int(t[0]))
 
 
