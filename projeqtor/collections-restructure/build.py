@@ -551,6 +551,12 @@ def main() -> None:
                          "step. Read the allowed values off the status dropdown on "
                          "an open activity -- it lists exactly what the workflow "
                          "permits from where that activity currently sits.")
+    ap.add_argument("--close-skip", metavar="ID[,ID...]", default="",
+                    help="activity ids to leave out of every --close-via step. "
+                         "A staged workflow only moves FORWARD, so a row that has "
+                         "already reached the target must not be sent through the "
+                         "earlier hop again -- at best the step errors on it, at "
+                         "worst it re-opens something already closed.")
     ap.add_argument("--close-responsible", metavar="ID",
                     help="numeric resource id for the mandatory 'responsible' "
                          "field in 04c. Left as a placeholder when unset, so the "
@@ -594,8 +600,12 @@ def main() -> None:
     if args.close_via:
         responsible = args.close_responsible or placeholder("responsible resource id")
         steps = [s.strip() for s in args.close_via.split(",") if s.strip()]
+        skip = {i.strip() for i in args.close_skip.split(",") if i.strip()}
         for n, status in enumerate(steps, 1):
-            rows = rows_close_step(status, responsible, CLOSE_RESULT_TEXT)
+            rows = [r for r in rows_close_step(status, responsible, CLOSE_RESULT_TEXT)
+                    if str(r["id"]) not in skip]
+            if skip:
+                print(f"  (skipping {len(skip)}: {', '.join(sorted(skip))})")
             files.append((f"04d_{n}_set_status_{slugify(status)}.csv",
                           ["id", "name", "status", "responsible", "result"], rows))
             # A one-row twin for EVERY step. Each hop is a separate workflow
