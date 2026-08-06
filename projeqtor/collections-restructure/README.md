@@ -356,10 +356,35 @@ unset. `responsible` is `int(12)`, so it takes **20** — Francisco Manzanilla,
 Banking manager — not his name, which carries a double space and would fail the
 same way the resource roster nearly did.
 
-**What is still unknown:** whether `done` also ticks the `closed` checkbox and
-takes the activity off timesheets. That depends on how the status is configured,
-which no export shows. The smoke row answers it: set #521 to `done`, then check
-its Treatment tab and Daniela's timesheet.
+**Tested: `done` is not enough.** `Activity #521 updated` came back clean and the
+badge went to `done`, but the `closed` checkbox stayed **off** and Mailbox is
+still on the timesheet tree. So this status is not configured as an idle one --
+setting it records that the work finished, and nothing more.
+
+#### What actually governs timesheet visibility
+
+Assignments, and only assignments. Every one of the 11 still carries its 25, and
+that is why they still appear. Three ways to remove them, two of them already
+ruled out by test:
+
+| Route | Result |
+|---|---|
+| status -> `done` | no effect on visibility — **tested** |
+| untoggle *automatic assignment of the project team* | existing assignments stay — **tested** |
+| `idle` on the Activity via import | accepted and silently ignored — **tested** |
+| tick `closed` on the **Treatment tab** by hand | untested, and the obvious next move |
+
+And a hard limit worth knowing before planning around deletion: **an assignment
+with booked hours cannot be deleted.** On #521 the resources at 0,00 h show a
+trash icon; Angelica Barrientos (180,25 h) and Clara Garcia Ortega (27,00 h) show
+only edit and link. ProjeQtor will not orphan booked time. So "just delete the
+assignments" cannot work for exactly the people whose sheets matter -- which is
+the right behaviour, and the reason the activity itself has to be closed rather
+than emptied.
+
+That leaves the `closed` checkbox on the Treatment tab. It is the field the
+importer refuses to write, but the UI may well let it be ticked directly, and 11
+activities is a minute of clicking. Test it on #521 before doing the other ten.
 
 Two routes are now closed off for good, so nobody retries them:
 
