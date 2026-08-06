@@ -409,6 +409,12 @@ def main() -> None:
                     help="fresh ProjeQtor activity export, used to fill in the "
                          "system ids that 03 needs")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
+    ap.add_argument("--close-project", metavar="ID", type=int,
+                    help="generate the two candidate ways of closing a PROJECT "
+                         "record (element type Project, not Activity): the `idle` "
+                         "flag, and a status change. Which one this instance "
+                         "accepts is not known -- on Activity, idle turned out "
+                         "not to be writable and status hit the workflow.")
     ap.add_argument("--reparent", action="store_true",
                     help="move the old flat tasks under IB/UK/FR beneath their "
                          "project's P02, keeping their booked hours on one "
@@ -427,6 +433,23 @@ def main() -> None:
 
     export_rows = read_export(args.export) if args.export else []
     ids = resolve_ids(export_rows) if export_rows else {}
+
+    if args.close_project is not None:
+        pid = args.close_project
+        name = {v: k for k, v in
+                {**PAYMENT_PROJECTS, **OUT_OF_SCOPE_PROJECTS}.items()}.get(pid, "")
+        a = os.path.join(args.out, f"08a_close_project_{pid}_via_idle.csv")
+        b = os.path.join(args.out, f"08b_close_project_{pid}_via_status.csv")
+        write_csv(a, ["id", "name", "idle"], [{"id": pid, "name": name, "idle": 1}])
+        write_csv(b, ["id", "name", "status"],
+                  [{"id": pid, "name": name, "status": LABEL_STATUS_CLOSED}])
+        print(f"element type: Project  (NOT Activity)\n")
+        print(f"wrote {a}   <- try FIRST")
+        print(f"wrote {b}   <- only if 08a reports no change")
+        print("\nThe '?' button on the import screen with Project selected prints "
+              "the real schema;\nread the closure field off that rather than "
+              "guessing a third time.")
+        return
 
     if args.reparent:
         if not export_rows:
