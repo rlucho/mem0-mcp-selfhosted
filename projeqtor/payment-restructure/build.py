@@ -130,7 +130,10 @@ SYSTEMS = {
     # UK's P02 was a naming error and was renamed to PP2 in the instance on
     # 2026-08-06; the kit follows rather than tries to correct it back.
     "UK": ["PP2", "Navision"],
-    "FR": ["P02", "QUALIAC", "E01"],
+    # Navision added 2026-08-06. P02 stays first: it already inherited FR's old
+    # flat tasks, and moving it would re-point that inheritance at a system that
+    # never held them.
+    "FR": ["P02", "QUALIAC", "E01", "Navision"],
     # PP2 FIRST, deliberately: IT's historical payment work was PP2 work, and
     # 69,61 h are booked on those 11 rows (41,62 of it on Payment Run #65 alone).
     # They move under PP2 and keep their ids and hours; E01 is genuinely new and
