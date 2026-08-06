@@ -1,0 +1,23 @@
+Delete these by hand -- the import cannot delete records.
+Each duplicates an older task being re-parented under P02;
+the old one carries the booked hours, these were created
+empty by 03 and have no history to lose.
+
+#667  IB > P02 > Payment Run   (duplicate of #63)
+#668  IB > P02 > Manual & Unplanned Payments   (duplicate of #160)
+#669  IB > P02 > Invoice check   (duplicate of #167)
+#670  IB > P02 > Other Processes   (duplicate of #174)
+#671  IB > P02 > Project - Robotic   (duplicate of #353)
+#672  IB > P02 > Mailbox   (duplicate of #440)
+#689  UK > P02 > Payment Run   (duplicate of #62)
+#690  UK > P02 > Manual & Unplanned Payments   (duplicate of #161)
+#691  UK > P02 > Invoice check   (duplicate of #168)
+#692  UK > P02 > Other Processes   (duplicate of #175)
+#693  UK > P02 > Project - Robotic   (duplicate of #354)
+#694  UK > P02 > Mailbox   (duplicate of #441)
+#711  FR > P02 > Payment Run   (duplicate of #10)
+#712  FR > P02 > Manual & Unplanned Payments   (duplicate of #162)
+#713  FR > P02 > Invoice check   (duplicate of #169)
+#714  FR > P02 > Other Processes   (duplicate of #176)
+#715  FR > P02 > Project - Robotic   (duplicate of #355)
+#716  FR > P02 > Mailbox   (duplicate of #442)

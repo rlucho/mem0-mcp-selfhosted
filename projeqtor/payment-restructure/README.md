@@ -124,31 +124,75 @@ tasks under each, at wbs `2.1.5.x.y` and so on.
 
 ---
 
-## The 18 flat tasks under IB, UK, FR — a decision, not a step
+## The 18 old flat tasks under IB, UK, FR — DECIDED: re-parent
 
-Once IB/UK/FR have `P02 > Payment Run` etc., the old `Payment Run` sitting directly
-under the project has no place in the target shape. Two ways to handle it, and they
-are not equivalent:
+**Re-parent them under P02**, not close them. `idActivity` is a plain field with
+no workflow attached, so the move is a straight update: the activity keeps its
+identity, its id and its booked hours, and simply drops one level. It also
+sidesteps the closing problem entirely — nothing needs a status change.
 
-**Close them** (`04_close_superseded_flat.csv`). Matches what Collections does.
-They keep their booked hours as history and drop off timesheets. But the record
-then splits: hours before the cutover on one activity, hours after on another.
+The catch, stated plainly: it asserts the old work was P02 work. For IB/UK/FR
+some of it was probably PER / Navision / QUALIAC, and no export can split it.
 
-**Re-parent them under `P02`** instead — set `idActivity` to P02's id on each of
-the 6. History stays on one continuous activity, and P02 then needs only the 5 new
-tasks rather than all 11. The catch: it asserts the existing work *was* P02 work,
-and for IB/UK/FR that is a real claim — some of it may have been PER / Navision /
-QUALIAC. Splitting it correctly is not something the export can tell us.
+```bash
+python3 build.py --export EXPORT_Activity.csv --reparent
+```
 
-**`04` is generated but not recommended blindly, and there is no re-parent file
-yet** — say which way and it is a one-line change. Nothing else in the kit depends
-on this, so steps 1–5 can go in first either way.
+### This leaves 18 duplicates to delete
 
-Note also: closing is currently **blocked instance-wide**. The Collections kit hit
-`the workflow does not allow you to move this item to this status` moving
-`recorded -> closed`, and `idle` turned out not to be writable through the import.
-Whatever unblocks it there unblocks it here. See
-[`../collections-restructure/README.md`](../collections-restructure/README.md).
+`03` built all 11 tasks under every system, including the 6 names that already
+existed flat. Once the old row moves under P02, its freshly created twin is a
+duplicate — and the **old** row is the one to keep, since it carries the hours.
+
+| | Re-parent (keep) | Delete |
+|---|---|---|
+| IB > P02 | #63, #160, #167, #174, #353, #440 | #667–#672 |
+| UK > P02 | #62, #161, #168, #175, #354, #441 | #689–#694 |
+| FR > P02 | #10, #162, #169, #176, #355, #442 | #711–#716 |
+
+The other 5 under each P02 — `Payment Run Issues`, `Banks Issues`, `On Boarding`,
+`Audit`, `Proof of payment` — are genuinely new and stay. PER, Navision and
+QUALIAC are untouched: they keep all 11.
+
+The import cannot delete records, so `04c_DELETE_these_p02_duplicates.txt` is a
+checklist for the UI rather than an import file. Every one was created empty by
+`03` and has no history to lose.
+
+`04_close_superseded_flat.csv` is now **obsolete** — kept only as the record of
+the road not taken.
+
+---
+
+## Assignments — `build_assignments.py`
+
+Same contract as Collections, `idProject;refType;refId;idResource;rate` with
+`refType = Activity`, and the roster is imported from that kit rather than
+copied, so "who is on the Banking team" has one definition.
+
+One difference: Collections was a single project, so every row carried
+`idProject = 14`. Payment's units are separate sub-projects, so idProject is per
+row, read from the activity's own project.
+
+```bash
+python3 build_assignments.py --resources EXPORT_Resource.csv \
+                             --activities EXPORT_Activity.csv
+```
+
+**73 activities x 25 resources = 1825 rows.** What is deliberately left out:
+
+| Excluded | Why |
+|---|---|
+| the 6 system rows #661–#666 | group rows — they still render editable timesheet cells, so assigning one invites time landing there instead of rolling up |
+| the 48 pre-existing tasks | already assigned; re-assigning would duplicate |
+| the 18 duplicates #667–#672 etc. | being deleted |
+
+It writes **smoke + REMAINDER, never smoke + full** — the two are disjoint by
+construction. These rows carry no `id`, so every one INSERTs, and a smoke row
+left inside the bulk file is exactly how PS ended up with two
+`Payment Run Issues`.
+
+`--split-projects` writes one file per sub-project (125 rows for the flat ones,
+400 each for IB/UK/FR) if 1824 in one go proves too much.
 
 ---
 

@@ -226,6 +226,51 @@ def rows_system_tasks(ids: dict) -> list[dict]:
     return out
 
 
+def p02_duplicates(rows: list[dict]) -> list[tuple[str, str, str, str]]:
+    """(new id, country, name, old id) for tasks 03 created under P02 that
+    duplicate a task already sitting flat under the same project.
+
+    03 built all 11 tasks under every system, including the 6 names that already
+    existed directly under IB/UK/FR. Under the re-parent plan the OLD row wins --
+    it carries the booked hours -- so its freshly created twin under P02 is the
+    one that goes. The other 5 under P02 are genuinely new and stay.
+    """
+    p02 = {r["project"]: (r["id"], r["wbs"]) for r in rows
+           if (r.get("wbs") or "").startswith("2.1.")
+           and len(r["wbs"].split(".")) == 4 and r["name"] == "P02"
+           and r["project"] in SYSTEMS}
+    out = []
+    for country, (pid, pwbs) in p02.items():
+        old = EXISTING[country]
+        for r in rows:
+            wbs = (r.get("wbs") or "").strip()
+            if wbs.startswith(pwbs + ".") and len(wbs.split(".")) == 5:
+                if r["name"] in old:
+                    out.append((r["id"], country, r["name"], str(old[r["name"]])))
+    return sorted(out, key=lambda t: int(t[0]))
+
+
+def rows_reparent_to_p02(rows: list[dict]) -> list[dict]:
+    """Move each old flat task under its project's P02.
+
+    `idActivity` is a plain field -- no workflow attached, unlike `status` -- so
+    this is a straight update, and every row carries an `id` so it cannot insert.
+    It is also what makes closing unnecessary: the activity keeps its identity and
+    its hours, and simply moves down one level.
+    """
+    p02 = {r["project"]: r["id"] for r in rows
+           if (r.get("wbs") or "").startswith("2.1.")
+           and len(r["wbs"].split(".")) == 4 and r["name"] == "P02"
+           and r["project"] in SYSTEMS}
+    missing = [c for c in SYSTEMS if c not in p02]
+    if missing:
+        sys.exit(f"ERROR: no P02 activity found under {', '.join(missing)}. "
+                 f"Import 02 first, and re-export.")
+    return [{"id": aid, "name": name, "idActivity": p02[country]}
+            for country in SYSTEMS
+            for name, aid in sorted(EXISTING[country].items(), key=lambda kv: kv[1])]
+
+
 def rows_close_superseded() -> list[dict]:
     """The 18 flat tasks under IB, UK and FR.
 
@@ -330,6 +375,11 @@ def main() -> None:
                     help="fresh ProjeQtor activity export, used to fill in the "
                          "system ids that 03 needs")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
+    ap.add_argument("--reparent", action="store_true",
+                    help="move the old flat tasks under IB/UK/FR beneath their "
+                         "project's P02, keeping their booked hours on one "
+                         "continuous activity, and list the now-duplicate rows "
+                         "03 created under P02 for manual deletion.")
     ap.add_argument("--rename", metavar="OLD=NEW", action="append", default=[],
                     help="rename every activity called OLD to NEW. Repeatable. "
                          "Needs --export, since a rename updates by id.")
@@ -343,6 +393,32 @@ def main() -> None:
 
     export_rows = read_export(args.export) if args.export else []
     ids = resolve_ids(export_rows) if export_rows else {}
+
+    if args.reparent:
+        if not export_rows:
+            sys.exit("ERROR: --reparent needs --export; P02's id comes from it.")
+        moves = rows_reparent_to_p02(export_rows)
+        path = os.path.join(args.out, "04b_reparent_old_flat_to_p02.csv")
+        write_csv(path, ["id", "name", "idActivity"], moves)
+        print(f"wrote {path}  [{len(moves)} rows]")
+        for m in moves:
+            print(f"  #{m['id']:>4}  {m['name']:30s} -> parent #{m['idActivity']}")
+
+        dups = p02_duplicates(export_rows)
+        listing = os.path.join(args.out, "04c_DELETE_these_p02_duplicates.txt")
+        os.makedirs(os.path.dirname(listing), exist_ok=True)
+        with open(listing, "w", encoding="utf-8") as fh:
+            fh.write("Delete these by hand -- the import cannot delete records.\n"
+                     "Each duplicates an older task being re-parented under P02;\n"
+                     "the old one carries the booked hours, these were created\n"
+                     "empty by 03 and have no history to lose.\n\n")
+            for new, country, name, old in dups:
+                fh.write(f"#{new}  {country} > P02 > {name}   "
+                         f"(duplicate of #{old})\n")
+        print(f"\nwrote {listing}  [{len(dups)} to delete by hand]")
+        for new, country, name, old in dups:
+            print(f"  DELETE #{new:>4}  {country} > P02 > {name:30s} dup of #{old}")
+        return
 
     if args.rename:
         if not export_rows:
