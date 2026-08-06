@@ -30,119 +30,125 @@ which is exactly how the 53 activities already under wbs `2.1.*` are arranged.
 `Payment` is project **9**, wbs `2.1`, under `Banking` (29). Its sub-projects, from
 `export_Project_20260803_142809.csv`:
 
-| Project | id | wbs | In target? |
+| Project | id | wbs | Final shape |
 |---|---|---|---|
-| **NL** (was `PS`) | 31 | 2.1.1 | yes — flat |
-| BE | 32 | 2.1.2 | yes — flat |
-| IT | 33 | 2.1.3 | yes — flat |
-| DE | 34 | 2.1.4 | yes — flat |
-| IB | 35 | 2.1.5 | yes — **systems** P02, PER |
-| UK | 36 | 2.1.6 | yes — **systems** P02, Navision |
-| FR | 37 | 2.1.7 | yes — **systems** P02, QUALIAC |
-| PMS-TMS | 69 | 2.1.8 | yes — flat |
-| **PL & Others** | 74 | 2.1.9 | **no — not in the source document** |
+| PS | 31 | 2.1.1 | flat, 11 tasks |
+| BE | 32 | 2.1.2 | flat, 11 tasks |
+| IT | 33 | 2.1.3 | **PP2** (inherited the hours) · **E01** |
+| DE | 34 | 2.1.4 | flat, 11 tasks |
+| IB | 35 | 2.1.5 | **P02** (inherited) · PER · E01 |
+| UK | 36 | 2.1.6 | **PP2** (inherited, renamed from P02) · Navision |
+| FR | 37 | 2.1.7 | **P02** (inherited) · QUALIAC · E01 · Navision |
+| PMS-TMS | 69 | 2.1.8 | flat, 11 tasks |
+| PL & Others | 74 | 2.1.9 | flat, 11 tasks — brought in scope later |
+| **Marruecos** | **75** | 2.1.10 | **E01 · PER** — created by this kit |
+
+**211 activities: 13 system rows, 198 leaves, every branch at exactly 11.**
+
+The source document was wrong or incomplete in four places, all corrected against
+the instance rather than the document: `PS` should have read `NL` (the rename was
+then called off), `Boarding` should have been `On Boarding`, `PL & Others` was
+omitted entirely, and neither Marruecos nor the later E01/Navision systems
+appeared at all.
 
 Name collisions are real in this instance and the reason everything is keyed by
 **id**: there is an `IB` under `AP` (3), another under `Management` (58), and a
 third under Payment (35). `resolve_ids()` scopes to wbs `2.1.*` and aborts if a
 name resolves to two ids.
 
-### Project 31 renamed: `PS` -> `NL` (2026-08-06)
+### The `PS` -> `NL` rename was called off
 
-The rename is on the **project record**, so it imports with element type
-**`Project`**, not `Activity` — `07_rename_project_PS_to_NL.csv`, one row,
-`31;NL`.
+`07_rename_project_PS_to_NL.csv` exists (element type **`Project`**, one row,
+`31;NL`) but was never imported. Project 31 is still `PS`, and the tables key it
+that way. `PROJECT_ALIASES` runs `NL -> PS`, so if it is ever renamed, exports
+keep resolving without touching anything.
 
-Two things it does not touch, both deliberate:
-
-- **`PS` under `AP` (project 8, wbs 1.6)** keeps its name. It is a different
-  record, and every lookup here is confined to wbs `2.1.*`, so the two can never
-  be confused. If that one should change too, say so — it is a second one-row file.
-- **Every generated CSV**, because they all carry `idProject = 31` numerically.
-  Nothing already delivered needs regenerating.
-
-`PROJECT_ALIASES = {"PS": "NL"}` maps the old display name onto the table key, so
-an export taken either side of the rename resolves identically — verified: 73
-assignment targets and 79 resolved ids, the same set both ways.
-
-Note `NL` already exists elsewhere as project 63 under `Management`. That is
-consistent with how this instance already works (three projects called `IB`) and
-harmless, since nothing here resolves a project by name alone.
+Note there is a second `PS`, project 8 under `AP` (wbs 1.6), untouched throughout
+— every lookup here is confined to wbs `2.1.*`.
 
 ---
 
-## What already exists
+## Starting point (2026-08-03), for reference
 
-Every one of the 8 in-scope projects holds exactly **6** tasks, and they are
-exactly the first 6 of the target 11 — no strays, no renames, nothing to clean up:
+Every one of the 8 projects then in scope held exactly **6** tasks — the first 6
+of the target 11, no strays:
 
 ```
 Payment Run · Manual & Unplanned Payments · Invoice check
 Other Processes · Project - Robotic · Mailbox
 ```
 
-The target adds 5 to that list:
+The target added 5 more:
 
 ```
-Payment Run Issues · Banks Issues · Boarding · Audit · Proof of payment
+Payment Run Issues · Banks Issues · On Boarding · Audit · Proof of payment
 ```
 
 ---
 
 ## Files
 
-Element type **`Activity`**, file format **`csv file (comma separated)`** — which
-is `;` delimited, as on the Collections side. Rows without an `id` **insert**;
-rows with one **update**.
+Element type **`Activity`** unless stated, file format **`csv file (comma
+separated)`** — which is `;` delimited. Rows without an `id` **insert**; rows with
+one **update**. That single rule explains most of what went wrong below.
 
-| File | Rows | Purpose |
+| File | Element type | Purpose |
 |---|---|---|
-| `00_smoke_test_one_task.csv` | 1 | One row of `01`. Import first — proves the shape is accepted before 25 rows go in. |
-| `01_add_missing_tasks_flat.csv` | 25 | The 5 missing tasks × PS, BE, IT, DE, PMS-TMS. No parent, no export needed. |
-| `02_create_systems.csv` | 6 | P02 + PER (IB), P02 + Navision (UK), P02 + QUALIAC (FR), directly under their project. |
-| `03_create_tasks_under_systems.csv` | 66 | 11 tasks × 6 systems. `idActivity` = the system's id, so it needs an export first. |
-| `04_close_superseded_flat.csv` | 18 | The flat tasks under IB/UK/FR. **HELD — see below.** |
+| `01_add_missing_tasks_flat.csv` | Activity | Tasks missing from a flat project |
+| `02_create_systems.csv` | Activity | System rows, directly under their project |
+| `03_create_tasks_under_systems.csv` | Activity | 11 tasks per system; needs an export for the parent ids |
+| `04b_reparent_flat_to_first_system.csv` | Activity | Moves a project's flat tasks under its first system |
+| `04c_DELETE_these_duplicates.txt` | — | Checklist for the UI; the import cannot delete |
+| `05_rename_*.csv` | Activity | `--rename OLD=NEW` |
+| `06_assign_team_ALL.csv` | **Assignment** | 3625 rows; `06_..._NN_<project>.csv` is the same set split 10 ways |
+| `06z_PROBE_reimport_one_existing_pair.csv` | **Assignment** | 1 row, settles whether a repeated pair duplicates |
+| `07_rename_project_PS_to_NL.csv` | **Project** | Called off, never imported |
+| `09_create_project_marruecos.csv` | **Project** | Created Marruecos (#75) |
+| `10_set_marruecos_manager.csv` | **Project** | Manager, copied verbatim for the double space |
 
-`03` ships with `<<IB > P02>>` placeholders and is deliberately **not importable**
-until `build.py --export` fills in real ids. `build.py` also refuses to overwrite a
-file that already carries resolved ids, so regenerating one file cannot destroy
-another's only record of which system each task was attached to.
-
-Every file is driven by `EXISTING`, not by a count, so re-running after a partial
-import emits only what is still missing — a pass cannot create duplicates.
+Every file is driven by the export plus the `EXISTING` baseline, never by a count,
+so re-running after a partial import emits only what is still missing.
 
 ---
 
-## Runbook
+## The order that actually worked
 
-**1. Smoke.** Import `00_smoke_test_one_task.csv` → one `Payment Run Issues` under
-PS. If it lands, the shape is right.
+Each pass needs the ids the previous one created, so an export sits between them:
 
-**2. Flat tasks.** Import `01_add_missing_tasks_flat.csv`. **Re-run `build.py
---export` first if the smoke went in** — the smoke row *is* row 1 of this file,
-and these rows carry no `id`, so every one INSERTs. Importing both created
-`Payment Run Issues` twice under PS (#635 and #636); with `--export` the file only
-holds what is genuinely missing.
-
-PS, BE, IT, DE and PMS-TMS are then complete at 11 tasks each, and **that half of
-the job is done** — it does not depend on anything below.
-
-**Done (2026-08-04):** all five are at 11 tasks. PS carried the duplicate above;
-#636 is the one to delete — both are identical, 0 real work and no responsible, so
-keeping the lower id leaves the WBS contiguous.
-
-**3. Systems.** Import `02_create_systems.csv` → 6 new activities under IB, UK, FR.
-
-**4. Re-export** Activities, then:
-```bash
-python3 build.py --export /path/to/export_Activity_<date>.csv
 ```
-`out/03_create_tasks_under_systems.csv` now carries real system ids. Import it.
+create/rename          ->  export  ->  next pass
+09 project             ->  Project export  -> its id
+02 systems             ->  Activity export -> 03 tasks (parent ids)
+03 tasks + 04b reparent-> Activity export -> 06 assignments (which leaves exist)
+```
 
-**5. Verify** before closing anything: IB/UK/FR should each show 2 systems with 11
-tasks under each, at wbs `2.1.5.x.y` and so on.
+**Assignments are not optional.** An activity with no assignment does not appear
+on anyone's timesheet, so the tree being correct is not the same as it being
+usable — the empty Francia/España rows on the Collections side are what proved
+it, and they are also what proved the import had not leaked beyond its target.
 
-**6. The 18 superseded tasks** — decide first, see below.
+---
+
+## Three things that bit, and what they cost
+
+**A smoke row inside its own bulk file.** The 1-row smoke *is* row 1 of `01`, and
+these rows carry no `id`, so importing both created `Payment Run Issues` twice
+under PS (#635 and #636). Fixed by driving the file off `--export`; the generator
+now emits smoke + REMAINDER, never smoke + full.
+
+**Creating tasks under a system that is about to inherit them.** `03` built all 11
+under P02 while 6 already existed flat, so re-parenting collided with them — 18
+rows to delete by hand across IB/UK/FR. `rows_system_tasks` now skips what the
+first system inherits, and the later rounds produced **zero** duplicates.
+
+**A single-pass `resolve_ids`.** It resolved a task under a system only if the
+system's row happened to appear first in the export, which a CSV does not
+guarantee. It was silently missing 48 of 66 existing tasks and produced a `03` of
+70 rows instead of 22 — importing that would have duplicated nearly every task
+under five systems. Now a two-pass resolve.
+
+The common thread: each was silent. Nothing errored, and the wrong file looked
+exactly like the right one.
 
 ---
 

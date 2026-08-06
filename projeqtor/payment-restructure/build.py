@@ -382,25 +382,30 @@ def rows_reparent_to_p02(rows: list[dict]) -> list[dict]:
     return out
 
 
-def rows_close_superseded() -> list[dict]:
-    """The 18 flat tasks under IB, UK and FR.
+def rows_close_superseded(rows: list[dict] | None = None) -> list[dict]:
+    """Flat tasks under a systems project that are genuinely superseded.
 
-    The target gives those three a system level, so a task sitting directly under
-    the project has no place in it. They are NOT deleted -- deleting would take
-    their booked hours with them -- so this closes them, the same treatment the
-    11 old Collections activities get.
+    DRIVEN BY THE EXPORT, not by EXISTING. Keyed off the static baseline this
+    listed the 24 tasks that had just been RE-PARENTED -- the keepers, holding
+    1293,30 h between them -- as safe to close, each because the baseline still
+    claimed they sat flat. Once a project's tasks move under its first system,
+    nothing is flat there any more, which is exactly the right answer: there is
+    nothing left to supersede.
 
-    Held back deliberately: see README.md. Re-parenting them under P02 instead
-    would keep the history in place, and that is a call to make before importing
-    anything that cannot be walked back.
+    Re-parenting replaced closing entirely on the Payment side, so this should
+    report zero. If it ever reports rows again, something was created flat under
+    a systems project and wants looking at rather than closing on sight.
     """
-    rows = [(aid, name) for project in SYSTEMS
-            for name, aid in EXISTING.get(project, {}).items()]
-    # Descending id, the order the Collections kit uses: closing a parent before
-    # its children errors out. These 18 are all siblings, so it costs nothing
-    # here and keeps one convention across both kits.
-    return [{"id": aid, "name": name, "status": LABEL_STATUS_CLOSED}
-            for aid, name in sorted(rows, reverse=True)]
+    if rows is None:
+        return []
+    out = []
+    for country in SYSTEMS:
+        if first_system_id(rows, country) is None:
+            continue
+        for name, aid in sorted(flat_tasks(rows, country).items(),
+                                key=lambda kv: -int(kv[1])):
+            out.append({"id": aid, "name": name, "status": LABEL_STATUS_CLOSED})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -584,7 +589,7 @@ def main() -> None:
     flat = rows_flat_additions(ids)
     systems = rows_systems(ids)
     system_tasks = rows_system_tasks(ids, export_rows or None)
-    close = rows_close_superseded()
+    close = rows_close_superseded(export_rows or None)
 
     files = [
         ("00_smoke_test_one_task.csv", COLUMNS, flat[:1]),
@@ -622,8 +627,11 @@ def main() -> None:
     total = len(flat) + len(systems) + len(system_tasks)
     print(f"\nto create: {len(flat)} flat tasks + {len(systems)} systems + "
           f"{len(system_tasks)} tasks under systems = {total} activities")
-    print(f"to close:  {len(close)} superseded flat tasks under "
-          f"{', '.join(SYSTEMS)} (HELD -- see README.md)")
+    if close:
+        print(f"to close:  {len(close)} flat tasks stranded under "
+              f"{', '.join(SYSTEMS)} -- INVESTIGATE, do not close on sight")
+    else:
+        print("to close:  0 -- re-parenting replaced closing; nothing is stranded")
     if not ids:
         print("\nNo --export given: 03 carries <<placeholders>> and is NOT "
               "importable yet. Import 02, export Activities, then re-run "
