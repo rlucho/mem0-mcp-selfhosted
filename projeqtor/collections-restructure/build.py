@@ -53,20 +53,25 @@ LABEL_ACTIVITY_TYPE = "Task"
 LABEL_PLANNING_MODE = "as soon as possible"
 LABEL_STATUS_NEW = "recorded"
 
-# The status dropdown on an open activity lists the ENTIRE workflow, and there is
-# no "closed" in it:
+# The workflow is STAGED, and the dropdown only ever shows what is reachable from
+# where the activity currently sits. That is why it looked twice like `closed` did
+# not exist:
 #
-#     recorded, qualified, accepted, assigned, in progress, done, cancelled
+#   from `recorded`:  recorded, qualified, accepted, assigned, in progress,
+#                     done, cancelled            <- no `closed`
+#   from `done`:      re-opened, done, verified, delivered, validated,
+#                     closed                     <- there it is
 #
-# So `status = closed` was never going to work, and "the workflow does not allow
-# you to move this item to this status" was the truth stated politely -- there is
-# no such status to move to. `closed` is a separate CHECKBOX on the Treatment tab
-# with its own date, alongside `done` and `cancelled`: the `idle` field, which the
-# importer accepts and silently ignores.
+# So "the workflow does not allow you to move this item to this status" meant
+# exactly what it said: not from here. `recorded -> closed` is two hops, and
+# --close-via walks them.
 #
-# `done` is the terminal status these 11 want. `cancelled` would say the work
-# never happened, and it did -- that is the whole reason for not deleting them.
-LABEL_STATUS_CLOSED = "done"
+# `closed` also exists as a CHECKBOX on the Treatment tab with its own date,
+# beside `done` and `cancelled` -- that is the `idle` field, set by reaching the
+# status rather than written directly. The importer ignores it, which is why 04b
+# went nowhere.
+CLOSE_PATH = ["done", "closed"]
+LABEL_STATUS_CLOSED = CLOSE_PATH[-1]
 
 # Francisco Manzanilla, resource #20, Banking. `responsible` is int(12) so it
 # needs the numeric id -- and the name carries a double space, so matching on it
@@ -593,12 +598,13 @@ def main() -> None:
             rows = rows_close_step(status, responsible, CLOSE_RESULT_TEXT)
             files.append((f"04d_{n}_set_status_{slugify(status)}.csv",
                           ["id", "name", "status", "responsible", "result"], rows))
-            # A one-row twin for the first step only: if the workflow rejects the
-            # path, it rejects it on row 1, and 11 red boxes say nothing 1 does not.
-            if n == 1:
-                files.append((f"04d_{n}_set_status_{slugify(status)}_SMOKE_1row.csv",
-                              ["id", "name", "status", "responsible", "result"],
-                              rows[:1]))
+            # A one-row twin for EVERY step. Each hop is a separate workflow
+            # transition and can be refused on its own, so each deserves its own
+            # cheap test -- and #521 already sits at `done`, so step 2 is
+            # testable immediately without touching the other ten.
+            files.append((f"04d_{n}_set_status_{slugify(status)}_SMOKE_1row.csv",
+                          ["id", "name", "status", "responsible", "result"],
+                          rows[:1]))
 
     if AUTO_ASSIGN_COLUMN and SMOKE_TEST_ACTIVITY_ID:
         files.insert(1, ("00b_test_auto_assign_column.csv",

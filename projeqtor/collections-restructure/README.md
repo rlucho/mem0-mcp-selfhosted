@@ -320,81 +320,57 @@ After each file, spot-check one of its leaves for 25 assignments — say **#558*
 Francia, España, Portugal and Marruecos should have children where they were
 empty.
 
-### Closing the old 11 — SOLVED: there is no `closed` status
+### Closing the old 11 — SOLVED: the workflow is staged, `closed` is two hops
 
-Three attempts failed for one reason, which the status dropdown on an open
-activity finally made obvious. It lists the entire workflow:
+`closed` exists. The dropdown only ever lists what is reachable **from where the
+activity currently sits**, which is why it looked twice like it did not:
 
 ```
-recorded · qualified · accepted · assigned · in progress · done · cancelled
+from `recorded`:  recorded · qualified · accepted · assigned · in progress · done · cancelled
+from `done`:      re-opened · done · verified · delivered · validated · CLOSED
 ```
 
-**No `closed`.** So `the workflow does not allow you to move this item to this
-status` was true in a way none of us read correctly — there was no such status to
-move to. `LABEL_STATUS_CLOSED = "closed"` had carried a `# VERIFY` comment since
-the first commit and was never verified.
+So `the workflow does not allow you to move this item to this status` meant
+precisely what it said — not *from here*. `recorded -> closed` is two transitions,
+and no single-file import could ever have made it.
 
-`closed` is a **checkbox** on the Treatment tab, with its own date, next to `done`
-and `cancelled` — the `idle` field, which the importer accepts and silently
-ignores. Both of those facts were visible on that one screen.
-
-**`done` is the right target.** `cancelled` would assert the work never happened,
-and it did — thousands of booked hours are the whole reason for retiring these
-rather than deleting them.
-
-| File | Rows | Element type |
+| Step | File | Rows |
 |---|---|---|
-| `04d_1_set_status_done_SMOKE_1row.csv` | 1 | Activity — #521 Mailbox, import first |
-| `04d_1_set_status_done.csv` | 11 | Activity |
+| smoke | `04d_1_set_status_done_SMOKE_1row.csv` | 1 |
+| **1** | `04d_1_set_status_done.csv` | 11 |
+| smoke | `04d_2_set_status_closed_SMOKE_1row.csv` | 1 |
+| **2** | `04d_2_set_status_closed.csv` | 11 |
 
 ```bash
-python3 build.py --close-via "done" --close-responsible 20
+python3 build.py --close-via "done,closed" --close-responsible 20
 ```
 
-`responsible` and `result` are both mandatory for the target status and both were
-unset. `responsible` is `int(12)`, so it takes **20** — Francisco Manzanilla,
-Banking manager — not his name, which carries a double space and would fail the
-same way the resource roster nearly did.
+Every step gets its own one-row twin: each hop is a separate transition and can be
+refused on its own.
 
-**Tested: `done` is not enough.** `Activity #521 updated` came back clean and the
-badge went to `done`, but the `closed` checkbox stayed **off** and Mailbox is
-still on the timesheet tree. So this status is not configured as an idle one --
-setting it records that the work finished, and nothing more.
+`responsible` is `int(12)` and takes **20** — Francisco Manzanilla, Banking
+manager — never his name, which carries a double space. `result` is mandatory too;
+both were unset, and both are filled in.
 
-#### What actually governs timesheet visibility
+#### What the four failures were really telling us
 
-Assignments, and only assignments. Every one of the 11 still carries its 25, and
-that is why they still appear. Three ways to remove them, two of them already
-ruled out by test:
+| Attempt | What it said | What it meant |
+|---|---|---|
+| `status = closed` from `recorded` | workflow refuses | true — not from `recorded` |
+| `idle = 1` | *No change to update* | accepted, ignored; `idle` is reached, not written |
+| untoggle auto-assignment | no error | governs future syncing, not existing rows |
+| `status = done` | `#521 updated` | correct, and only half the path |
 
-| Route | Result |
-|---|---|
-| status -> `done` | no effect on visibility — **tested** |
-| untoggle *automatic assignment of the project team* | existing assignments stay — **tested** |
-| `idle` on the Activity via import | accepted and silently ignored — **tested** |
-| tick `closed` on the **Treatment tab** by hand | untested, and the obvious next move |
+Each was accurate. The mistake was mine: I read the first as "the transition is
+forbidden" rather than "not from this status", and never asked to see the dropdown
+from anywhere but `recorded`.
 
-And a hard limit worth knowing before planning around deletion: **an assignment
-with booked hours cannot be deleted.** On #521 the resources at 0,00 h show a
-trash icon; Angelica Barrientos (180,25 h) and Clara Garcia Ortega (27,00 h) show
-only edit and link. ProjeQtor will not orphan booked time. So "just delete the
-assignments" cannot work for exactly the people whose sheets matter -- which is
-the right behaviour, and the reason the activity itself has to be closed rather
-than emptied.
+Deleting the assignments was never an option either — an assignment with booked
+hours has **no delete icon** (Angelica Barrientos at 180,25 h, Clara Garcia Ortega
+at 27,00 h). ProjeQtor will not orphan booked time, which is exactly why the
+activity has to be closed rather than emptied.
 
-That leaves the `closed` checkbox on the Treatment tab. It is the field the
-importer refuses to write, but the UI may well let it be ticked directly, and 11
-activities is a minute of clicking. Test it on #521 before doing the other ten.
-
-Two routes are now closed off for good, so nobody retries them:
-
-- **`idle` via import** — accepted, silently ignored, confirmed by writing the
-  opposite value to a flag that was demonstrably off.
-- **Untoggling `automatic assignment of the project team`** — tested on Mailbox.
-  It does **not** remove the existing assignments, so the activity stays on the
-  timesheet tree. The toggle governs future syncing, not what is already there.
-
-### Cleanup from the tests### Cleanup from the tests
+### Cleanup from the tests### Cleanup from the tests### Cleanup from the tests
 
 - delete activity **#529** `ZZ TEST auto-assign (delete me)`
 - import `00d_revert_auto_assign_countries.csv` to put #524 and #525 back to `0`
