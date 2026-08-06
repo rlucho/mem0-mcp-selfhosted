@@ -132,9 +132,12 @@ SYSTEMS = {
     "UK": ["PP2", "Navision"],
     "FR": ["P02", "QUALIAC", "E01"],
     # IT joins with E01 as its FIRST system, so its 11 existing flat tasks move
-    # under E01 and keep their booked hours, rather than being recreated empty.
-    "IT": ["E01"],
-    "Marruecos": ["E01"],
+    # under E01 and keep their booked hours rather than being recreated empty.
+    # PP2 is new and gets all 11. If the existing IT work was really PP2 work,
+    # swapping these two is the whole change -- the first entry is the inheritor.
+    "IT": ["E01", "PP2"],
+    # Brand new, so nothing to inherit: both systems get all 11 created.
+    "Marruecos": ["E01", "PER"],
 }
 
 # The old flat tasks move under the FIRST system listed for their project,
