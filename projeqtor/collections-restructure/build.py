@@ -52,7 +52,26 @@ ID_PROJECT_COLLECTIONS = 14
 LABEL_ACTIVITY_TYPE = "Task"
 LABEL_PLANNING_MODE = "as soon as possible"
 LABEL_STATUS_NEW = "recorded"
-LABEL_STATUS_CLOSED = "closed"  # VERIFY: exact name of the closing status
+
+# The status dropdown on an open activity lists the ENTIRE workflow, and there is
+# no "closed" in it:
+#
+#     recorded, qualified, accepted, assigned, in progress, done, cancelled
+#
+# So `status = closed` was never going to work, and "the workflow does not allow
+# you to move this item to this status" was the truth stated politely -- there is
+# no such status to move to. `closed` is a separate CHECKBOX on the Treatment tab
+# with its own date, alongside `done` and `cancelled`: the `idle` field, which the
+# importer accepts and silently ignores.
+#
+# `done` is the terminal status these 11 want. `cancelled` would say the work
+# never happened, and it did -- that is the whole reason for not deleting them.
+LABEL_STATUS_CLOSED = "done"
+
+# Francisco Manzanilla, resource #20, Banking. `responsible` is int(12) so it
+# needs the numeric id -- and the name carries a double space, so matching on it
+# would be the resource-roster trap all over again.
+CLOSE_RESPONSIBLE_ID = 20
 
 # The `idle` field -- int(1), labelled "closed" on the "?" schema screen, with a
 # companion `idleDate` ("closed date"). It is a field in its own right, not a
@@ -559,25 +578,13 @@ def main() -> None:
         ("01_create_countries.csv", cols_create, countries),
         ("02_create_systems.csv", cols_create, systems),
         ("03_create_tasks.csv", cols_create, tasks),
-        ("04_close_old_collections.csv", cols_close, close),
         # The status route above was rejected on every row (see rows_close_idle).
         # 04b closes via the `idle` field instead, smoke row first.
-        ("04b_close_via_idle_SMOKE_1row.csv", ["id", "name", IDLE_COLUMN],
-         rows_close_idle()[:1]),
         # The smoke row returned "No change to update on Activity #521" -- no
         # error, and the header rendered as "closed", so the column mapped to a
         # real field. Either idle is already 1, or the importer ignores it.
         # Writing the OPPOSITE value separates the two: "updated" means idle is
         # writable and was already 1; "no change" again means it is ignored.
-        ("00f_probe_idle_writable.csv", ["id", "name", IDLE_COLUMN],
-         [{**rows_close_idle()[0], IDLE_COLUMN: 0}]),
-        ("04b_close_via_idle.csv", ["id", "name", IDLE_COLUMN],
-         rows_close_idle()),
-        ("04c_close_via_status_with_mandatory_fields.csv",
-         ["id", "name", "status", "responsible", "result"],
-         rows_close_status_full(
-             args.close_responsible or placeholder("responsible resource id"),
-             CLOSE_RESULT_TEXT)),
     ]
     if args.close_via:
         responsible = args.close_responsible or placeholder("responsible resource id")

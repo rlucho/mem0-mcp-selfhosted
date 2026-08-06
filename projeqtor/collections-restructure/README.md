@@ -320,109 +320,56 @@ After each file, spot-check one of its leaves for 25 assignments — say **#558*
 Francia, España, Portugal and Marruecos should have children where they were
 empty.
 
-### Closing the old 11: the status route is blocked, use `idle`
+### Closing the old 11 — SOLVED: there is no `closed` status
 
-`04_close_old_collections.csv` (`id;name;status` → `closed`) was **rejected on all
-11 rows**, with three errors each:
+Three attempts failed for one reason, which the status dropdown on an open
+activity finally made obvious. It lists the entire workflow:
 
 ```
-the field 'responsible' is mandatory
-the field 'result' is mandatory
-the workflow does not allow you to move this item to this status
+recorded · qualified · accepted · assigned · in progress · done · cancelled
 ```
 
-The first two are field requirements attached to the target status, and a column
-each would fix them. The third is the status **workflow** refusing the transition
-outright — no column satisfies that. It needs either an allowed intermediate
-status to step through, or an admin change to the workflow.
+**No `closed`.** So `the workflow does not allow you to move this item to this
+status` was true in a way none of us read correctly — there was no such status to
+move to. `LABEL_STATUS_CLOSED = "closed"` had carried a `# VERIFY` comment since
+the first commit and was never verified.
 
-The `?` schema screen gives a way around it. `closed` is not only a status:
+`closed` is a **checkbox** on the Treatment tab, with its own date, next to `done`
+and `cancelled` — the `idle` field, which the importer accepts and silently
+ignores. Both of those facts were visible on that one screen.
 
-| field | type | label |
+**`done` is the right target.** `cancelled` would assert the work never happened,
+and it did — thousands of booked hours are the whole reason for retiring these
+rather than deleting them.
+
+| File | Rows | Element type |
 |---|---|---|
-| `idStatus` | int(12) | status |
-| **`idle`** | **int(1)** | **closed** |
-| `idleDate` | date | closed date |
+| `04d_1_set_status_done_SMOKE_1row.csv` | 1 | Activity — #521 Mailbox, import first |
+| `04d_1_set_status_done.csv` | 11 | Activity |
 
-`idle` is a field in its own right — the toggle at the top right of the activity
-panel — so setting it does not go through the status workflow at all.
-
-| File | Rows | Element type | Purpose |
-|---|---|---|---|
-| `04b_close_via_idle_SMOKE_1row.csv` | 1 | Activity | `521;Mailbox;1`. **Import this first.** |
-| `04b_close_via_idle.csv` | 11 | Activity | All 11, descending id so leaves close before parents. |
-| `04c_close_via_status_with_mandatory_fields.csv` | 11 | Activity | The status route with `responsible` + `result` supplied. Only worth trying if the workflow is opened up; ships with a `<<placeholder>>` responsible, so it is **not importable** until `--close-responsible ID` is passed. |
-| `04_close_old_collections.csv` | 11 | Activity | The original. Kept as the record of what was rejected — do not import. |
-
-Every row carries an `id`, so all of these update and none can insert.
-
-#### `idle` is a dead end — CONFIRMED
-
-The smoke returned **`No change to update on Activity #521`** — no error, and the
-header rendered as **closed**, so the column mapped to a real field. #521's closed
-flag was checked directly and is **off**, so the value genuinely differed and
-ProjeQtor still wrote nothing: the importer accepts `idle` and silently ignores
-it. It is derived from the status, not settable on its own.
-
-Note the toggle labelled `closed` in the **Assignment** panel header, next to the
-count badge (`25` on #521, `1` on #554), is not this flag — it filters closed
-*assignments*. Do not read the activity's state off it.
-
-So closing has to go through the status, and the status workflow refuses
-`recorded -> closed` directly.
-
-#### Stepping through the workflow: `--close-via`
-
-A workflow permits a *path*, not necessarily a leap. `--close-via` walks the
-intermediate statuses in order, one import per step:
-
-```
-python3 build.py --close-via "in progress,done,closed" --close-responsible ID
+```bash
+python3 build.py --close-via "done" --close-responsible 20
 ```
 
-writes `04d_1_set_status_<status>.csv` … one file per step, plus a **one-row smoke
-twin for step 1** — if the workflow rejects the path it rejects it on row 1, and
-11 red boxes say nothing that 1 does not.
+`responsible` and `result` are both mandatory for the target status and both were
+unset. `responsible` is `int(12)`, so it takes **20** — Francisco Manzanilla,
+Banking manager — not his name, which carries a double space and would fail the
+same way the resource roster nearly did.
 
-**The status names are the part that has to come from the instance, not from a
-guess.** Open any of the 11 and click the status badge (`recorded`, orange, top of
-the panel): that dropdown lists exactly the transitions the workflow permits from
-where the activity sits. Two statuses are already confirmed to exist — `recorded`
-(current) and `closed` (the import resolved it before the workflow refused it) —
-so what is missing is only what lies between.
+**What is still unknown:** whether `done` also ticks the `closed` checkbox and
+takes the activity off timesheets. That depends on how the status is configured,
+which no export shows. The smoke row answers it: set #521 to `done`, then check
+its Treatment tab and Daniela's timesheet.
 
-`responsible` is mandatory for `closed` and is currently **unset** on these
-activities, which is why it errored. It needs a numeric resource id, and it is a
-real ownership decision rather than a technical one — a Manager is the obvious
-choice over a Developer.
+Two routes are now closed off for good, so nobody retries them:
 
-#### The `idle` probe, if it is ever needed again
+- **`idle` via import** — accepted, silently ignored, confirmed by writing the
+  opposite value to a flag that was demonstrably off.
+- **Untoggling `automatic assignment of the project team`** — tested on Mailbox.
+  It does **not** remove the existing assignments, so the activity stays on the
+  timesheet tree. The toggle governs future syncing, not what is already there.
 
-No error, and the header rendered as **closed**, so the column mapped to a real
-field — ProjeQtor simply decided nothing needed changing. Two readings, needing
-opposite fixes:
-
-1. **`idle` is already 1** on #521, so writing 1 is a no-op. The old activities
-   are already flagged closed and something else keeps them on timesheets.
-2. **`idle` is not writable** through the import — ignored as a derived field,
-   leaving only `name` in the row, which already matches.
-
-`00f_probe_idle_writable.csv` writes the **opposite** value (`521;Mailbox;0`) to
-tell them apart:
-
-| Result | Meaning | Next |
-|---|---|---|
-| `Activity #521 updated` | writable, and it *was* already 1 | reading 1 — re-import `04b` smoke to set it back, then chase what actually drives timesheet visibility |
-| `No change to update` again | ignored by the importer | reading 2 — `idle` is a dead end, use the status route |
-
-Reading the panel is quicker than either: if #521's **closed** toggle is already
-on, that is reading 1 with no import at all.
-
-If `idle` turns out to be a dead end, fall back to the status route — read the allowed transitions off the
-status dropdown on an open activity, since that dropdown lists exactly what the
-workflow permits from its current status.
-
-### Cleanup from the tests
+### Cleanup from the tests### Cleanup from the tests
 
 - delete activity **#529** `ZZ TEST auto-assign (delete me)`
 - import `00d_revert_auto_assign_countries.csv` to put #524 and #525 back to `0`
