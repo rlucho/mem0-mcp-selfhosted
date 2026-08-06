@@ -528,14 +528,14 @@ def main() -> None:
         if not export_rows:
             sys.exit("ERROR: --reparent needs --export; P02's id comes from it.")
         moves = rows_reparent_to_p02(export_rows)
-        path = os.path.join(args.out, "04b_reparent_old_flat_to_p02.csv")
+        path = os.path.join(args.out, "04b_reparent_flat_to_first_system.csv")
         write_csv(path, ["id", "name", "idActivity"], moves)
         print(f"wrote {path}  [{len(moves)} rows]")
         for m in moves:
             print(f"  #{m['id']:>4}  {m['name']:30s} -> parent #{m['idActivity']}")
 
         dups = p02_duplicates(export_rows)
-        listing = os.path.join(args.out, "04c_DELETE_these_p02_duplicates.txt")
+        listing = os.path.join(args.out, "04c_DELETE_these_duplicates.txt")
         os.makedirs(os.path.dirname(listing), exist_ok=True)
         with open(listing, "w", encoding="utf-8") as fh:
             fh.write("Delete these by hand -- the import cannot delete records.\n"

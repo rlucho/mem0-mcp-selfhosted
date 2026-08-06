@@ -1,0 +1,5 @@
+Delete these by hand -- the import cannot delete records.
+Each duplicates an older task being re-parented under P02;
+the old one carries the booked hours, these were created
+empty by 03 and have no history to lose.
+
