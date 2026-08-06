@@ -59,13 +59,18 @@ PAYMENT_PROJECTS = {
     "UK": 36,
     "FR": 37,
     "PMS-TMS": 69,
+    # Brought in scope 2026-08-06: it is getting the same task list as the rest,
+    # flat, plus a rename. It was out of scope only because the source document
+    # omitted it.
+    "PL & Others": 74,
+    # Created by 09 -- fill in from a fresh Project export once it exists. Until
+    # then anything targeting Marruecos is deliberately not generated.
+    "Marruecos": None,
 }
 
-# Project 74, `PL & Others` (wbs 2.1.9), is also a sub-project of Payment but is
-# NOT in the target structure, so nothing here touches it. Worth a decision
-# separately: it holds 5 tasks, one of them named `Invoice Checks` where every
-# other project uses the singular `Invoice check`.
-OUT_OF_SCOPE_PROJECTS = {"PL & Others": 74}
+# Sub-projects of Payment that exist but this kit does not touch. Empty now that
+# PL & Others is in scope; kept as the place to record any future exclusion.
+OUT_OF_SCOPE_PROJECTS = {}
 
 # Display names this instance has used for a project, mapped to the key the
 # tables above use. Project 31 was `PS` until 2026-08-06 and is `NL` now, so an
@@ -99,22 +104,44 @@ TASKS = [
     "Proof of payment",
 ]
 
-# Tasks hang directly off the project.
-FLAT_PROJECTS = ["NL", "BE", "IT", "DE", "PMS-TMS"]
+# Tasks hang directly off the project, with no system level.
+# IT left this group on 2026-08-06 when it gained E01.
+FLAT_PROJECTS = ["NL", "BE", "DE", "PMS-TMS", "PL & Others"]
 
 # Earlier names that still count as "already there", so a task is not recreated
 # under its new name while an export taken before the rename is in hand. Without
 # this, generating between the rename file and its import emits 5 rows that would
 # insert `On Boarding` alongside the `Boarding` rows about to become it.
-RENAMED_FROM = {"On Boarding": ["Boarding"]}
+RENAMED_FROM = {
+    "On Boarding": ["Boarding"],
+    # PL & Others is the only project that pluralised this one. Listing it here
+    # stops the task being CREATED alongside the row that is about to become it,
+    # whichever order the rename and the create go in.
+    "Invoice check": ["Invoice Checks"],
+}
 
 # Tasks hang off a system activity, which hangs off the project. Order matters
 # only for readability; P02 is listed first everywhere in the source document.
+# ORDER MATTERS: the first system listed is the one that inherits the project's
+# existing flat tasks by re-parenting (see REPARENT_TO_FIRST_SYSTEM). For IB, UK
+# and FR that has already happened, so their first entry must stay put.
 SYSTEMS = {
-    "IB": ["P02", "PER"],
-    "UK": ["P02", "Navision"],
-    "FR": ["P02", "QUALIAC"],
+    "IB": ["P02", "PER", "E01"],
+    # UK's P02 was a naming error and was renamed to PP2 in the instance on
+    # 2026-08-06; the kit follows rather than tries to correct it back.
+    "UK": ["PP2", "Navision"],
+    "FR": ["P02", "QUALIAC", "E01"],
+    # IT joins with E01 as its FIRST system, so its 11 existing flat tasks move
+    # under E01 and keep their booked hours, rather than being recreated empty.
+    "IT": ["E01"],
+    "Marruecos": ["E01"],
 }
+
+# The old flat tasks move under the FIRST system listed for their project,
+# keeping their id and their hours instead of being closed and rebuilt. It also
+# means that system needs no task rows created for the names it inherits --
+# generating them anyway is exactly what left 18 duplicates under P02.
+REPARENT_TO_FIRST_SYSTEM = True
 
 # Already under Payment, from export_Activity_20260803_143423.csv (wbs 2.1.*).
 # Every one is a `Task` at `recorded`, directly under its project.
@@ -144,6 +171,11 @@ EXISTING = {
     "PMS-TMS": {"Payment Run": 426, "Manual & Unplanned Payments": 427,
                 "Invoice check": 428, "Other Processes": 429,
                 "Project - Robotic": 430, "Mailbox": 443},
+    # 5 tasks, and the only project that pluralised `Invoice Checks` (#516).
+    # No `Project - Robotic` here, unlike every other project.
+    "PL & Others": {"Payment Run": 514, "Manual & Unplanned Payments": 515,
+                    "Invoice Checks": 516, "Other Processes": 517,
+                    "Mailbox": 518},
 }
 
 # Values as ProjeQtor renders them in its own export -- the same set the
@@ -191,6 +223,8 @@ def rows_flat_additions(ids: dict) -> list[dict]:
     """
     out = []
     for project in FLAT_PROJECTS:
+        if PAYMENT_PROJECTS.get(project) is None:
+            continue
         have = set(EXISTING.get(project, {})) | {
             key[1] for key in ids if len(key) == 2 and key[0] == project}
         out += [row(t, project) for t in TASKS
@@ -225,33 +259,64 @@ def rows_systems(ids: dict) -> list[dict]:
     return [row(system, project)
             for project, systems in SYSTEMS.items()
             for system in systems
-            if (project, system) not in ids]
+            if (project, system) not in ids
+            and PAYMENT_PROJECTS.get(project) is not None]
 
 
-def rows_system_tasks(ids: dict) -> list[dict]:
-    """11 tasks under each system. idActivity needs the system's numeric id."""
+def rows_system_tasks(ids: dict, rows: list[dict] | None = None) -> list[dict]:
+    """11 tasks under each system, minus what the FIRST system inherits.
+
+    The first system receives the project's existing flat tasks by re-parenting,
+    so creating those names under it too produces an instant duplicate of each.
+    That is exactly what happened to P02 -- 03 built all 11 under it while 6
+    already existed flat, leaving 18 rows to delete by hand across IB/UK/FR.
+    IT is joining with all 11 already flat, so without this its E01 would need
+    all 11 deleted again.
+    """
     out = []
     for project, systems in SYSTEMS.items():
-        for system in systems:
+        if PAYMENT_PROJECTS.get(project) is None:
+            continue                      # project not created yet
+        inherited = set(flat_tasks(rows, project)) if (
+            REPARENT_TO_FIRST_SYSTEM and rows) else set()
+        for n, system in enumerate(systems):
             parent = ids.get((project, system), placeholder(project, system))
-            out += [row(t, project, parent)
-                    for t in TASKS if (project, system, t) not in ids]
+            skip = inherited if n == 0 else set()
+            out += [row(t, project, parent) for t in TASKS
+                    if (project, system, t) not in ids and t not in skip]
     return out
 
 
-def flat_tasks(rows: list[dict], project: str) -> dict:
+def flat_tasks(rows: list[dict] | None, project: str) -> dict:
     """name -> id for tasks still sitting DIRECTLY under `project` (depth 4, not
     a system). Read from the export rather than EXISTING, because EXISTING is a
     fixed baseline that does not know the re-parenting has happened."""
     systems = SYSTEMS.get(project, [])
     out = {}
-    for r in rows:
+    for r in rows or []:
         wbs = (r.get("wbs") or "").strip()
         if (wbs.startswith("2.1.") and len(wbs.split(".")) == 4
                 and canon((r.get("project") or "").strip()) == project
                 and (r.get("name") or "").strip() not in systems):
             out[(r.get("name") or "").strip()] = r["id"]
     return out
+
+
+def first_system_id(rows: list[dict], project: str) -> str | None:
+    """Activity id of the FIRST system listed for `project`, if it exists yet.
+
+    Looked up by the name in SYSTEMS rather than a literal "P02": UK's was
+    renamed to PP2 in the instance, and IT and Marruecos use E01, so a hardcoded
+    name silently matches nothing for three of the five.
+    """
+    want = SYSTEMS[project][0]
+    for r in rows:
+        wbs = (r.get("wbs") or "").strip()
+        if (wbs.startswith("2.1.") and len(wbs.split(".")) == 4
+                and canon((r.get("project") or "").strip()) == project
+                and (r.get("name") or "").strip() == want):
+            return r["id"]
+    return None
 
 
 def p02_duplicates(rows: list[dict]) -> list[tuple[str, str, str, str]]:
@@ -263,12 +328,12 @@ def p02_duplicates(rows: list[dict]) -> list[tuple[str, str, str, str]]:
     it carries the booked hours -- so its freshly created twin under P02 is the
     one that goes. The other 5 under P02 are genuinely new and stay.
     """
-    p02 = {r["project"]: (r["id"], r["wbs"]) for r in rows
-           if (r.get("wbs") or "").startswith("2.1.")
-           and len(r["wbs"].split(".")) == 4 and r["name"] == "P02"
-           and r["project"] in SYSTEMS}
     out = []
-    for country, (pid, pwbs) in p02.items():
+    for country in SYSTEMS:
+        sid = first_system_id(rows, country)
+        if sid is None:
+            continue
+        pwbs = next(r["wbs"] for r in rows if r["id"] == sid)
         # Compare against what is STILL FLAT, not against the EXISTING baseline.
         # Once re-parenting has run, the baseline tasks are themselves under P02,
         # so matching on the baseline makes every one of them its own duplicate --
@@ -292,17 +357,19 @@ def rows_reparent_to_p02(rows: list[dict]) -> list[dict]:
     It is also what makes closing unnecessary: the activity keeps its identity and
     its hours, and simply moves down one level.
     """
-    p02 = {r["project"]: r["id"] for r in rows
-           if (r.get("wbs") or "").startswith("2.1.")
-           and len(r["wbs"].split(".")) == 4 and r["name"] == "P02"
-           and r["project"] in SYSTEMS}
-    missing = [c for c in SYSTEMS if c not in p02]
+    out, missing = [], []
+    for country in SYSTEMS:
+        sid = first_system_id(rows, country)
+        if sid is None:
+            missing.append(f"{country} > {SYSTEMS[country][0]}")
+            continue
+        for name, aid in sorted(flat_tasks(rows, country).items(),
+                                key=lambda kv: int(kv[1])):
+            out.append({"id": aid, "name": name, "idActivity": sid})
     if missing:
-        sys.exit(f"ERROR: no P02 activity found under {', '.join(missing)}. "
-                 f"Import 02 first, and re-export.")
-    return [{"id": aid, "name": name, "idActivity": p02[country]}
-            for country in SYSTEMS
-            for name, aid in sorted(EXISTING[country].items(), key=lambda kv: kv[1])]
+        print(f"NOTE: no system activity yet for {', '.join(missing)} -- "
+              f"create it, re-export, then re-run to cover those.")
+    return out
 
 
 def rows_close_superseded() -> list[dict]:
@@ -318,7 +385,7 @@ def rows_close_superseded() -> list[dict]:
     anything that cannot be walked back.
     """
     rows = [(aid, name) for project in SYSTEMS
-            for name, aid in EXISTING[project].items()]
+            for name, aid in EXISTING.get(project, {}).items()]
     # Descending id, the order the Collections kit uses: closing a parent before
     # its children errors out. These 18 are all siblings, so it costs nothing
     # here and keeps one convention across both kits.
@@ -351,7 +418,19 @@ def resolve_ids(rows: list[dict]) -> dict:
     with Payment's. Depth tells the two apart: a system sits at 2.1.p.s, a task
     under it at 2.1.p.s.t.
     """
-    out, seen = {}, {}
+    # TWO PASSES on purpose. Resolving a depth-5 task needs its depth-4 parent
+    # already known, and a CSV export is in no guaranteed order -- a single pass
+    # silently drops every task that happens to precede its system, which then
+    # looks like "not created yet" and regenerates rows that already exist.
+    seen = {}
+    for r in rows:
+        wbs = (r.get("wbs") or "").strip()
+        project = canon((r.get("project") or "").strip())
+        if (wbs.startswith("2.1.") and len(wbs.split(".")) == 4
+                and project in PAYMENT_PROJECTS):
+            seen[wbs] = (project, (r.get("name") or "").strip())
+
+    out = {}
     for r in rows:
         wbs = (r.get("wbs") or "").strip()
         project = canon((r.get("project") or "").strip())
@@ -360,34 +439,24 @@ def resolve_ids(rows: list[dict]) -> dict:
             continue
         depth = len(wbs.split("."))
         systems = SYSTEMS.get(project, [])
-        # Depth 4 is anything sitting directly in the project: a system under
-        # IB/UK/FR, a task under the flat ones. Both are keyed (project, name) --
-        # no collision, since no system shares a name with a task.
         if depth == 4:
             key = (project, name)
         elif depth == 5:
-            parent_wbs = wbs.rsplit(".", 1)[0]
-            system = seen.get(parent_wbs)
-            if system is None or system not in systems or name not in TASKS:
+            parent = seen.get(wbs.rsplit(".", 1)[0])
+            if parent is None or parent[1] not in systems or name not in TASKS:
                 continue
-            key = (project, system, name)
+            key = (project, parent[1], name)
         else:
             continue
         if key in out and out[key] != r["id"]:
             where = " > ".join(key)
-            # A duplicated SYSTEM is fatal: it is a parent, and the next pass
-            # would hang 11 tasks off whichever id happened to win. A duplicated
-            # task is a mess to tidy but blocks nothing, so it must not stop an
-            # unrelated branch from being generated.
             if len(key) == 2 and name in systems:
                 sys.exit(f"ERROR: system {where} resolves to both #{out[key]} and "
-                         f"#{r['id']}. Delete one before importing 03, or its "
-                         f"tasks will hang off an ambiguous parent.")
+                         f"#{r['id']}. Delete one before importing tasks under it, "
+                         f"or they will hang off an ambiguous parent.")
             print(f"WARNING: {where} exists twice, #{out[key]} and #{r['id']}. "
                   f"Not fatal -- it is a leaf -- but delete one.")
         out[key] = r["id"]
-        if depth == 4:
-            seen[wbs] = name
     return out
 
 
@@ -504,7 +573,7 @@ def main() -> None:
 
     flat = rows_flat_additions(ids)
     systems = rows_systems(ids)
-    system_tasks = rows_system_tasks(ids)
+    system_tasks = rows_system_tasks(ids, export_rows or None)
     close = rows_close_superseded()
 
     files = [
