@@ -131,11 +131,12 @@ SYSTEMS = {
     # 2026-08-06; the kit follows rather than tries to correct it back.
     "UK": ["PP2", "Navision"],
     "FR": ["P02", "QUALIAC", "E01"],
-    # IT joins with E01 as its FIRST system, so its 11 existing flat tasks move
-    # under E01 and keep their booked hours rather than being recreated empty.
-    # PP2 is new and gets all 11. If the existing IT work was really PP2 work,
-    # swapping these two is the whole change -- the first entry is the inheritor.
-    "IT": ["E01", "PP2"],
+    # PP2 FIRST, deliberately: IT's historical payment work was PP2 work, and
+    # 69,61 h are booked on those 11 rows (41,62 of it on Payment Run #65 alone).
+    # They move under PP2 and keep their ids and hours; E01 is genuinely new and
+    # gets all 11 created empty. Reversing these two entries would silently
+    # attribute nearly 70 hours of PP2 work to E01.
+    "IT": ["PP2", "E01"],
     # Brand new, so nothing to inherit: both systems get all 11 created.
     "Marruecos": ["E01", "PER"],
 }
