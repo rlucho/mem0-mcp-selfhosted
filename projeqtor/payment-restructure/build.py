@@ -50,8 +50,8 @@ OUTPUT_ENCODING = "cp1252"
 # export_Project_20260803_142809.csv. These are PROJECTS -- an activity names its
 # one in idProject and leaves idActivity empty.
 PAYMENT_PROJECTS = {
-    # Renamed from PS on 2026-08-06 (project record 31; see PROJECT_ALIASES).
-    "NL": 31,
+    # Stays PS: the NL rename was built (07) but called off, never imported.
+    "PS": 31,
     "BE": 32,
     "IT": 33,
     "DE": 34,
@@ -77,7 +77,10 @@ OUT_OF_SCOPE_PROJECTS = {}
 # export taken either side of that rename still resolves. Note there is a SECOND
 # `PS`, project 8 under AP (wbs 1.6), which is untouched -- every lookup here is
 # confined to wbs 2.1.*, so the two can never be confused.
-PROJECT_ALIASES = {"PS": "NL"}
+# Project 31 is `PS`. 07 would have renamed it to `NL` but was called off, so the
+# alias runs the other way: if it is ever renamed, exports keep resolving without
+# touching the tables.
+PROJECT_ALIASES = {"NL": "PS"}
 
 
 def canon(project: str) -> str:
@@ -106,7 +109,7 @@ TASKS = [
 
 # Tasks hang directly off the project, with no system level.
 # IT left this group on 2026-08-06 when it gained E01.
-FLAT_PROJECTS = ["NL", "BE", "DE", "PMS-TMS", "PL & Others"]
+FLAT_PROJECTS = ["PS", "BE", "DE", "PMS-TMS", "PL & Others"]
 
 # Earlier names that still count as "already there", so a task is not recreated
 # under its new name while an export taken before the rename is in hand. Without
@@ -154,7 +157,7 @@ REPARENT_TO_FIRST_SYSTEM = True
 # Every one is a `Task` at `recorded`, directly under its project.
 # Verified: each project holds exactly the first 6 of TASKS, no strays.
 EXISTING = {
-    "NL":      {"Payment Run": 67, "Manual & Unplanned Payments": 156,
+    "PS":      {"Payment Run": 67, "Manual & Unplanned Payments": 156,
                 "Invoice check": 163, "Other Processes": 170,
                 "Project - Robotic": 349, "Mailbox": 436},
     "BE":      {"Payment Run": 66, "Manual & Unplanned Payments": 157,

@@ -156,7 +156,12 @@ def main() -> None:
                     if r["idProject"] == build.PAYMENT_PROJECTS[project]]
             if not part:
                 continue
-            slug = project.lower().replace(" ", "-")
+            # `PL & Others` -> `pl-others`: an `&` in a filename is trouble in a
+            # shell and in some upload paths, and the file gets passed around.
+            slug = "".join(c if c.isalnum() else "-" for c in project.lower())
+            while "--" in slug:
+                slug = slug.replace("--", "-")
+            slug = slug.strip("-")
             path = f"{base}_{n:02d}_{slug}{ext}"
             write_csv(path, part)
             n_act = len({r['refId'] for r in part})
