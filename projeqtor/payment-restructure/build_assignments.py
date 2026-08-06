@@ -82,7 +82,7 @@ def resolve_targets(rows: list[dict]) -> list[tuple[str, int, str]]:
     out = []
     for r in rows:
         wbs = (r.get("wbs") or "").strip()
-        project = (r.get("project") or "").strip()
+        project = build.canon((r.get("project") or "").strip())
         if not wbs.startswith("2.1.") or project not in build.PAYMENT_PROJECTS:
             continue
         depth = len(wbs.split("."))

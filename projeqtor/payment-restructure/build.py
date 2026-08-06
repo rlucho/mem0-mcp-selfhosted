@@ -50,7 +50,8 @@ OUTPUT_ENCODING = "cp1252"
 # export_Project_20260803_142809.csv. These are PROJECTS -- an activity names its
 # one in idProject and leaves idActivity empty.
 PAYMENT_PROJECTS = {
-    "PS": 31,
+    # Renamed from PS on 2026-08-06 (project record 31; see PROJECT_ALIASES).
+    "NL": 31,
     "BE": 32,
     "IT": 33,
     "DE": 34,
@@ -65,6 +66,18 @@ PAYMENT_PROJECTS = {
 # separately: it holds 5 tasks, one of them named `Invoice Checks` where every
 # other project uses the singular `Invoice check`.
 OUT_OF_SCOPE_PROJECTS = {"PL & Others": 74}
+
+# Display names this instance has used for a project, mapped to the key the
+# tables above use. Project 31 was `PS` until 2026-08-06 and is `NL` now, so an
+# export taken either side of that rename still resolves. Note there is a SECOND
+# `PS`, project 8 under AP (wbs 1.6), which is untouched -- every lookup here is
+# confined to wbs 2.1.*, so the two can never be confused.
+PROJECT_ALIASES = {"PS": "NL"}
+
+
+def canon(project: str) -> str:
+    """Export display name -> the key PAYMENT_PROJECTS/EXISTING are stored under."""
+    return PROJECT_ALIASES.get(project, project)
 
 # The 11 tasks, identical under every branch of the target structure.
 TASKS = [
@@ -87,7 +100,7 @@ TASKS = [
 ]
 
 # Tasks hang directly off the project.
-FLAT_PROJECTS = ["PS", "BE", "IT", "DE", "PMS-TMS"]
+FLAT_PROJECTS = ["NL", "BE", "IT", "DE", "PMS-TMS"]
 
 # Earlier names that still count as "already there", so a task is not recreated
 # under its new name while an export taken before the rename is in hand. Without
@@ -107,7 +120,7 @@ SYSTEMS = {
 # Every one is a `Task` at `recorded`, directly under its project.
 # Verified: each project holds exactly the first 6 of TASKS, no strays.
 EXISTING = {
-    "PS":      {"Payment Run": 67, "Manual & Unplanned Payments": 156,
+    "NL":      {"Payment Run": 67, "Manual & Unplanned Payments": 156,
                 "Invoice check": 163, "Other Processes": 170,
                 "Project - Robotic": 349, "Mailbox": 436},
     "BE":      {"Payment Run": 66, "Manual & Unplanned Payments": 157,
@@ -320,7 +333,7 @@ def resolve_ids(rows: list[dict]) -> dict:
     out, seen = {}, {}
     for r in rows:
         wbs = (r.get("wbs") or "").strip()
-        project = (r.get("project") or "").strip()
+        project = canon((r.get("project") or "").strip())
         name = (r.get("name") or "").strip()
         if not wbs.startswith("2.1.") or project not in PAYMENT_PROJECTS:
             continue

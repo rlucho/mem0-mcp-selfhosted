@@ -32,7 +32,7 @@ which is exactly how the 53 activities already under wbs `2.1.*` are arranged.
 
 | Project | id | wbs | In target? |
 |---|---|---|---|
-| PS | 31 | 2.1.1 | yes — flat |
+| **NL** (was `PS`) | 31 | 2.1.1 | yes — flat |
 | BE | 32 | 2.1.2 | yes — flat |
 | IT | 33 | 2.1.3 | yes — flat |
 | DE | 34 | 2.1.4 | yes — flat |
@@ -46,6 +46,28 @@ Name collisions are real in this instance and the reason everything is keyed by
 **id**: there is an `IB` under `AP` (3), another under `Management` (58), and a
 third under Payment (35). `resolve_ids()` scopes to wbs `2.1.*` and aborts if a
 name resolves to two ids.
+
+### Project 31 renamed: `PS` -> `NL` (2026-08-06)
+
+The rename is on the **project record**, so it imports with element type
+**`Project`**, not `Activity` — `07_rename_project_PS_to_NL.csv`, one row,
+`31;NL`.
+
+Two things it does not touch, both deliberate:
+
+- **`PS` under `AP` (project 8, wbs 1.6)** keeps its name. It is a different
+  record, and every lookup here is confined to wbs `2.1.*`, so the two can never
+  be confused. If that one should change too, say so — it is a second one-row file.
+- **Every generated CSV**, because they all carry `idProject = 31` numerically.
+  Nothing already delivered needs regenerating.
+
+`PROJECT_ALIASES = {"PS": "NL"}` maps the old display name onto the table key, so
+an export taken either side of the rename resolves identically — verified: 73
+assignment targets and 79 resolved ids, the same set both ways.
+
+Note `NL` already exists elsewhere as project 63 under `Management`. That is
+consistent with how this instance already works (three projects called `IB`) and
+harmless, since nothing here resolves a project by name alone.
 
 ---
 
