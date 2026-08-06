@@ -63,9 +63,9 @@ PAYMENT_PROJECTS = {
     # flat, plus a rename. It was out of scope only because the source document
     # omitted it.
     "PL & Others": 74,
-    # Created by 09 -- fill in from a fresh Project export once it exists. Until
-    # then anything targeting Marruecos is deliberately not generated.
-    "Marruecos": None,
+    # Created by 09 on 2026-08-06; id read from
+    # export_Project_20260806_140106.csv, wbs 2.1.10.
+    "Marruecos": 75,
 }
 
 # Sub-projects of Payment that exist but this kit does not touch. Empty now that
