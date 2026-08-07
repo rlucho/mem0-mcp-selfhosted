@@ -287,3 +287,53 @@ its roster logic is not Collections-specific. Assignments are per activity, so a
 One thing to check first, which does not apply on the Collections side: the 6
 existing tasks in each project already have assignments, so only the **new** rows
 need them. Feed the existing set through `--imported` to avoid duplicating.
+
+---
+
+## The assignment file went in twice — and the fix
+
+`06_assign_team_ALL.csv` was imported, appeared to hang, and was run again. The
+first run completed; the second committed **1825 of 3625 rows and died partway**,
+the same failure mode as the Collections import. So 73 activities (ids 635–732)
+ended up with 50 assignments and the remaining 72 with the correct 25.
+
+It surfaced as "duplicate activities" — the timesheet renders **one row per
+assignment**, so a doubled pair shows the same activity id twice. The tree was
+never affected: 211 activities, no duplicate id, wbs or name-under-parent.
+Deleting activities would have destroyed it.
+
+### `closed` IS writable on Assignment
+
+This is the one that breaks the pattern. On **Activity**, `idle` (labelled
+`closed`) is accepted and silently ignored. On **Assignment**, `closed` is a real,
+writable field:
+
+```
+id;closed
+44461;1        ->  Assignment #44461 updated, and the row left the timesheet
+```
+
+Two objects, same field name, opposite behaviour. Neither can be inferred from the
+other, which is why each got its own one-row test.
+
+| File | Rows | Element type |
+|---|---|---|
+| `12_close_duplicate_assignments_SMOKE_1row.csv` | 1 | Assignment |
+| `12_close_duplicate_assignments.csv` | **1825** | Assignment |
+| `11_DELETE_duplicate_assignments.txt` | — | UI fallback, 73 activities with their surplus id ranges |
+
+**This file is safe to re-run.** Every row carries an `id`, so it UPDATEs —
+setting `closed=1` twice is a no-op. That is the opposite of the creation files,
+where no `id` means every row inserts and a retry duplicates. The rule that caused
+the mess is the same rule that makes the repair idempotent.
+
+Each pair keeps its **lower** id, which came from the first, complete run.
+
+Three duplicated pairs exist outside Payment (activities 53, 44, 38) and predate
+this work — excluded from every file.
+
+### Closed, not deleted
+
+The surplus records remain as closed rows. They carry no booked work, so they
+could be deleted through the UI if the clutter ever matters — but nothing depends
+on it, and closing is reversible where deleting is not.
