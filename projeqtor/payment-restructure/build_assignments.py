@@ -115,11 +115,42 @@ def write_csv(path: str, rows: list[dict]) -> None:
         fh.write(buf.getvalue().encode(OUTPUT_ENCODING, errors="replace"))
 
 
+def dedupe(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split an Assignment export into (keep, delete) by (refId, idResource).
+
+    Confirmed the hard way: re-importing an assignment file DOES insert a second
+    record for a pair that already exists. Every row in these files carries no
+    `id`, and the importer's rule is "no id -> insert" -- the same rule that put
+    two `Payment Run Issues` under PS. Nothing dedupes on the way in.
+
+    The timesheet renders one row per assignment, so a doubled pair shows the same
+    activity id twice. That is what "duplicate activities" turned out to be: the
+    tree is intact at 211, it is the assignments underneath that doubled.
+
+    Lowest id wins, arbitrarily but consistently -- the records are identical apart
+    from id, so there is no better rule, and picking the first keeps the survivors
+    matching the original import order.
+    """
+    seen, keep, drop = {}, [], []
+    for r in sorted(rows, key=lambda r: int(r.get("id") or 0)):
+        key = ((r.get("refId") or r.get("element id") or "").strip(),
+               (r.get("idResource") or r.get("resource") or "").strip())
+        if not all(key):
+            continue
+        (keep if key not in seen else drop).append(r)
+        seen.setdefault(key, r)
+    return keep, drop
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--resources", metavar="CSV", required=True)
-    ap.add_argument("--activities", metavar="CSV", required=True)
+    ap.add_argument("--resources", metavar="CSV")
+    ap.add_argument("--activities", metavar="CSV")
+    ap.add_argument("--dedupe", metavar="ASSIGNMENT_EXPORT.csv",
+                    help="find assignment records duplicated on (refId, idResource) "
+                         "and write the ids of the surplus ones. The import cannot "
+                         "delete, so the output is a checklist, not an import file.")
     ap.add_argument("--team", default="Banking")
     ap.add_argument("--exclude", default="211",
                     help="resource ids to leave out (default 211 = TEST DUMMY)")
@@ -132,6 +163,37 @@ def main() -> None:
         os.path.dirname(os.path.abspath(__file__)), "out",
         "06_assign_team_to_new_activities.csv"))
     args = ap.parse_args()
+
+    if args.dedupe:
+        rows = read_export(args.dedupe)
+        keep, drop = dedupe(rows)
+        print(f"assignment records: {len(rows)}")
+        print(f"  keep:      {len(keep)}")
+        print(f"  duplicate: {len(drop)}")
+        if not drop:
+            print("\nNo duplicates -- nothing to remove.")
+            return
+        by_act = {}
+        for r in drop:
+            by_act.setdefault(r.get("refId") or r.get("element id"), []).append(r["id"])
+        out = os.path.join(os.path.dirname(os.path.abspath(args.dedupe)) if False
+                           else os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"),
+                           "11_DELETE_duplicate_assignments.txt")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write("Surplus assignment records -- one per (activity, resource) pair\n"
+                     "that exists twice. The import cannot delete, so these have to\n"
+                     "go through the UI or the database.\n\n"
+                     f"{len(drop)} records across {len(by_act)} activities.\n\n")
+            for act in sorted(by_act, key=lambda a: int(a)):
+                fh.write(f"activity #{act}: {len(by_act[act])} surplus -- "
+                         f"assignment ids {', '.join(sorted(by_act[act], key=int))}\n")
+        print(f"\nwrote {out}")
+        print(f"  {len(drop)} surplus records across {len(by_act)} activities")
+        return
+
+    if not (args.resources and args.activities):
+        sys.exit("ERROR: --resources and --activities are required unless --dedupe.")
 
     targets = resolve_targets(read_export(args.activities))
     if not targets:
