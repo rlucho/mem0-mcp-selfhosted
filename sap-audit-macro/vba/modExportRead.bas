@@ -1164,3 +1164,73 @@ Private Function DigitsOnly(ByVal text As String) As String
         DigitsOnly = Mid$(DigitsOnly, 2)
     Loop
 End Function
+
+'-----------------------------------------------------------------------
+' The References on rows of one document type, out of a Payment Usage list.
+'
+' A confirming settlement's Payment Usage holds KA documents sitting on the
+' BANK's vendor account -- the bank is who was paid, which is true and
+' useless. What ties each of them to a real supplier is the Reference: the
+' confirming platform's transaction ID, stamped on the operating company's
+' side of the same deal, against the actual vendor and usually in a
+' different company code.
+'
+' Leading zeros are KEPT. The reference is a character field, so 0000243422
+' and 243422 are not the same string, and searching FBL1N for the stripped
+' form finds nothing at all -- which looks exactly like there being no such
+' invoices.
+'-----------------------------------------------------------------------
+Public Function ReferencesOfType(ByVal path As String, ByVal sampleIdx As Long, _
+                                 ByVal wantedType As String, ByVal refCaption As String, _
+                                 ByRef count As Long) As String
+    Dim typeCol As Long, refCol As Long
+    Dim r As Long
+    Dim rowType As String, reference As String
+    Dim seen As Object
+    Dim result As String
+
+    count = 0
+    If Not LoadExport(path, sampleIdx) Then Exit Function
+
+    If Len(refCaption) = 0 Then refCaption = "Reference"
+    refCol = MatchColumn(mHeaderRow, refCaption)
+    If refCol = 0 Then refCol = ColumnContaining(1, refCaption)
+    If refCol = 0 Then
+        modLog.LogAction sampleIdx, "SCF references", _
+                     "No column headed '" & refCaption & "' in " & path & ", so the " & _
+                     "confirming references could not be read. Open it and name the " & _
+                     "heading on the Control sheet.", "MANUAL", path
+        Exit Function
+    End If
+
+    typeCol = MatchColumn(mHeaderRow, CaptionSetting("Payment usage type column", _
+                                                    DEFAULT_DOCTYPE_CAPTIONS))
+    Set seen = CreateObject("Scripting.Dictionary")
+    seen.CompareMode = vbTextCompare
+
+    For r = mHeaderRow + 1 To mRowCount
+        reference = Trim$(mCells(r, refCol))
+
+        If Len(reference) > 0 Then
+            rowType = vbNullString
+            If typeCol > 0 Then rowType = Normalise(mCells(r, typeCol))
+
+            ' No type column, or no type wanted, means take every reference --
+            ' better than silently filtering on a column that was not found.
+            If typeCol = 0 Or Len(wantedType) = 0 Or TypeWanted(rowType, wantedType) Then
+                If Not seen.Exists(reference) Then
+                    seen.Add reference, True
+                    result = result & IIf(Len(result) > 0, vbLf, "") & reference
+                    count = count + 1
+                End If
+            End If
+        End If
+    Next r
+
+    modLog.LogAction sampleIdx, "SCF references", _
+                 count & " distinct reference(s) taken from the " & _
+                 IIf(Len(wantedType) > 0, wantedType & " ", "") & "rows of " & path & _
+                 ", leading zeros kept.", IIf(count > 0, "OK", "MANUAL"), path
+
+    ReferencesOfType = result
+End Function

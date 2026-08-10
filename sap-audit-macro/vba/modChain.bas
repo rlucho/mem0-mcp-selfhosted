@@ -337,6 +337,14 @@ Private Sub ContinueFromClearing(ByVal sampleIdx As Long, ByRef result As ChainR
     result.ZpNumberCount = matched
 
     If matched = 0 Then
+        ' Before either verdict: a confirming batch has no ZP documents at all,
+        ' because the payment went to the BANK. Its Payment Usage holds KA
+        ' documents on the bank's account, and their Reference is the only
+        ' thread back to the suppliers. Follow it before concluding there are
+        ' none -- sample 73 is 2,906,239.39 of real supplier invoices that this
+        ' reported as a treasury settlement.
+        If TryConfirmingHop(sampleIdx, result, dateFrom, folder, fileStem) Then Exit Sub
+
         ' Two very different things look the same here. A batch of 100+ rows
         ' with no ZP among them means the type column was read wrongly. A
         ' batch of two rows -- the SB statement line and the AB clearing that
@@ -544,6 +552,106 @@ Private Function DescendThroughScf(ByVal sampleIdx As Long, ByRef result As Chai
     ' including for the attachment, which is the whole point of the hop.
     largest = deeper
     DescendThroughScf = True
+End Function
+
+'-----------------------------------------------------------------------
+' The confirming hop: KA references -> the suppliers actually paid.
+'
+' A supply-chain-finance settlement pays one vendor -- Citibank, Santander --
+' and the invoices it covers sit on THAT vendor's account as KA documents.
+' FBL1N on the batch therefore answers 'Citibank Europe plc', which is true
+' and useless, and the batch itself has no ZP payments in it at all, which is
+' why this arrives here rather than at step 8.
+'
+' The Reference on each KA is the confirming platform's transaction ID, and
+' the same ID is stamped on the operating company's side of the deal against
+' the real supplier -- in a DIFFERENT company code from the one that paid.
+' So the search is by reference, across a company-code pattern, with no
+' vendor and the whole year.
+'
+' Answers False for anything that is not a confirming batch, leaving the
+' settlement and mis-read-column verdicts exactly as they were.
+'-----------------------------------------------------------------------
+Private Function TryConfirmingHop(ByVal sampleIdx As Long, ByRef result As ChainResult, _
+                                  ByVal dateFrom As Date, ByVal folder As String, _
+                                  ByVal fileStem As String) As Boolean
+    Dim references As String
+    Dim count As Long
+    Dim confirmingType As String
+    Dim invoice As ListRow
+
+    confirmingType = Trim$(modConfig.SettingOrBlank("Confirming document type"))
+    If Len(confirmingType) = 0 Then Exit Function
+
+    references = modExportRead.ReferencesOfType( _
+        result.ZpListFile, sampleIdx, confirmingType, _
+        modConfig.SettingOrBlank("Confirming reference column"), count)
+
+    If count = 0 Then Exit Function
+
+    result.IsConfirmingPayment = True
+
+    result.ScfListFile = modFbl1n.InvoicesForReferences( _
+        sampleIdx, references, count, dateFrom, folder)
+
+    If Len(result.ScfListFile) = 0 Then
+        Finish result, "PARTIAL", _
+               "This is a confirming settlement: clearing document " & _
+               result.ClearingDocument & " holds " & count & " " & confirmingType & _
+               " document(s) on the finance provider's account, not vendor payments. " & _
+               "Their references are in the Log and are what identifies the real " & _
+               "suppliers, but the FBL1N search on them produced no list -- see the " & _
+               "Log for which step declined."
+        Exit Function
+    End If
+
+    ' KA rows are the finance provider's own side of the deal and would come
+    ' back as the largest 'invoice' every time, which is how an earlier run
+    ' downloaded a Santander settlement and called it a supplier invoice.
+    invoice = modExportRead.MostNegativeRow( _
+        result.ScfListFile, sampleIdx, _
+        modConfig.Setting("Invoice list amount column"), _
+        modConfig.Setting("Invoice list supplier column"), _
+        modConfig.Setting("Invoice list document column"), _
+        modConfig.SettingOrBlank("Invoice document type"))
+
+    If Len(invoice.DocumentNumber) = 0 Then
+        Finish result, "PARTIAL", _
+               "This is a confirming settlement, and the " & count & " reference(s) " & _
+               "behind it did produce an FBL1N list -- see " & modUtil.FILE_SCF & " -- " & _
+               "but no supplier invoice could be read off it."
+        Exit Function
+    End If
+
+    result.InvoiceNumber = invoice.DocumentNumber
+    result.InvoiceAmount = invoice.Amount
+    result.InvoiceSupplier = invoice.Supplier
+
+    modLog.LogAction sampleIdx, "SCF invoice", _
+                 "Largest of the invoices behind the confirming settlement: " & _
+                 Format$(invoice.Amount, "#,##0.00") & ", document " & _
+                 invoice.DocumentNumber & _
+                 IIf(Len(invoice.Supplier) > 0, ", " & invoice.Supplier, "") & _
+                 ". The suppliers are all in " & modUtil.FILE_SCF & ".", _
+                 "OK", result.ScfListFile
+
+    If modFbl1n.OpenPaymentOnList(sampleIdx, invoice.DocumentNumber) Then
+        If OpenInvoiceDocument(sampleIdx, result) Then
+            result.InvoicePdfFile = SaveAttachedPdf(sampleIdx, result, folder, fileStem)
+        End If
+    End If
+
+    Finish result, IIf(Len(result.InvoicePdfFile) > 0, "DONE", "PARTIAL"), _
+           "Confirming settlement: " & count & " " & confirmingType & " document(s) on " & _
+           "the finance provider's account behind clearing document " & _
+           result.ClearingDocument & ". Their references name the real suppliers, listed in " & _
+           modUtil.FILE_SCF & ". Largest invoice " & _
+           Format$(invoice.Amount, "#,##0.00") & ", document " & invoice.DocumentNumber & _
+           IIf(Len(invoice.Supplier) > 0, ", " & invoice.Supplier, "") & _
+           IIf(Len(result.InvoicePdfFile) > 0, ", PDF saved.", _
+               ". The PDF could not be fetched -- see the Log.")
+
+    TryConfirmingHop = True
 End Function
 
 '-----------------------------------------------------------------------

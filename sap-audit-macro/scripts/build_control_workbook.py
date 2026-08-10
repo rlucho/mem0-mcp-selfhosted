@@ -104,6 +104,14 @@ CONTROL_SETTINGS = [
      "the next sample."),
     ("Max seconds to wait per screen", 60,
      "Guards against an indefinite hang when SAP is slow."),
+    ("Confirming document type", "KA",
+     "Document type the finance provider's side of a confirming batch is posted under. When a Payment Usage list holds these and no payment documents, the run follows their Reference to the real suppliers instead of calling it a treasury settlement."),
+    ("Confirming reference column", "Reference",
+     "Heading of the column in the Payment Usage export carrying that reference. Leading zeros are kept -- it is a character field, and 0000243422 is not 243422."),
+    ("Confirming reference caption", "Reference",
+     "What the Reference field is LABELLED in FBL1N's dynamic selections. The run reads the field's technical name off that label, because the %%DYNnnn number depends on which dynamic selections are active and is not a property of the field. Translate if needed."),
+    ("Confirming company code pattern", "GB*",
+     "Company codes to search for the supplier invoices. NOT the code that made the payment: a confirming batch is paid by one company and the invoices sit in the operating ones. A pattern, so one search covers them all."),
     ("Payment usage menu text", "Payment usage",
      "What Environment > Payment Usage is CALLED on your system. The macro finds the "
      "command by this name and only falls back to the recorded menu position when the "

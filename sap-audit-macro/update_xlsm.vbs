@@ -114,6 +114,18 @@ SetNote book, "Invoice document type", _
         "picked is not one of the types listed, the Log says so and takes it anyway. " & _
         "Blank to switch the cross-check off."
 
+AddSetting book, "Confirming document type", "KA", _
+    "Document type the finance provider's side of a confirming batch is posted under. When a Payment Usage list holds these and no payment documents, the run follows their Reference to the real suppliers instead of calling it a treasury settlement."
+
+AddSetting book, "Confirming reference column", "Reference", _
+    "Heading of the column in the Payment Usage export carrying that reference. Leading zeros are kept -- it is a character field, and 0000243422 is not 243422."
+
+AddSetting book, "Confirming reference caption", "Reference", _
+    "What the Reference field is LABELLED in FBL1N's dynamic selections. The run reads the field's technical name off that label, because the %%DYNnnn number depends on which dynamic selections are active and is not a property of the field. Translate if needed."
+
+AddSetting book, "Confirming company code pattern", "GB*", _
+    "Company codes to search for the supplier invoices. NOT the code that made the payment: a confirming batch is paid by one company and the invoices sit in the operating ones. A pattern, so one search covers them all."
+
 AddSetting book, "Payment usage menu text", "Payment usage", _
     "What Environment > Payment Usage is CALLED on your system. The macro finds " & _
     "the command by this name and only falls back to the recorded menu position " & _

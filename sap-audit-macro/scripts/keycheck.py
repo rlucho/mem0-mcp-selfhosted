@@ -43,7 +43,7 @@ for path in sorted(glob.glob("sap-audit-macro/vba/*.bas")):
             asked_s[m.group(1)].append(f"{path.split('/')[-1]}:{n}")
 
 ct = wb["Control"]
-defined_s = {str(ct.cell(r,2).value).strip() for r in range(13,45) if ct.cell(r,2).value}
+defined_s = {str(ct.cell(r,2).value).strip() for r in range(13, 60) if ct.cell(r,2).value}
 print("\n=== Control settings ===")
 ms = sorted(set(asked_s) - defined_s)
 print(f"asked by code: {len(asked_s)}   defined on sheet: {len(defined_s)}")

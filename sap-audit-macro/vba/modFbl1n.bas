@@ -862,3 +862,203 @@ Public Sub DumpFbl1nColumns()
            "modFeban.DumpGridColumns still works, because FEBAN does use an ALV grid.", _
            vbInformation, "FBL1N columns"
 End Sub
+
+'=======================================================================
+' The confirming (SCF) hop: from the bank's KA documents to the suppliers.
+'=======================================================================
+'-----------------------------------------------------------------------
+' Which %%DYNnnn a dynamic-selection field is, found by its LABEL.
+'
+' The number is not a property of the field, it is a property of the
+' currently active selection set: Document Number is DYN011 with one set of
+' dynamic selections chosen and something else with another. There is no
+' recording of the Reference field for that reason, and guessing a number
+' would filter on whichever field happened to hold it -- returning nothing,
+' which is indistinguishable from 'no such invoices'.
+'
+' So read it off the screen. SAP puts a label beside every dynamic-selection
+' field, and the label's own ID carries the token: find the label whose text
+' is 'Reference' and the token in its ID is the one to use.
+'
+' Returns "" when no such label is on screen, and the caller says so rather
+' than filtering on a field nobody chose.
+'-----------------------------------------------------------------------
+Private Function DynamicToken(ByVal caption As String) As String
+    Dim found As String
+
+    found = TokenUnder("wnd[0]/usr", caption, 0)
+    DynamicToken = found
+End Function
+
+Private Function TokenUnder(ByVal elementId As String, ByVal caption As String, _
+                            ByVal depth As Long) As String
+    Dim control As Object, child As Object
+    Dim found As String
+    Dim text As String
+
+    If depth > 8 Then Exit Function
+    If Not modSapConnect.Exists(elementId) Then Exit Function
+
+    Set control = modSapConnect.Element(elementId)
+
+    On Error Resume Next
+    For Each child In control.Children
+        text = vbNullString
+        text = child.Text
+
+        If StrComp(Trim$(text), Trim$(caption), vbTextCompare) = 0 Then
+            found = TokenIn(child.Id)
+            If Len(found) > 0 Then
+                TokenUnder = found
+                Exit Function
+            End If
+        End If
+
+        found = TokenUnder(child.Id, caption, depth + 1)
+        If Len(found) > 0 Then
+            TokenUnder = found
+            Exit Function
+        End If
+    Next child
+    On Error GoTo 0
+End Function
+
+' '...lbl%_%%DYN012_%_APP_%-TEXT' -> '%%DYN012'
+Private Function TokenIn(ByVal elementId As String) As String
+    Dim at As Long, i As Long
+    Dim digits As String
+
+    at = InStr(1, elementId, "%%DYN", vbTextCompare)
+    If at = 0 Then Exit Function
+
+    For i = at + 5 To Len(elementId)
+        If Mid$(elementId, i, 1) >= "0" And Mid$(elementId, i, 1) <= "9" Then
+            digits = digits & Mid$(elementId, i, 1)
+        Else
+            Exit For
+        End If
+    Next i
+
+    If Len(digits) > 0 Then TokenIn = "%%DYN" & digits
+End Function
+
+' The container the dynamic-selection fields live in, taken from the
+' document-number ID on the Screen Map so there is one place to correct.
+Private Function DynamicContainer() As String
+    Dim mapped As String
+    Dim slash As Long
+
+    mapped = modConfig.ElementIdOrBlank("Fbl1n.DocNumberField")
+    slash = InStrRev(mapped, "/")
+    If slash > 0 Then DynamicContainer = Left$(mapped, slash)
+End Function
+
+'-----------------------------------------------------------------------
+' The supplier invoices behind a confirming batch.
+'
+' A confirming settlement pays the bank, and the invoices it covers sit on
+' the bank's account as KA documents whose Reference carries the confirming
+' platform's transaction ID. The SAME reference is stamped on the operating
+' company's side, against the real supplier -- in a DIFFERENT company code,
+' which is why this searches a pattern rather than the one the payment was
+' made from.
+'
+' Reference, not document number: 0000243422 is a character reference, so
+' the leading zeros are part of it and a document-number search finds
+' nothing at all.
+'-----------------------------------------------------------------------
+Public Function InvoicesForReferences(ByVal sampleIdx As Long, ByVal references As String, _
+                                      ByVal count As Long, ByVal dateFrom As Date, _
+                                      ByVal folder As String) As String
+    Dim token As String
+    Dim container As String
+    Dim fieldId As String, multiId As String
+    Dim pattern As String
+    Dim yearFrom As String, yearTo As String
+
+    On Error GoTo Failed
+
+    OpenSelectionScreen sampleIdx, dateFrom, dateFrom
+
+    ' Not the company code the payment was made from. The invoices are in the
+    ' operating companies, and one batch reaches several of them.
+    pattern = Trim$(modConfig.SettingOrBlank("Confirming company code pattern"))
+    If Len(pattern) = 0 Then pattern = "*"
+    modSapConnect.Element(modConfig.ElementId("Fbl1n.CompanyCode")).Text = pattern
+
+    ' The whole year the references were raised in. They predate the payment,
+    ' often by months -- the batch this was built from settles in September
+    ' invoices raised from May onwards.
+    yearFrom = modUtil.SapDate(DateSerial(Year(dateFrom), 1, 1))
+    yearTo = modUtil.SapDate(DateSerial(Year(dateFrom), 12, 31))
+    SetIfMapped "Fbl1n.PostingDateFrom", yearFrom
+    SetIfMapped "Fbl1n.PostingDateTo", yearTo
+
+    OpenDynamicSelections sampleIdx, modConfig.ElementIdOrBlank("Fbl1n.DocNumberField"), _
+                          modConfig.ElementIdOrBlank("Fbl1n.DocNumberMultiSelect")
+
+    token = DynamicToken(modConfig.SettingOrBlank("Confirming reference caption"))
+    If Len(token) = 0 Then token = DynamicToken("Reference")
+
+    If Len(token) = 0 Then
+        modLog.LogAction sampleIdx, "SCF references", _
+                     "No dynamic-selection field labelled 'Reference' is on the FBL1N " & _
+                     "screen, so the " & count & " reference(s) could not be filtered on. " & _
+                     "Open FBL1N's dynamic selections and tick Document > Reference, or " & _
+                     "correct 'Confirming reference caption' on the Control sheet if it " & _
+                     "is called something else in your logon language.", _
+                     "MANUAL", vbNullString
+        Exit Function
+    End If
+
+    container = DynamicContainer()
+    fieldId = container & "txt" & token & "-LOW"
+    multiId = container & "btn%_" & token & "_%_APP_%-VALU_PUSH"
+
+    modLog.LogAction sampleIdx, "SCF references", _
+                 "Reference is " & token & " on this screen, so the filter goes in " & _
+                 fieldId & ". Company code " & pattern & ", posting date " & yearFrom & _
+                 " to " & yearTo & ", no vendor.", "OK", vbNullString
+
+    If count = 1 And modSapConnect.Exists(fieldId) Then
+        modSapConnect.Element(fieldId).Text = references
+    Else
+        If Not modSapConnect.Exists(multiId) Then
+            modLog.LogAction sampleIdx, "SCF references", _
+                         count & " references need the multiple-selection dialog, but " & _
+                         multiId & " is not on the screen.", "MANUAL", vbNullString
+            Exit Function
+        End If
+
+        PutOnClipboard references
+        modSafety.GuardedPress multiId
+        modSapConnect.WaitForSap
+        modSafety.GuardedPress modConfig.ElementId("MultiSel.PasteFromClipboard")
+        modSapConnect.WaitForSap
+        modSafety.GuardedPress modConfig.ElementId("MultiSel.Confirm")
+        modSapConnect.WaitForSap
+    End If
+
+    modSafety.GuardedPress modConfig.ElementId("Fbl1n.ExecuteButton")
+    modSapConnect.WaitForSap
+
+    If modSapConnect.StatusBarType() = "E" Or modSapConnect.StatusBarType() = "A" Then
+        modLog.LogAction sampleIdx, "SCF references", _
+                     "FBL1N reported: " & modSapConnect.StatusBarText(), "ERROR", vbNullString
+        Exit Function
+    End If
+
+    If Not ResultListShowing() Then
+        modLog.LogAction sampleIdx, "SCF references", _
+                     "FBL1N found nothing for those " & count & " reference(s) in " & _
+                     pattern & " during " & Year(dateFrom) & ". " & _
+                     modSapConnect.StatusBarText(), "MANUAL", vbNullString
+        Exit Function
+    End If
+
+    InvoicesForReferences = modExport.ExportClassicList(sampleIdx, folder, modUtil.FILE_SCF)
+    Exit Function
+
+Failed:
+    modLog.LogAction sampleIdx, "SCF references", Err.Description, "ERROR", vbNullString
+End Function
