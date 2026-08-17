@@ -13,7 +13,8 @@ import pytest
 
 import mem0_mcp_selfhosted.server as server_mod
 
-EXPECTED_TOOLS = {
+# Always registered.
+MEMORY_TOOLS = {
     "add_memory",
     "search_memories",
     "get_memories",
@@ -23,9 +24,13 @@ EXPECTED_TOOLS = {
     "delete_all_memories",
     "list_entities",
     "delete_entities",
-    "mcp_search_graph",
-    "mcp_get_entity",
 }
+
+# Registered only when MEM0_ENABLE_GRAPH is truthy — they talk to Neo4j
+# directly and can only return ServiceUnavailable without one.
+GRAPH_TOOLS = {"mcp_search_graph", "mcp_get_entity"}
+
+EXPECTED_TOOLS = MEMORY_TOOLS | GRAPH_TOOLS
 
 # Required parameters per tool (tool_name -> set of required param names)
 REQUIRED_PARAMS = {
@@ -63,8 +68,13 @@ def mock_memory():
 
 
 @pytest.fixture
-def mcp_server(mock_memory):
-    """Create a FastMCP server with mocked Memory for protocol testing."""
+def mcp_server(mock_memory, monkeypatch):
+    """Create a FastMCP server with mocked Memory for protocol testing.
+
+    Graph is enabled here so the full 11-tool surface is exercised; the
+    gated-off surface is covered separately in TestToolDiscovery.
+    """
+    monkeypatch.setenv("MEM0_ENABLE_GRAPH", "true")
     original_memory = server_mod.memory
     original_graph_default = server_mod._enable_graph_default
     server_mod.memory = mock_memory
@@ -90,6 +100,28 @@ class TestToolDiscovery:
         tool_names = {t.name for t in tools}
         assert tool_names == EXPECTED_TOOLS
         assert len(tools) == 11
+
+    @pytest.mark.asyncio
+    async def test_graph_tools_absent_when_graph_disabled(self, mock_memory, monkeypatch):
+        """Without MEM0_ENABLE_GRAPH the Neo4j tools must not be advertised.
+
+        Registering them regardless leaves the client with two tools that can
+        only ever fail, and an advertised tool reads as an available
+        capability. Absence is the honest signal.
+        """
+        monkeypatch.delenv("MEM0_ENABLE_GRAPH", raising=False)
+        original = server_mod.memory
+        server_mod.memory = mock_memory
+        try:
+            srv = server_mod._create_server()
+            tools = await srv.list_tools()
+        finally:
+            server_mod.memory = original
+
+        tool_names = {t.name for t in tools}
+        assert tool_names == MEMORY_TOOLS
+        assert not (tool_names & GRAPH_TOOLS)
+        assert len(tools) == 9
 
     @pytest.mark.asyncio
     async def test_tool_schemas_have_required_params(self, mcp_server):

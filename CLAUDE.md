@@ -21,7 +21,12 @@ python3 -m pytest tests/unit/test_auth.py::TestIsOatToken::test_oat_token_detect
 
 ## Architecture
 
-Self-hosted MCP server using `mem0ai` as a library. 11 tools (9 memory + 2 graph), `MCPServer` orchestrator (`mcp` SDK v2).
+Self-hosted MCP server using `mem0ai` as a library. 9 memory tools always, plus 2 direct-Neo4j graph tools registered **only when `MEM0_ENABLE_GRAPH` is truthy** (they cannot work without a Neo4j, and an always-failing tool reads to a client as an available capability). `MCPServer` orchestrator (`mcp` SDK v2).
+
+**mem0ai 2.x / v3 algorithm notes:**
+- There is no `graph` extra any more — graph memory moved to the hosted Platform. OSS gets single-pass extraction + multi-signal retrieval instead.
+- Hybrid retrieval needs two optional deps or it degrades **silently**: `fastembed` (BM25 sparse vectors; without it keyword search is disabled) and `spacy` + `en_core_web_sm` (without it `lemmatize_for_bm25()` returns the raw text unchanged, so BM25 indexes unlemmatized junk). `en_core_web_sm` is not on PyPI — install the wheel from the spacy-models release URL.
+- Keep `qdrant-client` within one minor of the running Qdrant server or it warns and may misbehave.
 
 **Module roles:**
 - `server.py` — `MCPServer` orchestrator, registers all tools + `memory_assistant` prompt; transport options (host/port/`json_response`) are passed to `run()`, not the constructor

@@ -13,6 +13,7 @@ from mem0_mcp_selfhosted.helpers import (
     _mem0_call,
     call_with_graph,
     get_default_user_id,
+    normalize_user_id,
     patch_gemini_parse_response,
     safe_bulk_delete,
 )
@@ -170,6 +171,49 @@ class TestGetDefaultUserId:
     def test_custom(self, monkeypatch):
         monkeypatch.setenv("MEM0_USER_ID", "bob")
         assert get_default_user_id() == "bob"
+
+
+class TestNormalizeUserId:
+    """Scope keys are free text; without normalising, one person's memories
+    silently split across `Bob`/`bob`/a machine handle and no single search
+    can reach them all."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch):
+        monkeypatch.delenv("MEM0_USER_ID_ALIASES", raising=False)
+        monkeypatch.setenv("MEM0_USER_ID", "bob")
+
+    def test_lowercases(self):
+        assert normalize_user_id("Bob") == "bob"
+        assert normalize_user_id("BOB") == "bob"
+
+    def test_strips_whitespace(self):
+        assert normalize_user_id("  Bob \n") == "bob"
+
+    def test_falls_back_to_default(self):
+        assert normalize_user_id(None) == "bob"
+        assert normalize_user_id("") == "bob"
+
+    def test_default_is_itself_normalized(self, monkeypatch):
+        monkeypatch.setenv("MEM0_USER_ID", " Bob ")
+        assert normalize_user_id(None) == "bob"
+
+    def test_alias_map(self, monkeypatch):
+        monkeypatch.setenv("MEM0_USER_ID_ALIASES", "rbob=bob,work-bob=bob")
+        assert normalize_user_id("rbob") == "bob"
+        assert normalize_user_id("RBob") == "bob"
+        assert normalize_user_id("work-bob") == "bob"
+        assert normalize_user_id("alice") == "alice"
+
+    def test_malformed_alias_entries_are_ignored(self, monkeypatch):
+        monkeypatch.setenv("MEM0_USER_ID_ALIASES", ",,junk,=,rbob=bob")
+        assert normalize_user_id("rbob") == "bob"
+        assert normalize_user_id("alice") == "alice"
+
+    def test_idempotent(self, monkeypatch):
+        monkeypatch.setenv("MEM0_USER_ID_ALIASES", "rbob=bob")
+        once = normalize_user_id("RBob")
+        assert normalize_user_id(once) == once
 
 
 class TestEnhancedSanitizer:

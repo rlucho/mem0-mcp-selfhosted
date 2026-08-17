@@ -25,8 +25,8 @@ from mem0_mcp_selfhosted.graph_tools import get_entity, search_graph
 from mem0_mcp_selfhosted.helpers import (
     _mem0_call,
     call_with_graph,
-    get_default_user_id,
     list_entities_facet,
+    normalize_user_id,
     patch_gemini_parse_response,
     patch_graph_sanitizer,
     safe_bulk_delete,
@@ -197,7 +197,7 @@ def _register_tools(mcp: MCPServer) -> None:
         enable_graph: Annotated[bool | None, Field(description="Override default graph toggle for this call.")] = None,
     ) -> str:
         """Store a new memory. Requires at least one of user_id, agent_id, or run_id."""
-        uid = user_id or get_default_user_id()
+        uid = normalize_user_id(user_id)
 
         # Build messages for mem0ai
         if messages:
@@ -235,7 +235,7 @@ def _register_tools(mcp: MCPServer) -> None:
         enable_graph: Annotated[bool | None, Field(description="Override default graph toggle.")] = None,
     ) -> str:
         """Semantic search across existing memories."""
-        uid = user_id or get_default_user_id()
+        uid = normalize_user_id(user_id)
 
         search_filters: dict[str, Any] = {"user_id": uid}
         if agent_id:
@@ -271,7 +271,7 @@ def _register_tools(mcp: MCPServer) -> None:
         limit: Annotated[int | None, Field(description="Maximum number of memories to return.")] = None,
     ) -> str:
         """Page through memories using filters instead of search."""
-        uid = user_id or get_default_user_id()
+        uid = normalize_user_id(user_id)
 
         get_filters: dict[str, Any] = {"user_id": uid}
         if agent_id:
@@ -339,7 +339,7 @@ def _register_tools(mcp: MCPServer) -> None:
 
         NEVER calls memory.delete_all() — uses safe bulk-delete instead.
         """
-        uid = user_id or get_default_user_id()
+        uid = normalize_user_id(user_id)
         if not any([uid, agent_id, run_id]):
             return json.dumps(
                 {"error": "At least one scope (user_id, agent_id, or run_id) is required."},
@@ -402,7 +402,7 @@ def _register_tools(mcp: MCPServer) -> None:
 
         filters: dict[str, Any] = {}
         if user_id:
-            filters["user_id"] = user_id
+            filters["user_id"] = normalize_user_id(user_id)
         if agent_id:
             filters["agent_id"] = agent_id
         if run_id:
@@ -419,8 +419,21 @@ def _register_tools(mcp: MCPServer) -> None:
         return _mem0_call(_do_delete_entity)
 
     # ============================================================
-    # Direct Neo4j Graph Tools
+    # Direct Neo4j Graph Tools (registered only when graph is enabled)
     # ============================================================
+    #
+    # These talk to Neo4j directly, so advertising them without a Neo4j to
+    # talk to gives the client two tools that can only ever return
+    # ServiceUnavailable. A tool that is present but always fails is worse
+    # than an absent one: the model spends a call discovering it is broken,
+    # and "the tool exists" reads as "the capability exists". Gate on the
+    # same flag that governs the rest of the graph path.
+    if not bool_env("MEM0_ENABLE_GRAPH"):
+        logger.info(
+            "MEM0_ENABLE_GRAPH is unset — skipping registration of "
+            "mcp_search_graph/mcp_get_entity (no Neo4j backend to serve them)."
+        )
+        return
 
     @mcp.tool()
     def mcp_search_graph(
@@ -448,6 +461,12 @@ def _register_prompts(mcp: MCPServer) -> None:
     @mcp.prompt()
     def memory_assistant() -> str:
         """Quick-start guide for using the mem0 memory server."""
+        graph_on = bool_env("MEM0_ENABLE_GRAPH")
+        graph_step = (
+            "5. Graph exploration: Use mcp_search_graph and mcp_get_entity for entity relationships\n"
+            if graph_on else ""
+        )
+        graph_tip = "- Set enable_graph=true to include knowledge graph results\n" if graph_on else ""
         return (
             "You are using the mem0 MCP server for long-term memory management.\n\n"
             "Quick Start:\n"
@@ -455,11 +474,13 @@ def _register_prompts(mcp: MCPServer) -> None:
             "2. Search memories: Use search_memories for semantic queries\n"
             "3. Browse memories: Use get_memories for filtered listing\n"
             "4. Update/Delete: Use update_memory and delete_memory for modifications\n"
-            "5. Graph exploration: Use search_graph and get_entity for entity relationships\n\n"
+            f"{graph_step}\n"
             "Tips:\n"
-            "- user_id is automatically injected from MEM0_USER_ID default\n"
-            "- Set enable_graph=true to include knowledge graph results\n"
+            "- user_id is normalised (trimmed + lowercased) and defaults to MEM0_USER_ID\n"
+            f"{graph_tip}"
             "- Use infer=false to store raw text without LLM extraction\n"
+            "- Keep each memory under ~3 KB: one vector over a large blob is a vague\n"
+            "  search key, and text beyond the embedder's context is silently truncated\n"
             "- Use threshold on search_memories to filter by relevance score\n"
             "- Use filters for structured queries: {\"key\": {\"eq\": \"value\"}}\n"
         )

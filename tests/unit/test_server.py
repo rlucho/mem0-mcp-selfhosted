@@ -42,8 +42,14 @@ def mock_memory():
 
 
 @pytest.fixture
-def server_with_mock(mock_memory):
-    """Create a FastMCP server with mocked Memory and helpers."""
+def server_with_mock(mock_memory, monkeypatch):
+    """Create a FastMCP server with mocked Memory and helpers.
+
+    Graph is enabled so the full tool surface (including the two direct Neo4j
+    tools) is registered; those tools are gated on MEM0_ENABLE_GRAPH in
+    production. TestCreateServer covers the gated-off surface explicitly.
+    """
+    monkeypatch.setenv("MEM0_ENABLE_GRAPH", "true")
     original_memory = server_mod.memory
     original_graph_default = server_mod._enable_graph_default
     server_mod.memory = mock_memory
@@ -379,18 +385,29 @@ class TestRegisterProviders:
 
 
 class TestCreateServer:
-    def test_registers_11_tools(self):
+    def test_registers_11_tools_with_graph_enabled(self, monkeypatch):
+        monkeypatch.setenv("MEM0_ENABLE_GRAPH", "true")
         srv = server_mod._create_server()
         tools = srv._tool_manager._tools
         assert len(tools) == 11, f"Expected 11 tools, got {len(tools)}: {list(tools.keys())}"
+
+    def test_registers_9_tools_with_graph_disabled(self, monkeypatch):
+        """The two Neo4j tools are gated: no backend, no advertisement."""
+        monkeypatch.delenv("MEM0_ENABLE_GRAPH", raising=False)
+        srv = server_mod._create_server()
+        tools = srv._tool_manager._tools
+        assert len(tools) == 9, f"Expected 9 tools, got {len(tools)}: {list(tools.keys())}"
+        assert "mcp_search_graph" not in tools
+        assert "mcp_get_entity" not in tools
 
     def test_registers_prompt(self):
         srv = server_mod._create_server()
         prompts = srv._prompt_manager._prompts
         assert "memory_assistant" in prompts
 
-    def test_tools_register_without_memory(self):
+    def test_tools_register_without_memory(self, monkeypatch):
         """Server creates tools even when memory is None (lazy init)."""
+        monkeypatch.setenv("MEM0_ENABLE_GRAPH", "true")
         original = server_mod.memory
         server_mod.memory = None
         try:

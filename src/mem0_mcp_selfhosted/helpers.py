@@ -5,6 +5,7 @@
 - call_with_graph(): Concurrency-safe enable_graph toggle
 - safe_bulk_delete(): Iterate + individual delete (never memory.delete_all())
 - get_default_user_id(): Default user_id injection
+- normalize_user_id(): Canonicalise scope keys so clients cannot partition one user
 - list_entities_facet(): Qdrant Facet API entity listing with scroll fallback
 """
 
@@ -140,6 +141,28 @@ _graph_lock = threading.Lock()
 def get_default_user_id() -> str:
     """Get the default user_id from MEM0_USER_ID env var."""
     return env("MEM0_USER_ID", "user")
+
+
+def normalize_user_id(uid: str | None) -> str:
+    """Canonicalise a user scope identifier.
+
+    Scope keys are free-text and case-sensitive in the vector store, so
+    ``Lucho``, ``lucho`` and a per-machine handle partition one person's
+    memories into disjoint sets that no single search can reach — silently,
+    because a search over one partition still returns confident results.
+    Normalising at the boundary keeps every client writing the same scope.
+
+    - falls back to ``MEM0_USER_ID`` when absent
+    - strips whitespace and lowercases
+    - applies ``MEM0_USER_ID_ALIASES`` (``"old=new,other=new"``) for handles
+      that differ by more than case
+    """
+    canon = (uid or get_default_user_id() or "").strip().lower()
+    for pair in env("MEM0_USER_ID_ALIASES").split(","):
+        old, sep, new = pair.partition("=")
+        if sep and canon == old.strip().lower():
+            return new.strip().lower()
+    return canon
 
 
 def _mem0_call(func: Callable, *args: Any, **kwargs: Any) -> str:

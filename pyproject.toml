@@ -16,9 +16,16 @@ dependencies = [
     # install, so an unbounded major bump upstream breaks new installs with no
     # change here. mcp 2.0.0 did exactly that. Raise a bound only after testing.
     "mcp[cli]>=2,<3",
-    "mem0ai[graph,llms]>=1.0.3,<3",
+    # mem0ai 2.x ships the v3 memory algorithm (single-pass extraction,
+    # multi-signal retrieval). There is no longer a `graph` extra — graph
+    # memory moved to the hosted Platform — so requesting it is a silent no-op
+    # at best. `nlp` pulls spaCy, without which lemmatize_for_bm25() falls back
+    # to returning raw text and BM25 scoring quietly degrades to nonsense.
+    "mem0ai[llms,nlp]>=2.0.18,<3",
+    # fastembed provides the BM25 sparse encoder. Without it mem0 disables
+    # keyword search silently and hybrid retrieval collapses to semantic-only.
+    "fastembed>=0.8,<1",
     "anthropic>=0.77.0,<1",
-    "neo4j>=5.23.1,<7",
     "python-dotenv>=1.2.1,<2",
 ]
 
@@ -35,6 +42,12 @@ packages = ["src/mem0_mcp_selfhosted"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+]
+# Only needed when MEM0_ENABLE_GRAPH=true, which requires a Neo4j you run
+# yourself. graph_tools.py imports neo4j lazily, so the tools simply are not
+# registered when this extra is absent.
+graph = [
+    "neo4j>=5.23.1,<7",
 ]
 
 [tool.pytest.ini_options]
