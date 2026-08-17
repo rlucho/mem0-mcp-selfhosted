@@ -25,6 +25,11 @@ dependencies = [
     # fastembed provides the BM25 sparse encoder. Without it mem0 disables
     # keyword search silently and hybrid retrieval collapses to semantic-only.
     "fastembed>=0.8,<1",
+    # Qdrant refuses to guarantee behaviour when the client is more than one
+    # minor ahead of the server, and mem0ai's floor alone lets the resolver
+    # pick a client well past whatever Qdrant you actually run. Raise this in
+    # step with your server, not ahead of it.
+    "qdrant-client>=1.12,<1.19",
     "anthropic>=0.77.0,<1",
     "python-dotenv>=1.2.1,<2",
 ]
