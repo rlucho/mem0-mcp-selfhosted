@@ -136,7 +136,11 @@ SYSTEMS = {
     # Navision added 2026-08-06. P02 stays first: it already inherited FR's old
     # flat tasks, and moving it would re-point that inheritance at a system that
     # never held them.
-    "FR": ["P02", "QUALIAC", "E01", "Navision"],
+    # PER added 2026-08-07, fifth system. Appended, like E01 and Navision before
+    # it: P02 must stay first because it already inherited FR's old flat tasks,
+    # and promoting anything above it would re-point that inheritance at a system
+    # that never held them.
+    "FR": ["P02", "QUALIAC", "E01", "Navision", "PER"],
     # PP2 FIRST, deliberately: IT's historical payment work was PP2 work, and
     # 69,61 h are booked on those 11 rows (41,62 of it on Payment Run #65 alone).
     # They move under PP2 and keep their ids and hours; E01 is genuinely new and

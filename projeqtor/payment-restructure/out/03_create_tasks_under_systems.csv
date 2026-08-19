@@ -1,1 +1,12 @@
 name;idProject;idActivity;activity type;status;planning mode
+Payment Run;37;<<FR > PER>>;Task;recorded;as soon as possible
+Manual & Unplanned Payments;37;<<FR > PER>>;Task;recorded;as soon as possible
+Invoice check;37;<<FR > PER>>;Task;recorded;as soon as possible
+Other Processes;37;<<FR > PER>>;Task;recorded;as soon as possible
+Project - Robotic;37;<<FR > PER>>;Task;recorded;as soon as possible
+Mailbox;37;<<FR > PER>>;Task;recorded;as soon as possible
+Payment Run Issues;37;<<FR > PER>>;Task;recorded;as soon as possible
+Banks Issues;37;<<FR > PER>>;Task;recorded;as soon as possible
+On Boarding;37;<<FR > PER>>;Task;recorded;as soon as possible
+Audit;37;<<FR > PER>>;Task;recorded;as soon as possible
+Proof of payment;37;<<FR > PER>>;Task;recorded;as soon as possible
