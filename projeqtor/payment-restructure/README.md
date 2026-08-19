@@ -337,3 +337,40 @@ this work — excluded from every file.
 The surplus records remain as closed rows. They carry no booked work, so they
 could be deleted through the UI if the clutter ever matters — but nothing depends
 on it, and closing is reversible where deleting is not.
+
+---
+
+## Server limits — why the big imports kept dying
+
+The instance's `php.ini` (XAMPP on `\\dss-ib-dfs-228\xampp\php`) carried:
+
+```
+max_execution_time=120        <- this is what killed every large import
+max_input_time=60
+max_input_vars = 20000
+memory_limit=512M
+post_max_size=200M
+```
+
+**`max_execution_time=120` explains every "didn't send any data" failure in this
+work** — the 2024-row Collections file, the 3625-row assignment file that
+committed 1825 rows and stopped, the 1825-row close file. None of them was
+rejected; each ran out of wall clock mid-transaction, which is exactly why the
+work committed anyway and why "re-import and see" was so dangerous.
+
+`max_input_vars = 20000` is a separate limit and bites the TIMESHEET, not the
+import: ProjeQtor renders one form input per day-cell per assigned activity, so a
+resource assigned to 338 activities posts 338 x 31 ~ 10500 cells, roughly 21000
+inputs with hidden fields. Over the limit, PHP silently truncates the POST and
+ProjeQtor throws its generic "An error occurred".
+
+HOW TO TELL THE FILE IS THE LIVE ONE: the error quotes the CONFIGURED value. It
+said 20000, and PHP's default is 1000 — so that php.ini was being read. A file
+that is not loaded cannot produce its own numbers in an error message.
+
+Raised to 300 / 300 / 50000. Requires an Apache restart; php.ini is read at
+startup only.
+
+The structural point stands separately: assigning all 25 resources to all ~330
+leaves is what makes the timesheets this large. Raising the ceiling buys room, it
+does not make a 338-row sheet pleasant to book against.
