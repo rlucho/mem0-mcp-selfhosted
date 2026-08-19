@@ -147,6 +147,12 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--resources", metavar="CSV")
     ap.add_argument("--activities", metavar="CSV")
+    ap.add_argument("--only-activities", metavar="ID[,ID...]", default="",
+                    help="restrict the output to these activity ids. Needed for a "
+                         "TOP-UP run: resolve_targets returns every leaf that "
+                         "should be assigned, not just the unassigned ones, so "
+                         "regenerating after a completed run and importing the "
+                         "result would insert a second assignment for all of them.")
     ap.add_argument("--dedupe", metavar="ASSIGNMENT_EXPORT.csv",
                     help="find assignment records duplicated on (refId, idResource) "
                          "and write the ids of the surplus ones. The import cannot "
@@ -196,6 +202,14 @@ def main() -> None:
         sys.exit("ERROR: --resources and --activities are required unless --dedupe.")
 
     targets = resolve_targets(read_export(args.activities))
+    only = {i.strip() for i in args.only_activities.split(",") if i.strip()}
+    if only:
+        targets = [t for t in targets if t[0] in only]
+        missing = only - {t[0] for t in targets}
+        if missing:
+            sys.exit(f"ERROR: --only-activities named {sorted(missing)}, which "
+                     f"resolve_targets does not consider assignable (system row, "
+                     f"pre-existing, or not under Payment). Refusing to guess.")
     if not targets:
         sys.exit("ERROR: no activities to assign -- is the export current?")
 
