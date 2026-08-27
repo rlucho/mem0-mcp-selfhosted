@@ -42,3 +42,6 @@ benchmarks/*results*.json
 .claude/
 openspec/
 docs/
+
+# ProjeQtor LDAP check - local secrets, never committed
+projeqtor/ldap-check/config.local.php

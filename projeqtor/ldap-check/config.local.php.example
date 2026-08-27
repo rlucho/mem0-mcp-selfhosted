@@ -1,0 +1,41 @@
+<?php
+/**
+ * Copy to config.local.php and fill in.
+ * config.local.php is git-ignored on purpose: it holds a token, and possibly
+ * internal host names and a directory service account. Keep it out of the repo.
+ */
+return array(
+
+    // REQUIRED. Any random string. The page returns 404 without ?token=<this>.
+    'token' => '',
+
+    // Where ProjeQtor is installed. Leave empty if this file sits inside the
+    // ProjeQtor web folder (next to index.php).
+    'projeqtor_root'  => '',
+
+    // Only if the parameters file is somewhere unusual (auto-located otherwise:
+    // tool/parametersLocation.php -> files/config/parameters.php -> tool/parameters.php).
+    'parameters_file' => '',
+
+    // false removes the password field: config inspection + search test only.
+    'allow_user_bind' => true,
+
+    // Leave every entry empty to test EXACTLY what ProjeQtor is configured with.
+    // Fill one in to try an alternative without changing ProjeQtor's configuration.
+    'override' => array(
+        'paramLdap_host'        => '',   // 'dc01.corp.example' or 'ldaps://dc01.corp.example'
+        'paramLdap_port'        => '',   // '389' plaintext, '636' ldaps
+        'paramLdap_version'     => '',   // '3'
+        'paramLdap_base_dn'     => '',   // 'DC=corp,DC=example'
+        'paramLdap_user_filter' => '',   // '(&(objectClass=user)(sAMAccountName=%USERNAME%))'
+        'paramLdap_search_user' => '',   // service account: DN or user@fqdn
+        'paramLdap_search_pass' => '',
+    ),
+
+    // Probed by the "probe base dn / filter candidates" checkbox.
+    'candidate_base_dns' => array(
+        // 'CN=Users,DC=corp,DC=example',
+        // 'OU=Users,OU=People,DC=corp,DC=example',
+        // 'DC=corp,DC=example',
+    ),
+);
