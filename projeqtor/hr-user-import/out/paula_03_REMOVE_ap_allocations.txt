@@ -1,0 +1,22 @@
+Paula Fernández Prieto -- resource #163, user `espaufer` -- moving AP -> R2R.
+
+REMOVE her 12 AP allocations. The import CANNOT delete, so this is a UI job.
+
+  1. Export element type `Allocation` (that is what carries each row's own id;
+     `Work` is time entries and comes back empty).
+  2. Filter to idResource / resource = 163 (Paula Fernández Prieto) AND the
+     project ids below.
+  3. Delete or close those 12 rows in the UI.
+
+AP projects to un-allocate:
+  28  AP                3  IB                4  UK
+   5  DE                7  BE               10  FR
+   8  PS                6  IT               68  PMS-TMS
+  70  Help Desk        72  MA               73  PL & Others
+
+WATCH OUT: closing or deleting an allocation AUTO-CLOSES that resource's
+activity assignments on the project. That is what you want here -- she should
+stop appearing on AP timesheets -- but it is not reversible by re-adding the
+allocation, so do it only once the R2R side is in.
+
+Do this AFTER importing paula_02, so she is never left with no allocations.
