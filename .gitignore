@@ -39,6 +39,10 @@ Thumbs.db
 benchmarks/*results*.json
 
 # Local development tooling
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
+.claude/settings.local.json
 openspec/
 docs/
