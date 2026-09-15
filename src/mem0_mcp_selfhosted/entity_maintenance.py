@@ -12,6 +12,8 @@ indexes, then:
   most links, keeping every link;
 - removes links to memories that no longer exist and deletes entities left with none.
 
+--apply refuses (exit code 3, nothing written) when the memories collection is empty, because every link
+would then look stale, or when the plan deletes more than --max-delete entities (default 100).
 Stop the MCP server first: an entity write that lands between the scan and the apply can be lost.
 """
 
@@ -32,6 +34,7 @@ from mem0_mcp_selfhosted.entity_store import (
 from mem0_mcp_selfhosted.env import env, opt_env
 
 _PAGE_SIZE = 1000
+REFUSED = 3
 
 
 @dataclass
@@ -133,12 +136,28 @@ def _describe(plan, collection_name, entity_count, memory_count) -> str:
     )
 
 
+def _refusal(plan, rows, memory_ids, max_delete):
+    """Why ``plan`` is too dangerous to apply unattended, or None."""
+    if rows and not memory_ids:
+        return "the memories collection is empty, so every entity link would look stale"
+    if len(plan.delete) > max_delete:
+        return f"the plan deletes {len(plan.delete)} entities, more than --max-delete {max_delete}"
+    return None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m mem0_mcp_selfhosted.entity_maintenance",
         description="Backfill data_norm, merge duplicate entities and prune stale links in mem0's entity store.",
     )
     parser.add_argument("--apply", action="store_true", help="write the changes (default: dry run, report only)")
+    parser.add_argument(
+        "--max-delete",
+        type=int,
+        default=100,
+        metavar="N",
+        help="refuse to apply a plan that deletes more than N entities (default: 100)",
+    )
     args = parser.parse_args(argv)
 
     client, entities, memories = _connect()
@@ -148,6 +167,11 @@ def main(argv=None) -> int:
     if not args.apply:
         print("dry run: nothing written (pass --apply to write)")
         return 0
+
+    refusal = _refusal(plan, rows, memory_ids, args.max_delete)
+    if refusal:
+        print(f"refusing to apply: {refusal}; nothing written")
+        return REFUSED
 
     create_entity_indexes(client, entities)
     apply_entity_maintenance(client, entities, plan)

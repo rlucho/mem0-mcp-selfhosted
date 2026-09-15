@@ -97,3 +97,22 @@ class TestMain:
         assert client.collections["ents"]["a"].payload["linked_memory_ids"] == ["m1"]
         assert {c["field_name"] for c in client.calls_named("create_payload_index")} == {"data_norm", "linked_memory_ids"}
         assert "clean" in capsys.readouterr().out.lower()
+
+    def test_apply_refuses_a_plan_that_deletes_more_than_max_delete(self, monkeypatch, capsys):
+        client = FakeQdrantClient()
+        rows = [row(f"e{i}", f"Entity {i}", ["gone"], norm=f"entity {i}") for i in range(3)]
+        monkeypatch.setattr(em, "_connect", lambda: (client, "ents", "mems"))
+        monkeypatch.setattr(em, "_load", lambda c, entities, memories: (rows, {"m1"}))
+        assert em.main(["--apply", "--max-delete", "2"]) == 3
+        assert "refusing" in capsys.readouterr().out.lower()
+        assert client.calls == []
+
+    def test_apply_refuses_when_the_memories_collection_is_empty(self, monkeypatch, capsys):
+        """An empty memories collection makes every link look stale, so the plan would delete every entity."""
+        client = FakeQdrantClient()
+        rows = [row("a", "Keep", ["m1"], norm="keep")]
+        monkeypatch.setattr(em, "_connect", lambda: (client, "ents", "mems"))
+        monkeypatch.setattr(em, "_load", lambda c, entities, memories: (rows, set()))
+        assert em.main(["--apply"]) == 3
+        assert "refusing" in capsys.readouterr().out.lower()
+        assert client.calls == []
