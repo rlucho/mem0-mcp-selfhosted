@@ -20,6 +20,7 @@ from pydantic import Field
 
 from mem0_mcp_selfhosted import __version__
 from mem0_mcp_selfhosted.config import ProviderInfo, build_config
+from mem0_mcp_selfhosted.entity_store import patch_entity_store_scaling
 from mem0_mcp_selfhosted.env import bool_env, env
 from mem0_mcp_selfhosted.graph_tools import get_entity, search_graph
 from mem0_mcp_selfhosted.helpers import (
@@ -95,9 +96,10 @@ def _init_memory() -> Any:
 
     register_providers(providers_info)
 
-    # Patch mem0ai's relationship sanitizer before Memory init
+    # Patch mem0ai before Memory init: relationship sanitizer, Gemini null guard, indexed entity lookups
     patch_graph_sanitizer()
     patch_gemini_parse_response()
+    patch_entity_store_scaling()
 
     # Initialize Memory
     from mem0 import Memory
@@ -309,7 +311,7 @@ def _register_tools(mcp: MCPServer) -> None:
             return json.dumps({"error": "Memory not initialized", "detail": "Infrastructure may be unavailable."}, ensure_ascii=False)
 
         def _do_update():
-            mem.update(memory_id, data=text)
+            mem.update(memory_id, text=text)
             return {"message": "Memory updated successfully!"}
 
         return _mem0_call(_do_update)

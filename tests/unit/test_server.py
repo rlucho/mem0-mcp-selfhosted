@@ -26,6 +26,12 @@ def _env_defaults(monkeypatch):
     monkeypatch.setenv("MEM0_USER_ID", "test-user")
 
 
+@pytest.fixture(autouse=True)
+def _no_real_entity_store_patch(monkeypatch):
+    """_init_memory() patches the real mem0 Memory class; keep that out of unit tests."""
+    monkeypatch.setattr(server_mod, "patch_entity_store_scaling", MagicMock(return_value=False), raising=False)
+
+
 @pytest.fixture
 def mock_memory():
     """Create a mock Memory object and patch server globals."""
@@ -161,11 +167,12 @@ class TestGetMemory:
 
 
 class TestUpdateMemory:
-    def test_uses_data_param(self, server_with_mock):
+    def test_uses_text_param(self, server_with_mock):
+        """mem0ai 2.x keeps update(data=...) only as a deprecated alias that logs a warning per call."""
         srv, mem = server_with_mock
         fn = _get_tool_fn(srv, "update_memory")
         result = fn(memory_id="uuid-123", text="updated fact")
-        mem.update.assert_called_once_with("uuid-123", data="updated fact")
+        mem.update.assert_called_once_with("uuid-123", text="updated fact")
         parsed = json.loads(result)
         assert parsed["message"] == "Memory updated successfully!"
 
@@ -339,6 +346,29 @@ class TestInitMemory:
         mock_patch.assert_called_once()
         assert call_order.index("patch_graph_sanitizer") < call_order.index("from_config"), (
             f"patch_graph_sanitizer must be called before Memory.from_config, got: {call_order}"
+        )
+
+    @patch("mem0_mcp_selfhosted.server.patch_entity_store_scaling")
+    @patch("mem0_mcp_selfhosted.server.patch_graph_sanitizer")
+    @patch("mem0.Memory.from_config")
+    @patch("mem0_mcp_selfhosted.server.build_config")
+    def test_patches_entity_store_scaling(self, mock_bc, mock_from_config, _mock_sanitizer, mock_patch):
+        call_order = []
+        mock_patch.side_effect = lambda: call_order.append("patch_entity_store_scaling")
+        mock_memory = MagicMock()
+        mock_memory.graph = None
+        mock_from_config.side_effect = lambda cfg: (
+            call_order.append("from_config") or mock_memory
+        )
+        mock_bc.return_value = (
+            {"llm": {"provider": "ollama", "config": {}}},
+            [],
+            None,
+        )
+        server_mod._init_memory()
+        mock_patch.assert_called_once()
+        assert call_order.index("patch_entity_store_scaling") < call_order.index("from_config"), (
+            f"patch_entity_store_scaling must be called before Memory.from_config, got: {call_order}"
         )
 
 

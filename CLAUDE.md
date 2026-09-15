@@ -36,12 +36,15 @@ Self-hosted MCP server using `mem0ai` as a library. 9 memory tools always, plus 
 - `llm_router.py` — `SplitModelGraphLLM` routes by tool name: extraction tools → Gemini, contradiction tools → Claude
 - `helpers.py` — `_mem0_call()` error wrapper, `call_with_graph()` threading lock for per-call graph toggle, `safe_bulk_delete()` iterates+deletes individually (never calls `memory.delete_all()`), `patch_graph_sanitizer()` monkey-patches mem0ai's relationship sanitizer for Neo4j compliance
 - `graph_tools.py` — Direct Neo4j Cypher queries with lazy driver init
+- `entity_store.py` — `patch_entity_store_scaling()` swaps mem0ai's listing-based entity methods (they see at most 10,000 entities) for indexed Qdrant lookups on `data_norm` / `linked_memory_ids`; applied before `Memory.from_config()` in both `server._init_memory()` and `hooks._get_memory()`; `MEM0_ENTITY_INDEXED_LOOKUPS=false` disables it
+- `entity_maintenance.py` — one-off CLI, `python -m mem0_mcp_selfhosted.entity_maintenance [--apply]` (dry run by default): backfills `data_norm`, merges same-text duplicate entities per scope, prunes links to deleted memories. Run once after first deploying the patch, with the server stopped
 - `__init__.py` — Suppresses mem0ai telemetry before any imports
 
 **Critical implementation details:**
 - `memory.delete()` does NOT clean Neo4j nodes (mem0ai bug #3245) — `safe_bulk_delete()` explicitly calls `memory.graph.delete_all(filters)` after
 - `memory.enable_graph` is mutable instance state — `call_with_graph()` holds a `threading.Lock` for the full duration of each Memory call (2-20s)
 - Contract tests (`tests/contract/`) validate mem0ai internal API assumptions — if these fail after a mem0ai upgrade, the code needs updating
-- `Memory.update()` uses `data=` parameter, not `text=`
+- `Memory.update()` takes `text=`; in mem0ai 2.x `data=` is only a deprecated alias that logs a warning on every call
+- mem0ai's entity store lists at most `top_k=10000` rows for exact dedup and delete cleanup. `tests/integration/test_entity_store_scaling.py` keeps strict-xfail `stock` controls that prove it; if they start passing after a mem0ai upgrade, re-evaluate `entity_store.py`
 - Structured output support requires claude-opus-4/sonnet-4/haiku-4 models; older models fall back to JSON extraction
 - mem0ai's `sanitize_relationship_for_cypher()` has gaps (no hyphen handling, no leading-digit check) — `patch_graph_sanitizer()` wraps it at startup to ensure all relationship types match `^[a-zA-Z_][a-zA-Z0-9_]*$`

@@ -69,6 +69,9 @@ def _get_memory():
     register_providers(providers_info)
     # patch_graph_sanitizer() skipped — graph is force-disabled in hooks,
     # so the relationship sanitizer modules are never invoked.
+    from mem0_mcp_selfhosted.entity_store import patch_entity_store_scaling
+
+    patch_entity_store_scaling()
 
     from mem0 import Memory
 

@@ -67,6 +67,27 @@ class TestGetUserId:
 
 
 class TestGetMemory:
+    @pytest.fixture(autouse=True)
+    def _no_real_entity_store_patch(self, monkeypatch):
+        """_get_memory() patches the real mem0 Memory class; keep that out of unit tests."""
+        monkeypatch.setattr("mem0_mcp_selfhosted.entity_store.patch_entity_store_scaling", MagicMock(return_value=False))
+
+    def test_patches_entity_store_before_memory_init(self, monkeypatch):
+        """_get_memory() applies the entity-store patch before Memory.from_config()."""
+        order = []
+        monkeypatch.setattr(hooks, "_memory", None)
+        with (
+            patch("mem0_mcp_selfhosted.config.build_config", return_value=({}, [], None)),
+            patch("mem0_mcp_selfhosted.server.register_providers"),
+            patch(
+                "mem0_mcp_selfhosted.entity_store.patch_entity_store_scaling",
+                side_effect=lambda: order.append("patch_entity_store_scaling"),
+            ),
+            patch("mem0.Memory.from_config", side_effect=lambda cfg: order.append("from_config") or MagicMock()),
+        ):
+            hooks._get_memory()
+        assert order == ["patch_entity_store_scaling", "from_config"]
+
     def test_caching_returns_same_instance(self):
         """_get_memory() returns the cached instance on repeated calls."""
         sentinel = MagicMock(name="Memory")

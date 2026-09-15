@@ -248,6 +248,7 @@ All configuration is via environment variables. Create a `.env` file or set them
 | `MEM0_QDRANT_ON_DISK` | `false` | Store vectors on disk (reduces RAM, slower search) |
 | `MEM0_QDRANT_TIMEOUT` | _(client default)_ | Qdrant REST API timeout in seconds (e.g., `30`). Only set if you hit `ReadTimeout` during collection operations |
 | `MEM0_COLLECTION` | `mem0_mcp_selfhosted` | Qdrant collection name |
+| `MEM0_ENTITY_INDEXED_LOOKUPS` | `true` | Find entities with indexed Qdrant queries instead of mem0ai's 10,000-row listings (`entity_store.py`). After first enabling it, run `python -m mem0_mcp_selfhosted.entity_maintenance --apply` once with the server stopped |
 
 ### Graph Store (Neo4j)
 
@@ -285,6 +286,8 @@ Claude Code
   │     ├── llm_ollama.py        ← Custom Ollama LLM provider (restored tool-calling)
   │     ├── config.py            ← Env vars → MemoryConfig dict (provider + URL cascades)
   │     ├── helpers.py           ← Error wrapper, concurrency lock, safe bulk-delete, monkey-patches
+  │     ├── entity_store.py      ← Indexed entity lookups replacing mem0ai's 10,000-row listings (monkey-patch)
+  │     ├── entity_maintenance.py ← One-off CLI: backfill data_norm, merge duplicate entities, prune stale links
   │     ├── graph_tools.py       ← Direct Neo4j Cypher queries (lazy driver)
   │     ├── llm_router.py        ← Split-model graph LLM router (gemini_split)
   │     ├── __init__.py          ← Telemetry suppression (before any mem0 import)
